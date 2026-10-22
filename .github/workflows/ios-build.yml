@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# One run per branch: a push during an active build cancels the superseded
+# one instead of queuing two runs that build different commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ios-build:
     runs-on: macos-15
@@ -20,6 +26,7 @@ jobs:
         run: xcodegen generate
 
       - name: Build
+        id: build
         run: |
           set -o pipefail
           xcodebuild -project Amphora.xcodeproj \
@@ -28,13 +35,27 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee xcodebuild.log | tail -100
+            build 2>&1 | tee xcodebuild.log
+
+      - name: Show build failure summary
+        if: failure()
+        run: |
+          grep -E "error:|fatal error|Assertion|Undefined symbol|Testing failed" xcodebuild.log \
+            | grep -vE "warning:" \
+            | tail -n 40 > build-summary.txt || true
+          echo "----- BUILD FAILURE SUMMARY (last 40 matching lines) -----"
+          cat build-summary.txt
+          echo "-----------------------------------------------------------"
+          if [ -s build-summary.txt ]; then
+            python3 -c "import pathlib; t = pathlib.Path('build-summary.txt').read_text()[:5500]; print('::error title=iOS Build failure::' + t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))"
+          fi
 
       - name: Package unsigned IPA
+        if: success()
         run: |
           APP_PATH=$(find build/Build/Products -name "Amphora.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "Amphora.app not found under build/Build/Products"
+            echo "::error::Amphora.app not found under build/Build/Products"
             find build -maxdepth 6 -name "*.app" -type d
             exit 1
           fi
@@ -42,14 +63,18 @@ jobs:
           cp -R "$APP_PATH" Payload/
           cd Payload && zip -qry ../Amphora-unsigned.ipa . && cd ..
 
-      - name: Show xcodebuild errors on failure
-        if: failure()
-        run: |
-          grep -E "error:" xcodebuild.log | head -50 || true
-
       - name: Upload IPA artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: amphora-ipa-${{ github.run_number }}
           path: Amphora-unsigned.ipa
           if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: warn

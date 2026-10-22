@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# One run per branch: a push during an active run cancels the superseded
+# one instead of burning a runner on a commit that no longer matters.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core-tests:
     runs-on: ubuntu-latest
@@ -14,10 +20,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # `set -o pipefail` is load-bearing: without it the pipeline returns
+      # tee's exit code (0) and a compile failure sails through as success
+      # — observed as a false-green Core Tests run on 61027a1.
       - name: Build PandoraCore
+        id: build
         working-directory: ./PandoraCore
-        run: swift build 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          swift build 2>&1 | tee ../build.log
 
       - name: Test PandoraCore
+        id: test
         working-directory: ./PandoraCore
-        run: swift test 2>&1 | tee test.log
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee ../test.log
+
+      - name: Show failure summary
+        if: failure()
+        run: |
+          grep -hE "error:|failed|XCTAssert|Fatal|Assertion" build.log test.log 2>/dev/null \
+            | grep -vE "warning:" \
+            | tail -n 40 > core-summary.txt || true
+          echo "----- CORE TESTS FAILURE SUMMARY (last 40 matching lines) -----"
+          cat core-summary.txt
+          echo "---------------------------------------------------------------"
+          # No python3 guarantee in the swift container — sed does the
+          # workflow-command percent-encoding instead.
+          if [ -s core-summary.txt ]; then
+            ANN=$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/' core-summary.txt | tr -d '\n')
+            echo "::error title=Core Tests failure::${ANN}"
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-tests-log
+          path: |
+            build.log
+            test.log
+          if-no-files-found: warn
