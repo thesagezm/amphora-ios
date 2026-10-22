@@ -18,7 +18,7 @@ public enum JSONValue: Sendable, Equatable {
     /// keys. Deterministic across platforms.
     public static func encoded(_ parameters: [String: JSONValue]) -> Data {
         let body = parameters.keys.sorted().map { key in
-            escape(key) + ":" + (parameters[key] ?? .string("")).literal
+            Self.escape(key) + ":" + (parameters[key] ?? .string("")).literal
         }.joined(separator: ",")
         return Data("{\(body)}".utf8)
     }
@@ -26,7 +26,7 @@ public enum JSONValue: Sendable, Equatable {
     /// This value's JSON text (not including surrounding braces).
     private var literal: String {
         switch self {
-        case .string(let value): return escape(value)
+        case .string(let value): return Self.escape(value)
         case .int(let value): return String(value)
         case .bool(let value): return value ? "true" : "false"
         }

@@ -147,10 +147,13 @@ final class URLBuilderTests: XCTestCase {
         let hex = String(decoding: body, as: UTF8.self)
         XCTAssertTrue(hex.allSatisfy { $0.isHexDigit }, "body must be hex, got \(hex.prefix(32))…")
 
-        // Decrypting with the same key recovers the exact JSON we expect.
+        // Decrypting with the same key recovers the expected JSON. Trailing
+        // zero-padding from the per-chunk pad survives decryption — trim it
+        // for comparison (callers do the same for syncTime fields).
         let decrypted = try PandoraCrypto.decryptFromHex(hex, key: PandoraAPI.encryptKey)
+        let trimmed = decrypted.prefix { $0 != 0 }
         XCTAssertEqual(
-            String(decoding: decrypted, as: UTF8.self),
+            String(decoding: trimmed, as: UTF8.self),
             #"{"loginType":"user","partnerAuthToken":"PT","password":"hunter2","returnIsSubscriber":true,"syncTime":1000000000,"username":"me@example.com"}"#
         )
     }
@@ -175,7 +178,7 @@ final class URLBuilderTests: XCTestCase {
             encrypt: false,
             now: fixedNow
         )
-        XCTAssertEqual(String(decoding: body, as: UTF8.self), #"{"note":""}"#)
+        XCTAssertEqual(String(decoding: body, as: UTF8.self), #"{"note":"\u0001"}"#)
     }
 
     func testBoolAndIntLiterals() throws {

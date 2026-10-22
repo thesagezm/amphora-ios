@@ -74,16 +74,46 @@ public struct URLBuilder: Sendable {
         }
         items.append(("method", method))
 
+        // Strict RFC 3986 encoding: auth tokens are opaque (may contain
+        // `+`, `/`, `=` — none of which are unreserved). `URLComponents`
+        // alone would leave `+` intact, which servers can read as a space.
+        let query = items
+            .map { pair in
+                "\(Self.encodeQueryValue(pair.0))=\(Self.encodeQueryValue(pair.1))"
+            }
+            .joined(separator: "&")
+
         var components: URLComponents
         guard let parsed = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw URLBuilderError.urlConstructionFailed
         }
         components = parsed
-        components.queryItems = items.map { URLQueryItem(name: $0.0, value: $0.1) }
+        // `query` (the setter) would re-encode our %XX sequences; the
+        // percentEncoded* variant takes them verbatim.
+        components.percentEncodedQuery = query
         guard let url = components.url else {
             throw URLBuilderError.urlConstructionFailed
         }
         return url
+    }
+
+    /// Percent-encodes everything outside the RFC 3986 unreserved set
+    /// (`A-Z a-z 0-9 - . _ ~`) — matches `quote_plus(..., safe="")`.
+    static func encodeQueryValue(_ value: String) -> String {
+        var encoded = ""
+        for byte in value.utf8 {
+            switch byte {
+            case UInt8(ascii: "A")...UInt8(ascii: "Z"),
+                 UInt8(ascii: "a")...UInt8(ascii: "z"),
+                 UInt8(ascii: "0")...UInt8(ascii: "9"),
+                 UInt8(ascii: "-"), UInt8(ascii: "."),
+                 UInt8(ascii: "_"), UInt8(ascii: "~"):
+                encoded.append(Character(UnicodeScalar(byte)))
+            default:
+                encoded += String(format: "%%%02X", Int(byte))
+            }
+        }
+        return encoded
     }
 
     // MARK: - Body
