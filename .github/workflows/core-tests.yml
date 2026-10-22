@@ -1,0 +1,23 @@
+name: Core Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build PandoraCore
+        working-directory: ./PandoraCore
+        run: swift build 2>&1 | tee build.log
+
+      - name: Test PandoraCore
+        working-directory: ./PandoraCore
+        run: swift test 2>&1 | tee test.log

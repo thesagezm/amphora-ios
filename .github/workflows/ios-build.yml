@@ -1,0 +1,55 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ios-build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project Amphora.xcodeproj \
+            -scheme Amphora \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee xcodebuild.log | tail -100
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH=$(find build/Build/Products -name "Amphora.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Amphora.app not found under build/Build/Products"
+            find build -maxdepth 6 -name "*.app" -type d
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          cd Payload && zip -qry ../Amphora-unsigned.ipa . && cd ..
+
+      - name: Show xcodebuild errors on failure
+        if: failure()
+        run: |
+          grep -E "error:" xcodebuild.log | head -50 || true
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: amphora-ipa-${{ github.run_number }}
+          path: Amphora-unsigned.ipa
+          if-no-files-found: error
