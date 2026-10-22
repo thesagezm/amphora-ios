@@ -5,8 +5,8 @@ Updated in the same commit as the work it describes.
 
 ## Current Milestone
 
-**M0** — Repo skeleton: xcodegen project + PandoraCore package, empty app
-builds, both CI workflows green.
+**M1** — Auth: Blowfish password, partner login, user login, Keychain
+persistence, auto-login, typed errors. (M0 complete.)
 
 ## User Feedback Pending
 
@@ -14,23 +14,29 @@ _(none yet)_
 
 ## In Flight / Last Push
 
-- Unit 1: repo skeleton (Amphora app target, PandoraCore package, both CI
-  workflows, project.yml) — pushed, awaiting first CI run.
+- M0 verified green on CI: `Core Tests` run 39807086811 ✅ (1m37s),
+  `iOS Build` run 39807086129 ✅ (43s), artifact `amphora-ipa-1` (613 KB)
+  from commit `1ec069e`.
+- This commit: correct partner constants from the pithos reference
+  (`pithos/pandora/data.py` — my initial `partnerPassword` was wrong,
+  `encryptKey`/`decryptKey` were missing).
 
 ## Pending Queue
 
-1. **Unit 2** — Repair loop: get `Core Tests` + `iOS Build` both green.
-   Check `gh run list --limit 5` (non-blocking); if red, read failed log,
-   fix the specific error, push, repeat.
-2. **Unit 3** — M1 Blowfish-ECB with CryptoSwift + known-answer test vectors
-   (libpiano key derivation).
-3. **M1 continuation** — `URLBuilder`/param encoding → `auth.partnerLogin`
-   endpoint + decoding test → `SessionManager` with re-auth retry-once →
-   typed error mapping → login screen with mocked success.
+1. **M1 crypto** — Blowfish-ECB wrapper over CryptoSwift + known-answer test
+   vectors. Key derivation exactly as pithos: request bodies are encrypted
+   with `encryptKey` (`6#26FRL$ZWD`), `syncTime` responses decrypted with
+   `decryptKey` (`R=U!LH$O2B#`), PKCS-style 8-byte pad, hex-encoded output.
+2. `URLBuilder`/param building (query args + JSON body + encryption).
+3. `auth.partnerLogin` endpoint + response decoding test (fixture JSON).
+4. `SessionManager`: partner login → user login → token storage →
+   session-expiry retry-once.
+5. Typed error mapping (pithos `ApiError` table → `PandoraError` cases).
+6. Login screen with mocked success.
 
 ## Milestones
 
-- [ ] **M0** — skeleton, green CI
+- [x] **M0** — skeleton, green CI
 - [ ] **M1** — auth (partner login, Blowfish, user login, Keychain, auto-login)
 - [ ] **M2** — stations (fetch/list/create/rename/delete + list UI)
 - [ ] **M3** — playback (playlist, AVPlayer, background audio, Now Playing)
@@ -40,4 +46,19 @@ _(none yet)_
 
 ## Completed Units
 
-_(none yet)_
+- **M0 repo skeleton** — commit `1ec069e`: Amphora app target (AppStore,
+  PlayerService, KeychainStore skeletons), PandoraCore package
+  (`PandoraAPI` + `PandoraAPIClient`), `project.yml`, both CI workflows,
+  `QUEUE.md`, README, `.gitignore`. Both workflows green on first run.
+
+## Protocol Notes (reference-verified)
+
+- Request encryption: PKCS-pad plaintext to 8 bytes → Blowfish-ECB with
+  `encryptKey` → hex string. Applied to the JSON request body
+  (`pithos.pandora.json_call`, `blowfish=True`).
+- `syncTime` in `auth.partnerLogin` response is hex-encoded ciphertext;
+  decrypt with `decryptKey`, strip padding, take bytes `[4:14]` as the
+  10-digit Pandora timestamp; `time_offset = pandora_time - now`.
+- `auth.userLogin` body: `username`, `password`, `loginType: "user"`,
+  `returnIsSubscriber: true` — encrypted; also carries `partnerAuthToken`
+  or `userAuthToken` when present, plus `syncTime`.
