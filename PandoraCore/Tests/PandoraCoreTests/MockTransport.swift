@@ -32,15 +32,22 @@ final class MockTransport: HTTPTransport, @unchecked Sendable {
     }
 
     func post(url: URL, body: Data, contentType: String) async throws -> Data {
-        lock.lock()
-        recorded.append(RecordedRequest(url: url, body: body, contentType: contentType))
-        let index = next
-        next += 1
-        lock.unlock()
+        // Locked work lives in a sync helper: Swift 6 marks NSLock.lock/unlock
+        // noasync, so they may not be called from an async frame.
+        let index = record(url: url, body: body, contentType: contentType)
 
         guard index < responses.count else {
             throw PandoraTransportError(reason: "mock exhausted at request \(index)")
         }
         return try responses[index].get()
+    }
+
+    private func record(url: URL, body: Data, contentType: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        recorded.append(RecordedRequest(url: url, body: body, contentType: contentType))
+        let index = next
+        next += 1
+        return index
     }
 }

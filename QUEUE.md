@@ -14,28 +14,12 @@ _(none yet)_
 
 ## In Flight / Last Push
 
-- **This push (handover point, 2026-10-22): M1 SessionManager + Core Tests
-  repair.** Origin/main before this push was `dd0c0d5`:
-  - `dd0c0d5` **iOS Build ✅** (39830370491) but **Core Tests ❌**
-    (39830374094): `URLSession`/`URLRequest` live in `FoundationNetworking`
-    on Linux — `LegacyPandoraClient` needs `#if canImport(FoundationNetworking)`,
-    plus the corelibs `URLSession` isn't Sendable → `@unchecked Sendable`
-    `SessionBox`. **Fixed in this push.**
-  - This push adds **`SessionManager`** (actor): full pithos-connect flow
-    (partner login plain → decrypt syncTime → offset → user login
-    encrypted → store), `restore()` warm-start, and **1001 retry-once**
-    in `authenticatedRequest` (re-login → replay exactly once → surface).
-    `SessionStore` protocol + `InMemorySessionStore` (Keychain impl lands
-    in the app target — PandoraCore stays portable).
-  - 12 SessionManager tests: login pair + request shapes asserted from
-    decrypted bodies, credential rejection, malformed/short/unparsable
-    syncTime, restore w/ zero network, requires-session, retry-once (4
-    requests, fresh token), second-1001 no-loop, offset math.
-    `MockTransport` extracted to a shared test file (class, not actor —
-    sync `requests` accessor; Swift 6: no `await` inside XCT* autoclosures,
-    all actor-property reads hoisted).
-  - Crypto fixtures for syncTime tests generated from the vendored pithos
-    Blowfish pipeline (main/short/unparsable — see SessionManagerTests).
+- **This push (2026-10-23): repair Core Tests after SessionManager push.**
+  - Last push `6139d4c`: **iOS Build ✅** (39867496012) but **Core Tests ❌**
+    (39867495998): Swift 6 marks `NSLock.lock/unlock` `noasync` —
+    `MockTransport.post` (async) called them inline. Moved the locked
+    record/increment into a sync helper called from the async frame.
+    (Production lock sites were already sync-only: no other changes needed.)
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation (step now works and
@@ -78,6 +62,10 @@ logs upload as `core-tests-log`) and repair before any new unit.
   summaries + pipefail fix. Repaired by `dd0c0d5` (bash shell + AnyJSON
   Codable); that push's own Core Tests red (URLSession/Linux) repaired by
   the SessionManager push.
+- **M1 SessionManager** — `6139d4c`: actor with pithos-connect flow,
+  `restore()`, 1001 retry-once, `SessionStore`/`InMemorySessionStore`,
+  12 tests, syncTime fixtures. iOS Build ✅; Core Tests red (NSLock-noasync
+  in MockTransport) — repaired by the next push.
 
 ## Protocol Notes (reference-verified)
 
