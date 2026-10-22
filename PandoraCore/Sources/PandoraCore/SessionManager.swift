@@ -1,0 +1,304 @@
+//
+//  SessionManager.swift
+//  PandoraCore
+//
+//  Auth lifecycle for the legacy JSON API (v5), mirroring
+//  `pithos.pandora.Pandora.connect()` plus automatic re-auth:
+//
+//    partner login (plain body) → decrypt syncTime → time offset
+//      → user login (Blowfish body) → tokens + store
+//    on fault 1001 (invalid auth token): transparent re-login, replay the
+//      failed call exactly once, then surface the typed error.
+//
+//  An actor so login/re-auth/replay are serialized — concurrent callers can
+//  never interleave two partner logins. Credential/token persistence is
+//  injected (`SessionStore`); PandoraCore stays free of Apple-only APIs
+//  (Keychain lands in the app target) and free of UI/AVFoundation.
+//
+
+import Foundation
+
+// MARK: - Records
+
+/// Established session tokens (all values the client needs to stamp later
+/// requests). Codable so any store can persist it as-is.
+public struct SessionTokens: Codable, Sendable, Equatable {
+    public let partnerId: String
+    public let partnerAuthToken: String
+    public let userId: String
+    public let userAuthToken: String
+    /// `pandora_time − local_time`, fixed at partner login; drives syncTime.
+    public let timeOffset: TimeInterval
+
+    public init(
+        partnerId: String,
+        partnerAuthToken: String,
+        userId: String,
+        userAuthToken: String,
+        timeOffset: TimeInterval
+    ) {
+        self.partnerId = partnerId
+        self.partnerAuthToken = partnerAuthToken
+        self.userId = userId
+        self.userAuthToken = userAuthToken
+        self.timeOffset = timeOffset
+    }
+}
+
+public struct Credentials: Codable, Sendable, Equatable {
+    public let username: String
+    public let password: String
+
+    public init(username: String, password: String) {
+        self.username = username
+        self.password = password
+    }
+}
+
+/// What a session store persists: tokens plus the credentials needed for
+/// transparent re-auth and next-launch auto-login.
+public struct SessionRecord: Codable, Sendable, Equatable {
+    public let credentials: Credentials
+    public let tokens: SessionTokens
+    public let isSubscriber: Bool
+
+    public init(credentials: Credentials, tokens: SessionTokens, isSubscriber: Bool) {
+        self.credentials = credentials
+        self.tokens = tokens
+        self.isSubscriber = isSubscriber
+    }
+}
+
+// MARK: - Store
+
+/// Persistence seam. Apple-side implementation (Keychain) lives in the app
+/// target; `InMemorySessionStore` serves tests and fallback.
+public protocol SessionStore: Sendable {
+    func save(_ record: SessionRecord) throws
+    func load() -> SessionRecord?
+    func clear() throws
+}
+
+public final class InMemorySessionStore: SessionStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var record: SessionRecord?
+
+    public init(record: SessionRecord? = nil) {
+        self.record = record
+    }
+
+    public func save(_ record: SessionRecord) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        self.record = record
+    }
+
+    public func load() -> SessionRecord? {
+        lock.lock()
+        defer { lock.unlock() }
+        return record
+    }
+
+    public func clear() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        record = nil
+    }
+}
+
+// MARK: - Errors
+
+public enum SessionManagerError: Error, Equatable, Sendable {
+    /// No credentials/session — the app must show login first.
+    case notAuthenticated
+    /// A session field was missing or undecodable in an otherwise-ok response.
+    case malformedSession(detail: String)
+}
+
+// MARK: - SessionManager
+
+public actor SessionManager {
+    private let client: LegacyPandoraClient
+    private let store: (any SessionStore)?
+    private let now: @Sendable () -> Date
+
+    private var credentials: Credentials?
+    private var tokens: SessionTokens?
+    private var subscriber = false
+
+    public init(
+        client: LegacyPandoraClient = LegacyPandoraClient(),
+        store: (any SessionStore)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.client = client
+        self.store = store
+        self.now = now
+    }
+
+    /// Current session, nil when signed out.
+    public var session: SessionTokens? { tokens }
+
+    public var isSubscriber: Bool { subscriber }
+
+    public var hasSession: Bool { tokens != nil }
+
+    // MARK: Login
+
+    /// Full connect flow (pithos `Pandora.connect`): partner login →
+    /// syncTime decode → user login → store. Resets any prior session first,
+    /// exactly like the reference implementation.
+    public func login(username: String, password: String) async throws -> SessionTokens {
+        // Reset — a failed re-auth must not leave a half-live session.
+        credentials = nil
+        tokens = nil
+        subscriber = false
+        client.context = URLBuilder.Context()
+
+        // 1. Partner login — plain JSON body (no Blowfish), no auth query.
+        let partner = try await client.request(
+            method: PandoraAPI.Method.partnerLogin,
+            parameters: [
+                "username": .string(PandoraAPI.partnerUsername),
+                "password": .string(PandoraAPI.partnerPassword),
+                "deviceModel": .string(PandoraAPI.partnerDeviceModel),
+                "version": .string(PandoraAPI.version)
+            ],
+            encrypt: false,
+            now: now()
+        )
+        let partnerId = try idField(partner, "partnerId")
+        let partnerToken = try partner.string("partnerAuthToken")
+        let syncTimeHex = try partner.string("syncTime")
+
+        let localNow = now()
+        let offset = try Self.timeOffset(
+            encryptedSyncTime: syncTimeHex,
+            localTime: localNow
+        )
+
+        client.context = URLBuilder.Context(
+            partnerId: partnerId,
+            partnerAuthToken: partnerToken,
+            timeOffset: offset
+        )
+
+        // 2. User login — Blowfish body; syncTime + partnerAuthToken are
+        //    stamped in by URLBuilder from the context.
+        let user = try await client.request(
+            method: PandoraAPI.Method.userLogin,
+            parameters: [
+                "username": .string(username),
+                "password": .string(password),
+                "loginType": .string("user"),
+                "returnIsSubscriber": .bool(true)
+            ],
+            encrypt: true,
+            now: now()
+        )
+        let userId = try idField(user, "userId")
+        let userToken = try user.string("userAuthToken")
+        let isSubscriber = try user.bool("isSubscriber")
+
+        let newTokens = SessionTokens(
+            partnerId: partnerId,
+            partnerAuthToken: partnerToken,
+            userId: userId,
+            userAuthToken: userToken,
+            timeOffset: offset
+        )
+        client.context = URLBuilder.Context(
+            partnerId: partnerId,
+            partnerAuthToken: partnerToken,
+            userId: userId,
+            userAuthToken: userToken,
+            timeOffset: offset
+        )
+
+        let newCredentials = Credentials(username: username, password: password)
+        credentials = newCredentials
+        tokens = newTokens
+        subscriber = isSubscriber
+        try store?.save(
+            SessionRecord(credentials: newCredentials, tokens: newTokens, isSubscriber: isSubscriber)
+        )
+        return newTokens
+    }
+
+    /// Restores a stored session into memory without a network round trip —
+    /// the fast path for warm launch. If the token is already expired, the
+    /// first `authenticatedRequest` triggers 1001 → transparent re-login.
+    @discardableResult
+    public func restore() -> Bool {
+        guard let record = store?.load() else { return false }
+        credentials = record.credentials
+        tokens = record.tokens
+        subscriber = record.isSubscriber
+        client.context = URLBuilder.Context(
+            partnerId: record.tokens.partnerId,
+            partnerAuthToken: record.tokens.partnerAuthToken,
+            userId: record.tokens.userId,
+            userAuthToken: record.tokens.userAuthToken,
+            timeOffset: record.tokens.timeOffset
+        )
+        return true
+    }
+
+    // MARK: Authenticated requests
+
+    /// Encrypted request under the current session. On fault 1001 (session
+    /// expired) re-logins with the in-memory credentials and replays exactly
+    /// once; a second 1001 (or any other error) is surfaced as-is.
+    public func authenticatedRequest(
+        _ method: String,
+        parameters: [String: JSONValue] = [:]
+    ) async throws -> [String: AnyJSON] {
+        guard let credentials, tokens != nil else {
+            throw SessionManagerError.notAuthenticated
+        }
+        do {
+            return try await client.request(
+                method: method,
+                parameters: parameters,
+                encrypt: true,
+                now: now()
+            )
+        } catch let error as PandoraAPIError where error.isSessionExpired {
+            _ = try await login(
+                username: credentials.username,
+                password: credentials.password
+            )
+            // Retry once — a second 1001 lands here and propagates.
+            return try await client.request(
+                method: method,
+                parameters: parameters,
+                encrypt: true,
+                now: now()
+            )
+        }
+    }
+
+    // MARK: Helpers
+
+    /// partnerId/userId arrive as either JSON string or number depending on
+    /// the endpoint (pithos formats with `%s`, accepting both).
+    private func idField(_ result: [String: AnyJSON], _ key: String) throws -> String {
+        if let string = result[key]?.stringValue { return string }
+        if let number = result[key]?.intValue { return String(number) }
+        throw SessionManagerError.malformedSession(detail: "missing id field \(key)")
+    }
+
+    /// `offset = pandora_time − local_time`, where pandora_time is the
+    /// decrypted syncTime's bytes[4..<14] (pithos: `pandora_decrypt(...)[4:14]`).
+    static func timeOffset(encryptedSyncTime hex: String, localTime: Date) throws -> TimeInterval {
+        let decrypted = try PandoraCrypto.decryptHexField(hex)
+        guard decrypted.count >= 14 else {
+            throw SessionManagerError.malformedSession(detail: "syncTime too short after decrypt")
+        }
+        let stampData = decrypted[4..<14]
+        guard let stamp = Int(String(decoding: stampData, as: UTF8.self)) else {
+            throw SessionManagerError.malformedSession(detail: "syncTime digits unparsable")
+        }
+        return TimeInterval(stamp) - localTime.timeIntervalSince1970
+    }
+}

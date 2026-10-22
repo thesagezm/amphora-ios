@@ -9,31 +9,6 @@
 import XCTest
 @testable import PandoraCore
 
-private actor MockTransport: HTTPTransport {
-    struct RecordedRequest {
-        let url: URL
-        let body: Data
-        let contentType: String
-    }
-
-    private(set) var requests: [RecordedRequest] = []
-    private let responses: [Result<Data, Error>]
-    private var next = 0
-
-    init(responses: [Result<Data, Error>]) {
-        self.responses = responses
-    }
-
-    func post(url: URL, body: Data, contentType: String) async throws -> Data {
-        requests.append(RecordedRequest(url: url, body: body, contentType: contentType))
-        guard next < responses.count else {
-            throw PandoraTransportError(reason: "mock exhausted")
-        }
-        defer { next += 1 }
-        return try responses[next].get()
-    }
-}
-
 final class LegacyPandoraClientTests: XCTestCase {
 
     private let fixedNow = Date(timeIntervalSince1970: 1_000_000_000)
@@ -58,7 +33,7 @@ final class LegacyPandoraClientTests: XCTestCase {
         XCTAssertEqual(try result.string("partnerId"), "77")
         XCTAssertEqual(try result.string("partnerAuthToken"), "P-TOKEN")
 
-        let recorded = await transport.requests
+        let recorded = transport.requests
         XCTAssertEqual(recorded.count, 1)
         let request = try XCTUnwrap(recorded.first)
 
@@ -101,7 +76,7 @@ final class LegacyPandoraClientTests: XCTestCase {
         XCTAssertEqual(try result.string("userAuthToken"), "U-TOKEN")
         XCTAssertEqual(try result.bool("isSubscriber"), false)
 
-        let recorded = await transport.requests
+        let recorded = transport.requests
         let request = try XCTUnwrap(recorded.first)
 
         // Query carries partner_id + partner auth_token.
@@ -164,7 +139,7 @@ final class LegacyPandoraClientTests: XCTestCase {
 
         _ = try await client.request(method: "user.getStationList")
 
-        let recorded = await transport.requests
+        let recorded = transport.requests
         let request = try XCTUnwrap(recorded.first)
         XCTAssertEqual(
             request.url.absoluteString,

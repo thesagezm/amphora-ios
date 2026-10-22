@@ -10,6 +10,11 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+// Linux (swift-corelibs-foundation): URLSession/URLRequest live here, not in
+// Foundation. No-op on Apple platforms.
+import FoundationNetworking
+#endif
 
 /// POSTs a request body and returns the raw response body.
 /// Injected so tests never touch the network.
@@ -20,11 +25,19 @@ public protocol HTTPTransport: Sendable {
 /// `URLSession`-backed transport. `session.send` already suspends, so
 /// nothing blocks a thread while waiting on the socket.
 public struct URLSessionTransport: HTTPTransport {
-    private let session: URLSession
+    /// `URLSession` is safe to use from multiple threads (each request is
+    /// independent), but Linux's corelibs type doesn't carry a Sendable
+    /// conformance — box it so the transport can be Sendable everywhere.
+    private final class SessionBox: @unchecked Sendable {
+        let session: URLSession
+        init(_ session: URLSession) { self.session = session }
+    }
+
+    private let box: SessionBox
     private let userAgent: String
 
     public init(session: URLSession = .shared, userAgent: String = "Amphora") {
-        self.session = session
+        self.box = SessionBox(session)
         self.userAgent = userAgent
     }
 
@@ -36,7 +49,7 @@ public struct URLSessionTransport: HTTPTransport {
         request.httpBody = body
 
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await box.session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw PandoraTransportError(reason: "non-HTTP response")
             }

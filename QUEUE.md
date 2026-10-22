@@ -14,41 +14,41 @@ _(none yet)_
 
 ## In Flight / Last Push
 
-- This push (2 commits): **repair of the partnerLogin-transport push
-  (c239d0f).** Both its runs were red:
-  - Core Tests: container's default shell is sh (dash) — `set -o pipefail`
-    is illegal there and killed the step before swift ran. Job now sets
-    `defaults.run.shell: bash`. Failure-summary step itself worked (grepped
-    both logs, emitted annotation).
-  - iOS Build: `AnyJSON` defined `init(from:)` but never declared
-    `Codable` — one error line surfaced correctly by the new summary step:
-    `ResponseEnvelope.swift:49 type 'Envelope' does not conform to
-    Decodable`. Fixed by declaring the conformance.
-  (c239d0f) had added: typed errors + envelope + LegacyPandoraClient with
-  13 mock-transport tests, workflow failure summaries (user-approved).
-  - Repair: `JSONValue.escape` static-member call (both runs of 61027a1
-    were red — Core Tests had been a FALSE GREEN: missing `set -o pipefail`
-    let `tee`'s exit 0 mask the compile failure); URL query builder switched
-    to `percentEncodedQuery` (the `query` setter re-encoded our %XX);
-    encrypted-roundtrip test trims zero-padding before comparing; literal
-    U+0001 byte in a test expectation replaced with `\u0001`.
-  - New: `Errors.swift` (pithos ApiError table → typed `PandoraAPIError`,
-    friendlier curated messages), `ResponseEnvelope.swift` (ok/fail
-    unwrap), `AnyJSON.swift` (typed Codable JSON), `LegacyPandoraClient.swift
-    ` (injected `HTTPTransport`, URLSession impl, partner/user login request
-    shapes). 13 tests via mock transport — no network.
-  - CI: both workflows gain `set -o pipefail`, failure-summary steps
-    (speechnotes-ios pattern: grep errors → `::error title=…::` annotation,
-    logs uploaded as artifacts), concurrency cancel-in-progress.
-    User approved workflow edits for this (2026-10-22).
-- Previous: URLBuilder `61027a1` (both runs red — repaired here);
-  crypto `a852955` green (Core Tests 39816015922, iOS Build 39816015943).
+- **This push (handover point, 2026-10-22): M1 SessionManager + Core Tests
+  repair.** Origin/main before this push was `dd0c0d5`:
+  - `dd0c0d5` **iOS Build ✅** (39830370491) but **Core Tests ❌**
+    (39830374094): `URLSession`/`URLRequest` live in `FoundationNetworking`
+    on Linux — `LegacyPandoraClient` needs `#if canImport(FoundationNetworking)`,
+    plus the corelibs `URLSession` isn't Sendable → `@unchecked Sendable`
+    `SessionBox`. **Fixed in this push.**
+  - This push adds **`SessionManager`** (actor): full pithos-connect flow
+    (partner login plain → decrypt syncTime → offset → user login
+    encrypted → store), `restore()` warm-start, and **1001 retry-once**
+    in `authenticatedRequest` (re-login → replay exactly once → surface).
+    `SessionStore` protocol + `InMemorySessionStore` (Keychain impl lands
+    in the app target — PandoraCore stays portable).
+  - 12 SessionManager tests: login pair + request shapes asserted from
+    decrypted bodies, credential rejection, malformed/short/unparsable
+    syncTime, restore w/ zero network, requires-session, retry-once (4
+    requests, fresh token), second-1001 no-loop, offset math.
+    `MockTransport` extracted to a shared test file (class, not actor —
+    sync `requests` accessor; Swift 6: no `await` inside XCT* autoclosures,
+    all actor-property reads hoisted).
+  - Crypto fixtures for syncTime tests generated from the vendored pithos
+    Blowfish pipeline (main/short/unparsable — see SessionManagerTests).
+
+**FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
+red on this push, read the failure summary annotation (step now works and
+logs upload as `core-tests-log`) and repair before any new unit.
 
 ## Pending Queue
 
-1. `SessionManager`: partner login → syncTime offset → user login →
-   token storage → session-expiry retry-once (1001 → re-login → replay).
-2. Login screen with mocked success (app target).
+1. Verify this push green (Core Tests + iOS Build). Repair first if red.
+2. **M1 login screen** (app target): wire `SessionStore` → Keychain
+   (`KeychainStore` already scaffolded at `Amphora/Persistence/`),
+   `AppStore` gains login intent → `SessionManager.login`/`restore`,
+   login form UI with mocked-success path, typed errors surfaced.
+3. Warm-launch path: `restore()` on app start → station list later (M2).
 
 ## Milestones
 
@@ -73,9 +73,11 @@ _(none yet)_
 - **M1 URLBuilder** — commit `61027a1`: sorted-key JSON bodies, pithos
   query order, syncTime/token injection, per-method encrypt flag.
   Initially red (static-member escape call); repaired in this push.
-- **M1 partner transport** — this push: typed errors, envelope decoding,
+- **M1 partner transport** — `c239d0f`: typed errors, envelope decoding,
   `LegacyPandoraClient` with mock-transport tests; workflow failure
-  summaries + pipefail fix.
+  summaries + pipefail fix. Repaired by `dd0c0d5` (bash shell + AnyJSON
+  Codable); that push's own Core Tests red (URLSession/Linux) repaired by
+  the SessionManager push.
 
 ## Protocol Notes (reference-verified)
 
