@@ -6,7 +6,13 @@ final class PandoraAPITests: XCTestCase {
     func testBaseURLIsTheLegacyJSONRPCEndpoint() throws {
         XCTAssertEqual(PandoraAPI.baseURL.scheme, "https")
         XCTAssertEqual(PandoraAPI.baseURL.host, "tuner.pandora.com")
-        XCTAssertEqual(PandoraAPI.baseURL.path, "/services/json/")
+        // Assert the exact wire URL: `URL.path` drops the trailing slash on
+        // some Foundation implementations (Linux CI: "/services/json"), but
+        // the endpoint keeps it — the request URLs depend on the slash.
+        XCTAssertEqual(
+            PandoraAPI.baseURL.absoluteString,
+            "https://tuner.pandora.com/services/json/"
+        )
     }
 
     func testMethodNamesMatchTheLegacyProtocol() {

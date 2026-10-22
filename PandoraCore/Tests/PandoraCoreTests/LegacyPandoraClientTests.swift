@@ -90,8 +90,12 @@ final class LegacyPandoraClientTests: XCTestCase {
         let hex = String(decoding: request.body, as: UTF8.self)
         XCTAssertTrue(hex.allSatisfy(\.isHexDigit))
         let json = try PandoraCrypto.decryptFromHex(hex, key: PandoraAPI.encryptKey)
+        // The per-chunk zero-pad survives decryption (aligned inputs gain no
+        // extra block, partial ones pad with NULs) — trim before comparing,
+        // same convention as URLBuilderTests' round-trip.
+        let trimmed = json.prefix { $0 != 0 }
         XCTAssertEqual(
-            String(decoding: json, as: UTF8.self),
+            String(decoding: trimmed, as: UTF8.self),
             #"{"loginType":"user","partnerAuthToken":"P-TOKEN","password":"hunter2","returnIsSubscriber":true,"syncTime":1760000000,"username":"me@example.com"}"#
         )
     }
