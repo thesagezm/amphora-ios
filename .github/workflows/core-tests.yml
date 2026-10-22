@@ -16,6 +16,11 @@ jobs:
   core-tests:
     runs-on: ubuntu-latest
     container: swift:6.0
+    # The swift image's default shell is sh (dash), which rejects
+    # `set -o pipefail`. Force bash so pipefail actually engages.
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@v4

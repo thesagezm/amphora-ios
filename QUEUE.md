@@ -14,8 +14,18 @@ _(none yet)_
 
 ## In Flight / Last Push
 
-- This push (3 commits): **red-CI repair + M1 partnerLogin transport +
-  workflow failure summaries (user-approved).**
+- This push (2 commits): **repair of the partnerLogin-transport push
+  (c239d0f).** Both its runs were red:
+  - Core Tests: container's default shell is sh (dash) — `set -o pipefail`
+    is illegal there and killed the step before swift ran. Job now sets
+    `defaults.run.shell: bash`. Failure-summary step itself worked (grepped
+    both logs, emitted annotation).
+  - iOS Build: `AnyJSON` defined `init(from:)` but never declared
+    `Codable` — one error line surfaced correctly by the new summary step:
+    `ResponseEnvelope.swift:49 type 'Envelope' does not conform to
+    Decodable`. Fixed by declaring the conformance.
+  (c239d0f) had added: typed errors + envelope + LegacyPandoraClient with
+  13 mock-transport tests, workflow failure summaries (user-approved).
   - Repair: `JSONValue.escape` static-member call (both runs of 61027a1
     were red — Core Tests had been a FALSE GREEN: missing `set -o pipefail`
     let `tee`'s exit 0 mask the compile failure); URL query builder switched

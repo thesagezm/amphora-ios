@@ -8,7 +8,7 @@
 
 import Foundation
 
-public enum AnyJSON: Sendable, Equatable {
+public enum AnyJSON: Codable, Sendable, Equatable {
     case string(String)
     case number(Double)
     case bool(Bool)
