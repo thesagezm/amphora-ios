@@ -28,8 +28,26 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M3 unit 2 — `PlayerService` + tap-to-play**
-  (app target):
+- **This push (2026-10-23): repair red iOS Build from M3 unit 3** —
+  `MiniPlayer.swift:55` — `private var fallbackIcon: View` (an existential)
+  was passed to `AsyncImage`'s `placeholder:` closure, which needs a
+  concrete `View`. Fixed to `some View`. Also made `AppStore.player` an
+  explicitly initialized `let` so the `NowPlayingService` wiring is
+  unambiguous. (Lesson: never type a SwiftUI helper as bare `View` — use
+  `some View`.)
+- **f919e24** (2026-10-23): M3 unit 3 — Now Playing + remote commands:
+  - `NowPlayingService` (new `Amphora/Player/`): publishes title/artist/
+    album/duration/elapsed/rate to `MPNowPlayingInfoCenter`, loads lock-screen
+    artwork off the main actor, wires `MPRemoteCommandCenter` (play, pause,
+    toggle, next, ±15 s, scrub) to the player.
+  - `PlayerService`: `skipForward` / `skipBackward` / `seek`, plus
+    `onTrackChanged` / `onPlaybackStateChanged` hooks.
+  - `NowPlayingView` (new `Amphora/UI/`): artwork, title/artist/album,
+    scrubber with times, transport controls; opened from the mini-player.
+
+- **24d8464** (2026-10-23): M3 unit 2 — `PlayerService` + tap-to-play —
+  **Core Tests ✅** (39929262651), **iOS Build ❌** (39929262603 — the
+  `fallbackIcon: View` error above, repaired in the next push):
   - `PlayerService` (real implementation now): `AVQueuePlayer` with a
     two-slot queue (current + prefetched next → near-gapless hand-over),
     `AVAudioSession(.playback, .default)` activation, `preferredForwardBufferDuration

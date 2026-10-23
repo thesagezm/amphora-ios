@@ -80,7 +80,7 @@ struct MiniPlayer: View {
         .accessibilityHidden(true)
     }
 
-    private var fallbackIcon: View {
+    private var fallbackIcon: some View {
         Image(systemName: "music.note")
             .font(.footnote)
             .foregroundStyle(.secondary)

@@ -37,7 +37,7 @@ final class AppStore {
 
     /// Playback engine. Owns the player, the audio session and the
     /// now-playing track; it never talks to the network.
-    let player = PlayerService()
+    let player: PlayerService
     /// Lock-screen / Control Center integration (now playing info +
     /// remote transport commands).
     private let nowPlaying: NowPlayingService
@@ -60,6 +60,8 @@ final class AppStore {
 
     init(session: SessionManager = SessionManager(store: KeychainSessionStore())) {
         self.session = session
+        let player = PlayerService()
+        self.player = player
         self.nowPlaying = NowPlayingService(player: player)
         // The player asks for more tracks when its queue runs low — pithos
         // preloads the next playlist when one song remains.
