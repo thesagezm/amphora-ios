@@ -29,7 +29,7 @@ import Foundation
 /// Raw tail of the log, in signal-handler-writable memory.
 private let crashTailCapacity = 1 << 14 // 16 KiB
 
-private let crashTail: UnsafeMutablePointer<CChar> = {
+nonisolated(unsafe) private let crashTail: UnsafeMutablePointer<CChar> = {
     let pointer = UnsafeMutablePointer<CChar>.allocate(capacity: crashTailCapacity)
     pointer.initialize(repeating: 0, count: crashTailCapacity)
     return pointer
@@ -40,7 +40,7 @@ private let crashTail: UnsafeMutablePointer<CChar> = {
 nonisolated(unsafe) private var crashFileDescriptor: Int32 = -1
 nonisolated(unsafe) private var exceptionReportWritten: Int32 = 0
 
-final class CrashReporter {
+final class CrashReporter: @unchecked Sendable {
     static let shared = CrashReporter()
 
     /// The previous session's crash report, captured before the file is
@@ -81,7 +81,9 @@ final class CrashReporter {
 
     /// Drops the stored report (the user dismissed it in Diagnostics).
     func clearLastCrashReport() {
+        lock.lock()
         previousCrashReport = nil
+        lock.unlock()
         if crashFileDescriptor >= 0 {
             _ = ftruncate(crashFileDescriptor, 0)
         }

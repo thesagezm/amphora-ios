@@ -35,7 +35,24 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — units A, B, C of the crash/feedback round):**
+**(this push — CI repair of the units-A–C push):**
+
+- **iOS Build was red on `883f636`**: Swift 6 strict concurrency flagged
+  `CrashReporter.swift` — the global `crashTail` pointer (`let` of
+  non-Sendable `UnsafeMutablePointer<CChar>`) and `static let shared` on a
+  non-Sendable class. Both only surface on the macOS toolchain.
+  - Fix mirrors the already-green `LogBuffer` pattern: `nonisolated(unsafe)`
+    on the raw pointer (it is written from a signal handler and must not be
+    isolated), `@unchecked Sendable` on `CrashReporter` (instance state is
+    `NSLock`-guarded; `clearLastCrashReport` now takes the lock too).
+  - Verified the exact fixed pattern type-checks under
+    `swiftc -typecheck -swift-version 6` in the Docker toolchain before
+    pushing (variadic `snprintf` unavailable on Linux forced small
+    reproducer-only substitutions — the real file keeps `snprintf`, which is
+    fine on macOS).
+- Core Tests stayed green throughout.
+
+**(previous push, `883f636` — units A, B, C of the crash/feedback round):**
 
 - **Unit A — logging + crash capture + Diagnostics screen.** The app had
   zero logging (grep: no `Logger`/`print`/`NSLog` anywhere), so a device
@@ -89,7 +106,9 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 
 ## Pending Queue
 
-1. Verify this push green (Core Tests + iOS Build). Repair first if red.
+1. Verify the repair push green (Core Tests + iOS Build). Repair first if
+   red — expect no new errors: the two flagged lines are fixed and the fix
+   pattern was type-checked in Docker.
 2. **Lyrics unit B (app target)** — wire the core in: `AppStore` gains
    `lyrics` state + a fetch keyed by `track.trackToken` (run from the
    track-changed path, cached per track, `LRCLibClient` with the 503
