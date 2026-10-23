@@ -27,8 +27,23 @@ _(none — both resolved below)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M2 unit 4 — station row actions UI** (app
-  target, on top of the `797c2a0` fixture repair):
+- **This push (2026-10-23): M2 unit 5 — `music.search` core**
+  (runs 39884553000/39884553004 queued at push; verify first next session):
+  - `MusicSearchResult` (new `MusicSearch.swift`): `kind`
+    (artist/song/genre), `score`, `musicToken`, `title`, `subtitle`;
+    `searchResults(from:)` mirrors pithos `Pandora.search()` — artist/song
+    kept at score ≥ 80, genreStations passed through, merged and sorted
+    score-desc with original merge order as tiebreak (pithos leans on
+    Python's stable sort); malformed entries dropped, not fatal.
+  - `SessionManager.search(_:)` — `music.search` with pithos' exact params
+    (`includeGenreStations`, `includeNearMatches`, `searchText`); new
+    `PandoraAPI.Method.musicSearch`.
+  - `MusicSearchTests`: 5 parsing tests (filter, tie stability, field
+    mapping, malformed-skip, empty) + request-shape test (restore path,
+    one call, NUL-trimmed body asserts).
+
+- `74472e0` (2026-10-23): **M2 unit 4 — station row actions UI** —
+  **Core Tests ✅** (39883344481), **iOS Build ✅** (39883344520).
   - `AppStore`: `renameStation`/`deleteStation` intents →
     `SessionManager` calls; rename trims + rejects empty, reloads list
     for sort order; delete removes locally by id; `isMutatingStations`
@@ -38,7 +53,8 @@ _(none — both resolved below)_
     alert with text field, destructive confirm for delete, error banner
     safe-area inset for post-load failures (M5 restyles).
 
-- `a6a6f59` (2026-10-23): **repair Core Tests after CRUD core**:
+- `a6a6f59` (2026-10-23): repair Core Tests after CRUD core — covered
+  green by the `74472e0` run above:
   - `797c2a0`: **iOS Build ✅** (39882133244), **Core Tests ❌**
     (39882133242) — 5 failures, all `missing id field partnerId`: the new
     CRUD tests scripted only the operation reply, but `login()` consumes
@@ -125,15 +141,16 @@ _(none — both resolved below)_
 ## Pending Queue
 
 1. Verify last pushes green (Core Tests + iOS Build). Repair first if red.
-2. **M2 unit 5**: `music.search` core (pithos `search()`: score ≥ 80 for
-   artists/songs, genreStations as-is) + `station.createStation` wiring
-   from a result, then the add-station sheet UI.
+2. **M2 unit 6**: add-station sheet UI — `AppStore.search`/`createStation`
+   intents + `AddStationView` (query field → results list with kind
+   icons → tap creates station → dismiss + reload). Core for it landed in
+   `ab4e887`.
 3. M2 tail: artwork disk cache (only if AsyncImage/URLCache proves
    insufficient on device), sort-order preference if the user asks for one.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
-red on this push, read the failure summary annotation (step now works and
-logs upload as `core-tests-log`) and repair before any new unit.
+red on `ab4e887` (music.search) or later, read the failure summary
+annotation and repair before any new unit.
 
 ## Milestones
 
