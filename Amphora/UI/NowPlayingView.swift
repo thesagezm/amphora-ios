@@ -7,6 +7,8 @@ struct NowPlayingView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
+    @State private var isShowingSleepTimer = false
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -19,6 +21,21 @@ struct NowPlayingView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isShowingSleepTimer = true
+                    } label: {
+                        Image(systemName: store.sleepTimer.isOff ? "moon.zzz" : "moon.zzz.fill")
+                    }
+                    .accessibilityLabel(
+                        store.sleepTimer.isOff
+                            ? "Sleep timer"
+                            : "Sleep timer, \(store.sleepTimer.label())"
+                    )
+                }
+            }
+            .sheet(isPresented: $isShowingSleepTimer) {
+                SleepTimerSheet()
             }
         }
         .preferredColorScheme(.dark)

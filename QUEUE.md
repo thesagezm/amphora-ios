@@ -28,7 +28,26 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M5 unit 1 — artwork cache**:
+- **This push (2026-10-23): M5 unit 2 — sleep timer**:
+  - `SleepTimer.swift` (new, PandoraCore): `SleepTimer` with `off` /
+    `duration` / `endOfTrack` modes, deadline math, remaining minutes and
+    a UI label. `SleepTimerTests`: 9 tests (expiry, countdown, clamping,
+    end-of-track, fired, off state, labels, Codable round-trip).
+  - `AppStore`: `setSleepTimer` / `cancelSleepTimer` intents; an
+    end-of-track timer pauses playback when the track changes; an expired
+    duration timer stops playback.
+  - `SleepTimerSheet` (new `Amphora/UI/`): 15/30/45/60/90 minutes,
+    "End of current track", cancel; opened from the Now Playing toolbar
+    (moon icon shows filled while a timer is set).
+
+- **391aae8** (2026-10-23): repair red iOS Build from M5 unit 1 —
+  **Core Tests ✅** (39936912918), **iOS Build ✅** (39936912923):
+  - `HistoryView` used `store.history.isEmpty` and `List(store.history)`,
+    but `PlayHistory` is a plain struct, not a collection. Fixed to
+    `store.history.entries` / `store.history.items`; `PlayHistory` also
+    grew `isEmpty`, `count` and `items` accessors.
+
+- **efcd062** (2026-10-23): M5 unit 1 — artwork cache**:
   - `ArtworkCache.swift` (new `Amphora/Persistence/`): an actor with a
     memory tier (NSCache of decoded images, 64 MB budget) and a disk tier
     (raw bytes in Caches); concurrent requests for the same URL share one

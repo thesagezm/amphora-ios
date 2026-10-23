@@ -32,6 +32,8 @@ final class AppStore {
         case bookmarkCurrentArtist
         case refreshBookmarks
         case deleteBookmark(Bookmark)
+        case setSleepTimer(SleepTimer)
+        case cancelSleepTimer
         case dismissError
     }
 
@@ -67,6 +69,8 @@ final class AppStore {
     private(set) var isLoadingBookmarks = false
     /// Local playback history ("recently played"), newest first.
     private(set) var history: PlayHistory = PlayHistory()
+    /// The sleep timer (off by default).
+    private(set) var sleepTimer: SleepTimer = .off
     /// The `feedbackId` of the rating on the current track (needed to undo
     /// it) and the rating itself.
     private(set) var currentRating: FeedbackRating = .none
@@ -103,6 +107,11 @@ final class AppStore {
             if let track {
                 self.history.record(track)
                 self.historyStore.save(self.history)
+            }
+            // An "end of track" sleep timer stops playback here.
+            if self.sleepTimer.mode == .endOfTrack, track != nil {
+                self.player.pause()
+                self.sleepTimer = .off
             }
         }
     }
@@ -154,6 +163,10 @@ final class AppStore {
             Task { await refreshBookmarks() }
         case .deleteBookmark(let bookmark):
             Task { await deleteBookmark(bookmark) }
+        case .setSleepTimer(let timer):
+            setSleepTimer(timer)
+        case .cancelSleepTimer:
+            setSleepTimer(.off)
         case .dismissError:
             lastErrorMessage = nil
         }
@@ -311,7 +324,16 @@ final class AppStore {
 
     // MARK: Feedback & bookmarks
 
-    /// Rate the current track (thumbs up / down). Re-rating replaces the
+    /// Sets (or clears) the sleep timer. A duration timer that has
+    /// expired stops playback; an end-of-track timer fires when the
+    /// current track finishes.
+    private func setSleepTimer(_ timer: SleepTimer) {
+        sleepTimer = timer
+        if timer.hasExpired() {
+            player.pause()
+            sleepTimer = .off
+        }
+    }
     /// old rating: the previous feedback is deleted first, exactly like
     /// pithos' `Song.rate`.
     private func rateCurrentTrack(_ rating: FeedbackRating) async {
