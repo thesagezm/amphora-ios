@@ -40,6 +40,7 @@ final class PlayerService {
     private(set) var state: PlaybackState = .idle {
         didSet {
             if oldValue != state {
+                AppLog.info("playback state: \(oldValue) → \(state)", .playback)
                 for observer in onPlaybackStateChanged { observer() }
             }
         }
@@ -257,6 +258,7 @@ final class PlayerService {
     }
 
     private func fail(_ message: String) {
+        AppLog.error("playback failed: \(message)", .playback)
         errorMessage = message
         state = .failed
         onPlaybackFailed?(message)
@@ -419,11 +421,13 @@ final class PlayerService {
     private func handleItemFailed(_ failedID: ObjectIdentifier?) {
         guard let failedID, let first = slots.first,
               ObjectIdentifier(first.item) == failedID else { return }
+        AppLog.error("player item failed to play to end", .playback)
         fail("Playback failed. Tap next to skip this track.")
     }
 
     private func handleInterruption(type: UInt?, options: UInt) {
         guard let type, let kind = AVAudioSession.InterruptionType(rawValue: type) else { return }
+        AppLog.info("audio session interruption: \(kind.rawValue)", .playback)
         switch kind {
         case .began:
             wasPlayingBeforeInterruption = isPlaying
@@ -444,6 +448,7 @@ final class PlayerService {
 
     private func handleRouteChange(reason: UInt?) {
         guard let reason, let kind = AVAudioSession.RouteChangeReason(rawValue: reason) else { return }
+        AppLog.info("audio route change: \(kind.rawValue)", .playback)
         switch kind {
         case .oldDeviceUnavailable, .newDeviceAvailable, .categoryChange:
             // Keep playing on the new route.
@@ -456,6 +461,7 @@ final class PlayerService {
     /// The media stack was reset (e.g. after the audio daemon restarted):
     /// the old AVPlayer is dead, so build a fresh one and restore the queue.
     private func handleMediaServicesReset() {
+        AppLog.error("media services were reset — rebuilding the player", .playback)
         let wasPlaying = isPlaying
         let remaining = slots
         if let timeObserver {

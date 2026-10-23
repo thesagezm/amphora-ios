@@ -132,6 +132,11 @@ final class AppStore {
         // from the playlist entry (`songRating`).
         player.onTrackChanged.append { [weak self] track in
             guard let self else { return }
+            if let track {
+                AppLog.info("track started: \(track.title) — \(track.artist)", .playback)
+            } else {
+                AppLog.info("track queue empty", .playback)
+            }
             self.currentFeedbackId = nil
             self.currentRating = Self.feedbackRating(for: track?.rating)
             // Record the play in the local history.
@@ -214,6 +219,7 @@ final class AppStore {
         didStartRestore = true
         Task {
             let restored = await session.restore()
+            AppLog.info("session restore: \(restored ? "restored" : "no session")")
             if restored {
                 authPhase = .signedIn
                 await refreshStations()
@@ -258,12 +264,14 @@ final class AppStore {
         do {
             let list = try await session.getStationList()
             stations = displayOrder(for: list.stations)
+            AppLog.info("station list loaded: \(stations.count) stations")
         } catch {
             // Keep any already-loaded list; surface the error when empty
             // (error/empty-state polish lands in M5).
             if stations.isEmpty {
                 lastErrorMessage = Self.userMessage(for: error)
             }
+            AppLog.error("station list failed: \(String(describing: error))")
         }
     }
 
@@ -318,6 +326,10 @@ final class AppStore {
         do {
             let playlist = try await session.getPlaylist(for: station)
             let playable = playlist.tracks.filter { $0.streamURL != nil }
+            AppLog.info(
+                "playlist for \"\(station.name)\": \(playlist.tracks.count) entries, \(playable.count) playable",
+                .playback
+            )
             guard let first = playable.first else {
                 currentStation = station
                 lastErrorMessage = "No playable tracks in this station right now."
@@ -329,6 +341,7 @@ final class AppStore {
             preferencesStore.save(preferences)
             player.play(track: first, prefetching: playable.dropFirst().first)
         } catch {
+            AppLog.error("playlist for \"\(station.name)\" failed: \(String(describing: error))", .playback)
             lastErrorMessage = Self.userMessage(for: error)
         }
     }
@@ -345,12 +358,17 @@ final class AppStore {
                 let fresh = playlist.tracks.filter {
                     $0.streamURL != nil && !queuedTrackTokens.contains($0.trackToken)
                 }
-                guard !fresh.isEmpty else { return }
+                guard !fresh.isEmpty else {
+                    AppLog.debug("prefetch playlist: nothing new to queue", .playback)
+                    return
+                }
+                AppLog.info("prefetch playlist: queueing \(fresh.count) more tracks", .playback)
                 queuedTrackTokens.formUnion(fresh.map(\.trackToken))
                 player.enqueue(fresh)
             } catch {
                 // A failed prefetch is not fatal — the current track keeps
                 // playing; the next skip retries.
+                AppLog.error("prefetch playlist failed: \(String(describing: error))", .playback)
                 lastErrorMessage = Self.userMessage(for: error)
             }
         }

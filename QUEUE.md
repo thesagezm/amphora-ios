@@ -5,618 +5,197 @@ Updated in the same commit as the work it describes.
 
 ## Current Milestone
 
-**M5** — UI/design pass, last polish unit → **M6** — performance &
-robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
-2026-10-23. M3–M5 code complete, device check pending.)
+**M6** — performance & robustness. (M0–M5 code complete; M2 confirmed on
+device 2026-10-23 "everything so far works". M3–M5 device check pending —
+superseded by the crash report below.)
 
 ## User Feedback Pending
 
-1. **Lyrics** (2026-10-23, user): "there are No lyrics… i want you to
-   implement how monochrome or jewelcase or deezer does… it should fetch
-   time synced lyrics from lrclib.net or any other reputable api source
-   to fetch time synced lyrics… i also want that option if they are in a
-   foreign language to show both the english version and the foreign
-   language version at the same time."
-2. **"Make sure you beautify the app - it looks too basic and hard to
-   desire to use"** (2026-10-23, user).
-3. **"Add an app icon… based on the name"** (2026-10-23, user).
+**2026-10-23 device report (this session's driver, top priority):**
 
-**Resolved feedback:**
+1. **Crash**: "once I start to play a station it's only a matter of
+   seconds before the app crashes LiveContainer". One song did show its
+   artwork first. → Likely cause identified and fixed in `ArtworkCache`
+   (see unit B below); crash capture added so the next report is
+   precise (unit A).
+2. **Song artwork not showing** in the player (station thumbnails and
+   recently-played artwork are fine — same URL class, so the URL works;
+   the player path was the broken one). → Unit B.
+3. **"The mini player is very buggy as I switch tabs."** → Unit C.
+4. **"Why are there no logs for the app… how will I paste what is
+   happening?"** → Unit A (the app previously logged nothing at all).
+5. **"Where are the lyrics working from?"** → They are not: the
+   lrclib.net + translation core landed in `5ef40ab` but nothing in the
+   app calls it. Lyrics UI is the next unit (see Pending Queue).
 
-1. **"the miniplayer overlaps and hides the bottom tab bar"** (2026-10-23,
-   user report) — fixed in `316b6c9`: the mini-player was a
-   `safeAreaInset` on the `TabView` itself, which laid it out in the tab
-   bar's own region and covered the bar. It is now attached to each tab's
-   **content** via a `MiniPlayerInset` view modifier, so it sits directly
-   above the tab bar on every tab.
-2. **"Installing Amphora: error — the folder 'payload' doesn't exist"**
-   (2026-10-23, LiveContainer) — fixed by `4dd1fbf`: zip `Payload` from the
-   workspace root; artifact `amphora-ipa-10` verified to contain
-   `Payload/Amphora.app/…`. **User then signed in on device — install
-   confirmed working.**
-3. **M1 confirmed on device** (2026-10-23): user reports real sign-in
-   succeeded and app shows the signed-in placeholder. **M1 milestone
-   complete.**
-4. **M2 confirmed** (2026-10-23): "everything so far works" — station list,
-   rename/delete, add-station search all good on device. **M2 complete.**
-5. **Artwork / sleep timer / bookmarks** (2026-10-23, user reports) —
-   fixed in `a7dbe49`: artwork is cached under a SHA-256 file name (the
-   old base64 name exceeded the file-system limit, so nothing was ever
-   cached) and plain-HTTP art URLs are upgraded to HTTPS; a duration
-   sleep timer now really stops playback (it was only checked when it
-   was set) and survives a relaunch; the bookmark buttons now show a
-   short confirmation.
+**Older resolved feedback:** mini-player covered the tab bar (`316b6c9`);
+IPA missing `Payload/` (`4dd1fbf`); artwork never cached (base64 file
+names, `a7dbe49`); sleep timer never fired (`a7dbe49`); bookmark buttons
+gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-- **`03e89ff`** (this push): repair the red iOS Build from the previous
-  push (39975384505) — `ArtworkCache.imageCost` is a static member, so
-  the two calls inside the actor needed an explicit `Self.` prefix
-  (`ArtworkCache.swift:69` and `:89`). Core Tests were already green on
-  `5ef40ab` (39975385209).
+**(this push — units A, B, C of the crash/feedback round):**
 
-- **5ef40ab**: M6 lyrics core (unit A of the lyrics feature) —
-  PandoraCore only, **138/138 tests green locally** (Docker `swift:6.0`):
-  - `Lyrics.swift` (new): the LRC format — timestamps (`mm:ss`,
-    `mm:ss.f`, `mm:ss.ff`, `mm:ss.fff`, `mm:ss:ff`), several timestamps
-    per line, metadata tags (`[ar:]`, `[ti:]`, `[offset:]`, …) that are
-    not lyrics, plain (unsynchronised) lyrics kept as text, lines sorted
-    by time, and the lookup helpers (`activeLine(at:)`,
-    `nextLine(after:)`, `progress(at:)`). The `[offset:]` tag is in
-    milliseconds and shifts the lyrics **earlier** for a positive value
-    (same convention as FFmpeg's LRC demuxer, `libavformat/lrcdec.c`:
-    `sub->pts = ts_start - ts_offset`).
-  - `LyricsProvider.swift` (new): `LRCLibClient` (lrclib.net) and
-    `GoogleTranslateClient` (the `translate_a` endpoint with `sl=auto`),
-    both behind small protocols so they can be stubbed in tests.
-    `HTTPGETTransport` is the injectable GET seam.
-  - `LyricsTests.swift` (14 tests) and `LyricsProviderTests.swift`
-    (10 tests): parsing, timestamp forms, tags, offset, sorting, active
-    line / next line / progress, the lrclib request shape and headers,
-    404 → `LyricsError.notFound`, 503 → retry then
-    `LyricsError.serviceBusy`, malformed body → `.malformedResponse`,
-    and the translation client (translated / already-English / failure).
+- **Unit A — logging + crash capture + Diagnostics screen.** The app had
+  zero logging (grep: no `Logger`/`print`/`NSLog` anywhere), so a device
+  crash left nothing to paste.
+  - `Amphora/Support/AppLog.swift` (new): `os.Logger` per category
+    (subsystem `dev.personal.amphora`) + a 400-line in-memory ring
+    buffer + a disk mirror (`Application Support/Amphora/amphora.log`,
+    debounced 2 s flush) + a raw-memory tail for the crash handler.
+    Lines carry seconds-since-launch. **Redaction contract:** URLs are
+    logged scheme+host+path only — never the signed query; no tokens.
+  - `Amphora/Support/CrashReporter.swift` (new): signal handlers
+    (SIGABRT/ILL/SEGV/BUS/FPE/TRAP) write a header + log tail with
+    async-signal-safe calls only, then re-raise so iOS still records its
+    crash; `NSSetUncaughtExceptionHandler` records NSException name/
+    reason/stack (and marks the report so the following SIGABRT doesn't
+    overwrite it). The next launch reads `last-crash.txt` back before
+    resetting it.
+  - `Amphora/UI/DiagnosticsView.swift` (new): last crash + device info +
+    log, with Copy (clipboard) and Share. Opened from the **stethoscope
+    toolbar button on the Stations tab**. This is how the user pastes
+    what happened.
+  - Instrumented: `AppStore` (restore, station list, play, prefetch,
+    track start, errors), `PlayerService` (state transitions, item
+    failure, interruption/route, media-services reset), `NowPlayingService`
+    (track change, artwork applied), `AmphoraApp` (launch).
+- **Unit B — artwork robustness (`ArtworkCache` rework).** Primary crash
+  suspect: every artwork was decoded at full source size
+  (`UIImage(data:)`); Pandora song art can be far larger than any slot
+  shows it, the player holds several decoded copies at once (mini player,
+  full player, lock screen), and the spike right after pressing play fits
+  the "crashes within seconds" report in LiveContainer's tighter memory
+  budget.
+  - All decodes now go through ImageIO's thumbnail API capped at 1200 px
+    (`kCGImageSourceThumbnailMaxPixelSize`) — a bounded bitmap, never a
+    full-size one (disk reads included).
+  - Fetch tries **candidate URLs** in order: the normalized HTTPS form
+    first, then the raw URL as-is if distinct; every attempt is logged
+    (status/bytes/decoded size/failure) so "song artwork not showing"
+    becomes diagnosable from the log.
+  - `image(for:)` now takes the **raw URL string** and normalizes
+    internally; callers (`CachedArtwork`, `NowPlayingService`) simplified.
+- **Unit C — mini-player is now one instance** (`MainTabView`): replaced
+  the per-tab `safeAreaInset` (three `MiniPlayer` instances, each with
+  its own sheet state, torn down on every tab switch, stacked insets with
+  the station error banner) with **`tabViewBottomAccessory`** (iOS 18):
+  one player, system-laid-out above the tab bar on every tab.
 
-- **(previous push, `a7dbe49`)** artwork fixes (user report: player artwork
-  missing and re-fetched every time):
-  - `ArtworkCache`: the disk file name was the **base64 of the URL**, which
-    exceeds the file-system name limit for Pandora's long signed image
-    URLs (`?token=…`) — every write failed, so every appearance
-    re-downloaded. The name is now a SHA-256 digest of the URL.
-  - `ArtworkCache.normalizedURL(from:)`: Pandora's `albumArtUrl` values
-    are sometimes relative or plain `http://` (ATS blocks cleartext, so
-    those images silently failed). Scheme-less URLs get `https://`, `http`
-    is upgraded, and stray characters are percent-encoded.
-  - The fetch now sends `Accept: image/*` and a `User-Agent`.
-  - `NowPlayingService` now pulls lock-screen artwork from the shared
-    cache instead of downloading it a second time.
-
-- **(previous push, `a7dbe49`, units 2 and 3)** sleep timer actually fires
-  (user report: "the one at the bottom… is not doing anything"):
-  - `AppStore`: a **duration** timer only checked `hasExpired()` when it
-    was *set* — nothing re-checked it while playback ran, so a 15-minute
-    timer never stopped anything. A countdown task now polls the
-    deadline (every 30 s) and pauses playback when it passes.
-  - The timer is persisted in `Preferences` and restored on relaunch
-    (an expired one is discarded, a live one resumes counting down).
-  - `sleepTimerLabel` gives the UI a live "12 min left" string without
-    re-rendering every second.
-
-- **(previous push, `a7dbe49`, unit 3)** bookmark buttons confirm themselves
-  (user report: "I don't know if the bookmark and the artist buttons are
-  doing anything"): `AppStore.confirmationMessage` shows "Song
-  bookmarked" / "Artist bookmarked" in the player for three seconds after
-  a successful call; failures keep surfacing through the error banner.
-
-- **316b6c9** (2026-10-23): M6 unit 0 — mini-player no longer covers
-  the tab bar (user report): the mini-player was a `safeAreaInset` on
-  the `TabView` itself, which lays the inset out in the tab bar's own
-  region — the player covered the bar. It is now a `MiniPlayerInset`
-  view modifier applied to **each tab's content**, so it sits directly
-  above the tab bar on every tab. **Core Tests ✅ / iOS Build ✅**
-  (39954767059 / 39954767018).
-
-- **aa31c06** (2026-10-23): repair red iOS Build from M5 unit 4 —
-  `StationsView.swift:148` — `onMove`'s source is an `IndexSet`, not an
-  `Int`; take `source.first` and pass that to the intent. Core Tests was
-  already green on `f39c4b2` (39940148781); iOS Build re-verified on this
-  push.
-
-- **f39c4b2** (2026-10-23): M5 unit 4 — station ordering —
-  **Core Tests ✅** (39940148781), **iOS Build ❌** (39940148326 — the
-  `onMove` IndexSet error above):
-  - `StationOrder.swift` (new, PandoraCore): the user's station ordering
-    — an ordered id list applied to the server's list (unknown ids are
-    dropped, the rest keep the server order). `StationOrderTests`: 7
-    tests (empty order, stored-first, unknown ids, move, clamping,
-    unknown move, Codable round-trip).
-  - `PreferencesStore.swift` (new `Amphora/Persistence/`): one JSON file
-    (`Amphora/preferences.json`) for the non-secret preferences — station
-    order, last played station, sleep-timer preference. (Credentials stay
-    in the Keychain.)
-  - `AppStore`: the list order is now owned by the store (QuickMix first,
-    then the user's stored order, then A–Z with an id tiebreak);
-    `moveStation(from:to:)` persists the new order; the last played
-    station is remembered.
-  - `StationsView`: an "arrow.up.arrow.down" toolbar button toggles edit
-    mode so the user can drag stations into a new order.
-
-- **5174f10** (2026-10-23): M5 unit 3 — tab bar shell**:
-  - `MainTabView` (new `Amphora/UI/`): `TabView` with Stations /
-    Bookmarks / History tabs; the mini-player now lives here as a
-    `safeAreaInset` above the tab bar, so it stays visible on every tab
-    (AGENTS.md: "Persistent mini-player above the tab bar").
-  - `RootView`: the signed-in phase hosts `MainTabView`; the "More"
-    toolbar menu is gone (its two destinations are tabs now).
-  - `StationsView`: the inline mini-player was removed (it now lives in
-    the tab shell) — the error banner stays.
-
-- **f901ed9** (2026-10-23): M5 unit 2 — sleep timer**:
-  - `SleepTimer.swift` (new, PandoraCore): `SleepTimer` with `off` /
-    `duration` / `endOfTrack` modes, deadline math, remaining minutes and
-    a UI label. `SleepTimerTests`: 9 tests (expiry, countdown, clamping,
-    end-of-track, fired, off state, labels, Codable round-trip).
-  - `AppStore`: `setSleepTimer` / `cancelSleepTimer` intents; an
-    end-of-track timer pauses playback when the track changes; an expired
-    duration timer stops playback.
-  - `SleepTimerSheet` (new `Amphora/UI/`): 15/30/45/60/90 minutes,
-    "End of current track", cancel; opened from the Now Playing toolbar
-    (moon icon shows filled while a timer is set).
-
-- **391aae8** (2026-10-23): repair red iOS Build from M5 unit 1 —
-  **Core Tests ✅** (39936912918), **iOS Build ✅** (39936912923):
-  - `HistoryView` used `store.history.isEmpty` and `List(store.history)`,
-    but `PlayHistory` is a plain struct, not a collection. Fixed to
-    `store.history.entries` / `store.history.items`; `PlayHistory` also
-    grew `isEmpty`, `count` and `items` accessors.
-
-- **efcd062** (2026-10-23): M5 unit 1 — artwork cache**:
-  - `ArtworkCache.swift` (new `Amphora/Persistence/`): an actor with a
-    memory tier (NSCache of decoded images, 64 MB budget) and a disk tier
-    (raw bytes in Caches); concurrent requests for the same URL share one
-    in-flight fetch, so a list scroll never re-downloads artwork.
-  - `CachedArtwork.swift` (new `Amphora/UI/`): the view all artwork
-    slots use — placeholder while loading, fallback icon on failure, the
-    load is cancelled when the view disappears.
-  - `StationsView`, `MiniPlayer`, `BookmarksView`, `HistoryView`,
-    `NowPlayingView` now use the cached artwork instead of `AsyncImage`
-    (which re-fetched on every list render).
-
-- **c131620** (2026-10-23): M4 unit 3 — playback history ("recently
-  played")**:
-  - `HistoryStore.swift` (new, PandoraCore): `PlayHistory` — a bounded
-    (100 entries), newest-first list of plays; a repeated track moves to
-    the front instead of duplicating; `Codable` for disk persistence.
-    `PlayHistoryTests`: 5 tests (order, de-dup, capacity, metadata,
-    Codable round-trip).
-  - `Amphora/Persistence/HistoryStore.swift` (new): JSON file in
-    Application Support (`Amphora/history.json`); missing/unreadable file
-    ⇒ empty history, saves are best-effort.
-  - `AppStore`: loads the history at launch and records every track the
-    player starts.
-  - `HistoryView` (new `Amphora/UI/`): recently-played list with artwork,
-    artist caption and relative time.
-  - `RootView`: a "More" menu in the toolbar (Bookmarks / Recently Played).
-
-- **39746b8** (2026-10-23): M4 unit 2 — feedback + bookmarks UI**
-  (app target):
-  - `AppStore`: `rateCurrentTrack` / `removeCurrentRating` /
-    `sleepCurrentTrack` / `bookmarkCurrentSong` /
-    `bookmarkCurrentArtist` / `refreshBookmarks` / `deleteBookmark`
-    intents; the current track's rating is tracked per track (the
-    `feedbackId` belongs to the song — pithos' `Song.rate` deletes the
-    old feedback before adding a new one); the rating is seeded from the
-    playlist entry's `songRating`.
-  - `PlayerService.onTrackChanged` / `onPlaybackStateChanged` are now
-    **lists** of observers (the now-playing service and the store both
-    subscribe — neither may overwrite the other).
-  - `FeedbackBar` (new): thumbs up / thumbs down / hide-this-song; the
-    active rating is highlighted and tapping it again removes the rating.
-  - `BookmarksView` (new): song + artist bookmark lists with delete,
-    pull-to-refresh; reachable from the toolbar bookmark icon.
-  - `NowPlayingView`: feedback bar + bookmark song/artist buttons.
-
-- **ed4b9bc** (2026-10-23): M4 unit 1 — feedback + bookmarks core —
-  **Core Tests ✅** (39934322752), **iOS Build ✅** (39934322742):
-  - `Feedback.swift` (new): `FeedbackRating` (loved/banned/none),
-    `FeedbackReceipt` (the `feedbackId` needed to undo a rating),
-    `Bookmark` (song/artist bookmarks with `bookmarkToken`, `musicToken`,
-    artist/song/album names, art, `dateCreated`).
-  - `SessionManager`: `addFeedback` (`station.addFeedback` with
-    `trackToken` + `stationToken` + `isPositive`), `deleteFeedback`
-    (`station.deleteFeedback`), `sleepSong` (`user.sleepSong`),
-    `getBookmarks` (`user.getBookmarks`), `addSongBookmark` /
-    `addArtistBookmark` / `deleteSongBookmark` / `deleteArtistBookmark`.
-  - **Protocol note:** the legacy v5 API has **no "why"/reason parameter**
-    for dislikes in any reference (pithos, pydora, libpiano, PandoraSharp,
-    gopiano, volumio, sonos-http-api all send only `isPositive`). Amphora
-    therefore does not invent a reason field — the "why" reason list is
-    out of scope until a reference documents it.
-  - `FeedbackTests`: 8 tests (thumbs up/down request shape, missing
-    feedbackId → malformed, delete shape, sleep shape, bookmarks
-    decoding, malformed bookmark skip, add/delete bookmark endpoints).
-  - **Local Docker Swift 6.0.3 run: 93/93 tests green.**
-
-- **cefeb2f** (2026-10-23): repair red iOS Build from M3 unit 3 —
-  **Core Tests ✅** (39931996059), **iOS Build ✅** (39931995916):
-  - `MiniPlayer.swift` — `private var fallbackIcon: View` (an existential)
-    was passed to `AsyncImage`'s `placeholder:` closure, which needs a
-    concrete `View`. Fixed to `some View`. (Lesson: never type a SwiftUI
-    helper as bare `View` — use `some View`.)
-  - `AppStore.player` is now an explicitly initialized `let` so the
-    `NowPlayingService` wiring is unambiguous.
-
-- **f919e24** (2026-10-23): M3 unit 3 — Now Playing + remote commands —
-  **Core Tests ✅** (39931443915), **iOS Build ❌** (39931443965 — the
-  `fallbackIcon: View` error above):
-  - `NowPlayingService` (new `Amphora/Player/`): publishes title/artist/
-    album/duration/elapsed/rate to `MPNowPlayingInfoCenter`, loads lock-screen
-    artwork off the main actor, wires `MPRemoteCommandCenter` (play, pause,
-    toggle, next, ±15 s, scrub) to the player.
-  - `PlayerService`: `skipForward` / `skipBackward` / `seek`, plus
-    `onTrackChanged` / `onPlaybackStateChanged` hooks.
-  - `NowPlayingView` (new `Amphora/UI/`): artwork, title/artist/album,
-    scrubber with times, transport controls; opened from the mini-player.
-
-- **24d8464** (2026-10-23): M3 unit 2 — `PlayerService` + tap-to-play —
-  **Core Tests ✅** (39929262651), **iOS Build ❌** (39929262603 — the
-  same `fallbackIcon: View` error, repaired in `cefeb2f`):
-  - `PlayerService` (real implementation now): `AVQueuePlayer` with a
-    two-slot queue (current + prefetched next → near-gapless hand-over),
-    `AVAudioSession(.playback, .default)` activation, `preferredForwardBufferDuration
-    = 30`, periodic time observer (0.5s) for elapsed time, KVO on
-    `timeControlStatus` for play/pause/buffering state.
-  - Interruption / route-change / `mediaServicesWereReset` handling:
-    pause on interruption, resume when `.shouldResume`, re-activate the
-    session on route changes, rebuild the player + queue after a media
-    services reset.
-  - `AppStore`: `playStation` / `togglePlayback` / `skipToNext` intents,
-    `currentStation`, `isLoadingPlaylist`; `play` fetches the playlist,
-    starts the first playable track and prefetches the next; the player's
-    "queue running low" callback fetches the next playlist (pithos
-    preloads when one song remains) and queues only unseen tracks.
-  - `StationsView`: tapping a station plays it (tapping the playing
-    station toggles), "now playing" indicator on the active row.
-  - `MiniPlayer` (new): compact bar with artwork, title/artist, play/pause
-    and next, shown above the tab bar while something plays.
-
-- **396258c** (2026-10-23): M3 unit 1 — `station.getPlaylist` core —
-  **Core Tests ✅** (39927947866), **iOS Build ✅** (39927948033):
-  - `Playlist.swift` (new): `Track` (token, title, artist, album, artwork,
-    duration, station id, rating, gain, ad flag) + `AudioVariant`
-    (quality bucket, encoding, bitrate, URL) + `Playlist` (tracks + fetched
-    time, 1h validity per pithos `PLAYLIST_VALIDITY_TIME`).
-  - Quality selection mirrors both references: pithos' promotion rule —
-    the extra `HTTP_128_MP3` URL becomes the new `highQuality` when the
-    server's high quality is < 128 kbps (old high → `mediumQuality`),
-    otherwise the extra `HTTP_32_AACPLUS` becomes a `lowQuality` fallback;
-    pydora's `AudioField` — a bare `audioUrl` with no map is treated as
-    64 kbps aacplus high quality. Variants are ordered best-quality first.
-  - Entries without `songName` are dropped (pithos' filter); ads are kept
-    and flagged (`adToken` → `isAdvertisement`).
-  - `SessionManager.getPlaylist(for:)` — `station.getPlaylist` with pithos'
-    exact params (`stationToken`, `includeTrackLength: true`,
-    `additionalAudioUrl: 'HTTP_32_AACPLUS,HTTP_128_MP3'`).
-  - `PlaylistTests`: 10 tests (full entry, songName filter, non-object
-    entries, both promotion branches, bare URL, no-audio entry, variant
-    ordering, 1h expiry, request shape + encrypted-body asserts).
-  - **Local Docker Swift 6.0.3 run: 85/85 tests green** (the `swift:6.0`
-    image on this workstation — same toolchain as the CI Linux runner).
-
-- **71cbad7** (2026-10-23): M2 unit 6 — add-station sheet UI (search/create
-  intents, debounced `AddStationView`). Both workflows ✅ (39886272967 /
-  39886272956).
-
-- **b0f4526** (2026-10-23): **repair red music.search push** —
-  **Core Tests ✅** (39885481763), **iOS Build ✅** (39885481856):
-  - `ab4e887` (runs 39884553000 / 39884553004) **and** the QUEUE-only
-    follow-up `6641ace` (39884917062 / 39884916740): **both red, same
-    compile error in both workflows** — `MusicSearch.swift:67/71` passed
-    `AnyJSON` array elements where `artistOrSong` takes
-    `[String: AnyJSON]`. Fixed via `entry.objectValue.flatMap(…)`.
-    (Lesson: array elements are `AnyJSON`; unwrap with `objectValue`.)
-
-
-- `6641ace` (2026-10-23): QUEUE-only bookkeeping for the green
-  row-actions run.
-
-- **This push (2026-10-23): M2 unit 5 — `music.search` core**
-  (runs 39884553000/39884553004 queued at push; verify first next session):
-  - `MusicSearchResult` (new `MusicSearch.swift`): `kind`
-    (artist/song/genre), `score`, `musicToken`, `title`, `subtitle`;
-    `searchResults(from:)` mirrors pithos `Pandora.search()` — artist/song
-    kept at score ≥ 80, genreStations passed through, merged and sorted
-    score-desc with original merge order as tiebreak (pithos leans on
-    Python's stable sort); malformed entries dropped, not fatal.
-  - `SessionManager.search(_:)` — `music.search` with pithos' exact params
-    (`includeGenreStations`, `includeNearMatches`, `searchText`); new
-    `PandoraAPI.Method.musicSearch`.
-  - `MusicSearchTests`: 5 parsing tests (filter, tie stability, field
-    mapping, malformed-skip, empty) + request-shape test (restore path,
-    one call, NUL-trimmed body asserts).
-
-- `74472e0` (2026-10-23): **M2 unit 4 — station row actions UI** —
-  **Core Tests ✅** (39883344481), **iOS Build ✅** (39883344520).
-  - `AppStore`: `renameStation`/`deleteStation` intents →
-    `SessionManager` calls; rename trims + rejects empty, reloads list
-    for sort order; delete removes locally by id; `isMutatingStations`
-    guard against overlapping mutations; errors via `userMessage`.
-  - `StationsView`: long-press context menu (Rename / Delete — hidden for
-    quickmix + thumbprint, matching pithos' StationsDialog filter), rename
-    alert with text field, destructive confirm for delete, error banner
-    safe-area inset for post-load failures (M5 restyles).
-
-- `a6a6f59` (2026-10-23): repair Core Tests after CRUD core — covered
-  green by the `74472e0` run above:
-  - `797c2a0`: **iOS Build ✅** (39882133244), **Core Tests ❌**
-    (39882133242) — 5 failures, all `missing id field partnerId`: the new
-    CRUD tests scripted only the operation reply, but `login()` consumes
-    two responses first (partner + user). Prepended `partnerOK()` +
-    `userOK()` to all five fixtures; expected request counts already
-    assumed partner+user+op, so they now match.
-
-- `797c2a0` (2026-10-23): **M2 unit 3 — stations CRUD core** (PandoraCore).
-  - `SessionManager`: `createStation(musicToken:)` and
-    `createStation(trackToken:musicType:)` (pithos `add_station_by_music_id`
-    / `add_station_by_track_token`), `renameStation(_:to:)` — transforms a
-    shared station first (`station.transformSharedStation`, pithos
-    `transformIfShared`), no-op when the name is unchanged — and
-    `deleteStation(_:)` (list membership only, like pithos).
-    `Station(result:)` decodes the `createStation` reply (same wire shape
-    as list entries). New `PandoraAPI.Method` constants.
-  - 5 new tests: create×2 (params asserted in decrypted bodies, NUL-trimmed
-    helper), rename shared→transform-then-rename ordering, personal skip +
-    same-name no-op, delete token.
-
-- `46276e4` (2026-10-23): **M2 unit 2 — stations list UI** (runs 39882019409
-  / 39882019499 in flight at this push; verify first next session):
-  - `AppStore`: `stations` / `isLoadingStations` state, `refreshStations`
-    intent (guarded against concurrent loads); auto-refresh after login
-    success and after warm-launch restore; error kept only when the list
-    is empty (keeps a loaded list usable on background refetch failure).
-  - `StationsView` (new `Amphora/UI/`): plain `List` + `refreshable`
-    pull-to-refresh; rows = 52pt artwork (`AsyncImage`, URLCache until the
-    dedicated cache lands in M6) + name + badges (QuickMix shuffle icon /
-    "Quick mix", "Thumbprint station", shared `person.2` icon);
-    44pt rows, combined VoiceOver elements. Sorting: QuickMix pinned first,
-    then case-insensitive name, id tiebreak (stable across reloads).
-    Empty (`ContentUnavailableView`), loading, and error+Retry states.
-  - `RootView`: signed-in phase now hosts `NavigationStack { StationsView() }`
-    (placeholder removed).
-
-- `7b602fe` (2026-10-23): repair Core Tests after station-list core —
-  **Core Tests ✅** (39881169360), **iOS Build ✅** (39881169362). Cause:
-  `StationTests` fixture assembled from split string literals had a doubled
-  comma → undecodable envelope; now one literal.
-
-- `10abb9c` (2026-10-23): **M2 unit 1 — station list core**. PandoraCore
-  only:
-  - `Station`/`StationList` models (`Station.swift`): wire keys from
-    pithos `Station.__init__` (required: `stationId`, `stationToken`,
-    `stationName`, `isShared`, `isQuickMix`, `quickMixStationIds`) +
-    pydora's optional set (`artUrl`, `isThumbprint`, `isGenreStation`,
-    allow* flags, `checksum`). String-or-number ids; sparse/minimal
-    stations decode with defaults; `Identifiable` for SwiftUI.
-  - `SessionManager.getStationList()` — `user.getStationList` with
-    `returnAllStations=true` (pithos `get_stations`) +
-    `includeStationArtUrl=true` (pydora), via `authenticatedRequest`
-    (1001 retry-once applies). New `PandoraAPI.Method.getStationList`.
-  - Tests: 4 StationTests (full/minimal/quickmix ids/typed error) +
-    2 SessionManagerTests (params+encrypted-body assert with NUL-trim;
-    1001 re-auth replay) + requires-session.
-
-- `4ebb29e` (2026-10-23): **M1 SessionRecord store tests** —
-  **Core Tests ✅** (39877281790), **iOS Build ✅** (39877281785).
-
-- `fcbb245` (2026-10-23): **M1 login screen** — **Core Tests ✅**
-  (39876459087), **iOS Build ✅** (39876459009).
-  - `KeychainSessionStore` (`Amphora/Persistence/`): `SessionStore` conformance
-    over the existing `KeychainStore` — JSON-encodes `SessionRecord`, missing
-    or undecodable item ⇒ `nil` (fail closed to login screen).
-  - `AppStore`: `AuthPhase` (restoring/signedOut/signingIn/signedIn),
-    intents `restoreSession` / `login` / `dismissError`; login runs
-    `SessionManager.login` off the UI's control flow (Task), maps typed
-    PandoraCore errors (PandoraAPIError copy, transport, malformed,
-    SessionManagerError) to short safe strings — no credentials/tokens in
-    messages. Idempotent warm-launch `restoreSession` (zero network).
-  - `LoginView` (new `Amphora/UI/`): email + password, focus chain,
-    submit-on-return, in-flight spinner + disabled button, error text,
-    44pt target, VoiceOver labels. No networking in the view — intents only.
-  - `RootView`: switches on `authPhase` (restoring spinner → LoginView →
-    signed-in placeholder for M2 station list); fires `restoreSession`
-    once via `.task`.
-
-## Current Milestone
-
-**M5** — UI/design pass (see top of file).
+**(previous push, `03648ae`/`c658c40`):** handover bookkeeping; both
+workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
+`GoogleTranslateClient`, 24 tests — **nothing calls it yet**.
 
 ## Pending Queue
 
-1. Verify the last push green (Core Tests + iOS Build). Repair first if
-   red. (The iOS Build was red on `a7dbe49`/`5ef40ab` — a static-member
-   call in `ArtworkCache` — repaired in `03e89ff`; check that push.)
-2. **Lyrics unit B (app target)** — wire `LRCLibClient` into `AppStore`
-   (fetch when a track starts, cache by track token), then a
-   time-synced lyric panel in the Now Playing screen: scroll the lines,
-   highlight the active one, tap a line to seek. The core parser and
-   clients already exist (`PandoraCore/Lyrics.swift`,
-   `PandoraCore/LyricsProvider.swift`) — only the UI and the store
-   plumbing are missing.
-3. **Lyrics unit C (translation)** — `GoogleTranslateClient` is written
-   but **not yet used**: the app must call it when the detected source
-   language is not English and put the English line next to the
-   original. The client returns `nil` for English lyrics, so the app
-   can simply show the original when that happens.
-4. **App icon** — an "Amphora" icon (the app target has no asset catalog
-   today; `project.yml` sets `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
-5. **Beautify pass** — theme, typography, gradients, polished stations /
-   now-playing screens.
-6. **M6 unit — session-expiry surfacing** ("session expired, signed back
-   in") and **ad handling** (`ad.getAdMetadata` / `ad.registerAd`, per
-   pydora — see the protocol notes below).
-7. **User device test** of the newest IPA: play a station, artwork,
-   lock-screen metadata, thumbs up/down, skip, backgrounding, bookmarks,
-   sleep timer, station reorder, mini-player above the tab bar, lyrics.
+1. Verify this push green (Core Tests + iOS Build). Repair first if red.
+2. **Lyrics unit B (app target)** — wire the core in: `AppStore` gains
+   `lyrics` state + a fetch keyed by `track.trackToken` (run from the
+   track-changed path, cached per track, `LRCLibClient` with the 503
+   retry), then a `LyricsPanel` in `NowPlayingView`: scroll `lyrics.lines`,
+   highlight `lyrics.activeLine(at: store.player.elapsed)`, tap a line to
+   seek. Core API: `PandoraCore/Lyrics.swift`, `PandoraCore/LyricsProvider.swift`.
+3. **Lyrics unit C (translation)** — call `GoogleTranslateClient.englishTranslation(of:)`
+   when the detected source language is not English; it returns `nil` for
+   English → show the original only. Fill `LyricLine.translation`.
+4. **User device test of this push's IPA** — the critical one: play a
+   station for >30 s (crash?), song artwork in mini player + full player,
+   tab switching with the mini player, then **open Diagnostics
+   (stethoscope, Stations toolbar) → Copy → paste the log** if anything
+   is still wrong. If the app crashed and relaunched, the "Last crash"
+   section is already filled in.
+5. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
+6. Beautify pass (theme, typography, gradients).
+7. Session-expiry surfacing + ad handling (protocol notes at the bottom).
 
-**FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
-red on this push, read the failure summary annotation and repair before
-any new unit.
+**FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
+failure summary annotation and repair before any new unit.
 
-## Session handover (2026-10-23, end of session)
+## Session handover (2026-10-23, second session)
 
-**State:** everything pushed is green — `Core Tests` ✅ and `iOS Build` ✅
-on `c658c40` (39976680787 / 39976680878). The working tree is clean.
-Local Docker test loop: `cd PandoraCore && docker run --rm -v "$PWD":/src
--w /src swift:6.0 swift test` → **138/138 green**.
+**State:** units A–C pushed on this session's last commit; local checks
+green before push: `swiftc -parse` clean over the whole app target,
+PandoraCore **138/138** in Docker (`swift:6.0`). Working tree clean.
 
-**What landed this session (all pushed):**
+**Why the crash is (probably) artwork memory — reasoning chain:**
+station thumbnails and history artwork work (small slots, same URL
+class); song artwork "not showing" but one appeared right before the
+crash; crash is seconds after playback starts — i.e. when the current
+track's artwork finishes downloading and several consumers decode it at
+full size simultaneously. Unit B removes the full-size decode entirely
+and Unit A makes the next failure (if it is something else) pasteable.
+**Do not assume it is fixed** — the device test in Pending Queue item 4
+decides.
 
-| commit | what |
-|---|---|
-| `316b6c9` | mini-player no longer covers the tab bar (`MiniPlayerInset` per tab content) |
-| `a7dbe49` | artwork caching fixed (SHA-256 file names, HTTPS upgrade), sleep timer really fires + survives relaunch, bookmark buttons confirm |
-| `5ef40ab` | lyrics core: LRC parser, `LRCLibClient`, `GoogleTranslateClient`, 24 new tests |
-| `03e89ff` | repair the red iOS Build (`Self.imageCost`) |
-| `b2caad9`, `c658c40` | QUEUE bookkeeping |
+**Not done yet:** lyrics UI (items 2–3 above), app icon, beautify pass,
+session-expiry surfacing, ad handling.
 
-**What is NOT done yet** (see Pending Queue above for the detail):
+**Traps that cost cycles before (still apply):**
 
-1. **Lyrics UI** — the core exists but nothing calls it. Next agent:
-   add `lyrics` state + `fetchLyrics` to `AppStore` (keyed by
-   `track.trackToken`, fetched in `player.onTrackChanged`), a
-   `LyricsPanel` view in `NowPlayingView` that scrolls `lyrics.lines`,
-   highlights `lyrics.activeLine(at: store.player.elapsed)` and seeks on
-   tap, plus the translation call (`GoogleTranslateClient.
-   englishTranslation(of:)` returns `nil` for English lyrics → show the
-   original only). `LyricLine.translation` is already the field to fill.
-2. **App icon** — no asset catalog exists yet; `project.yml` has
-   `ASSETCATALOG_COMPILER_APPICON_NAME: ""`. Create
-   `Amphora/Resources/Assets.xcassets/AppIcon.appiconset` with a
-   1024×1024 "Amphora" icon and set the setting to `AppIcon`.
-3. **Beautify pass** — theme, typography, gradients, polished stations /
-   now-playing screens. `Color.primaryBackground` (the dark colour) is
-   defined in `Amphora/App/RootView.swift`; the rest of the app uses
-   system colours and `.quaternary`/`thinMaterial` surfaces.
-4. **Session-expiry surfacing** and **ad handling** — see the protocol
-   notes at the bottom of this file.
-
-**Traps worth remembering from this session:**
-
-- A static member called from inside its own type needs an explicit
-  `Self.` — `imageCost(image)` inside `ArtworkCache` failed to compile
-  (`static member 'imageCost' cannot be used on instance of type`).
-  `swiftc -parse` does **not** catch this (it only parses); the Docker
-  test loop only covers PandoraCore, so app-target type errors surface
-  on CI only.
-- The artwork disk cache used the **base64 of the URL** as the file name.
-  Pandora's signed image URLs are long enough to exceed the file-system
-  name limit, so every write silently failed and every appearance
-  re-downloaded. Use a digest.
-- Pandora's `albumArtUrl` values can be plain `http://` (ATS blocks
-  cleartext → the image silently fails) or scheme-less. Normalize before
-  caching.
-- lrclib answers **503** when busy — retry, don't show an error.
-- The `[offset:]` LRC tag is in milliseconds and shifts lyrics
-  **earlier** for a positive value.
+- App-target type errors only surface on CI — `swiftc -parse` catches
+  syntax only. Keep app-target changes small and idiomatic (`some View`,
+  never bare `View`; explicit `Self.` for static members called from
+  instance context).
+- Swift 6: extract notification payload values before hopping to
+  `@MainActor`; `@Observable` callback properties are arrays and use
+  `.append`; NSLock only inside sync helpers.
+- PandoraCore must stay Linux-buildable: **no `os`/`AppLog` in the core
+  package** — logging lives in the app target only.
+- Never log URLs with their query (signed tokens) — `AppLog.redactedURL`.
+- lrclib answers **503** when busy — retry, don't error.
+- The `[offset:]` LRC tag is milliseconds, shifts lyrics earlier for
+  positive values.
 
 ## Milestones
 
 - [x] **M0** — skeleton, green CI
-- [x] **M1** — auth (partner login, Blowfish, user login, Keychain, auto-login)
-      — confirmed signed-in on device 2026-10-23
-- [x] **M2** — stations (fetch/list/create/rename/delete + list UI)
-      — confirmed on device 2026-10-23 ("everything so far works")
-- [x] **M3** — playback (playlist, AVPlayer, background audio, Now Playing,
-      remote commands, prefetch) — code complete, user device check pending
-- [x] **M4** — feedback & bookmarks (+ playback history) — code complete,
-      user device check pending
-- [ ] **M5** — UI/design pass (artwork cache, sleep timer, tab-bar shell,
-      station ordering landed; **beautify pass + app icon remain**)
+- [x] **M1** — auth — confirmed on device 2026-10-23
+- [x] **M2** — stations — confirmed on device 2026-10-23
+- [x] **M3** — playback — code complete, device check pending
+- [x] **M4** — feedback & bookmarks (+ history) — code complete, device
+      check pending
+- [x] **M5** — UI/design pass (artwork cache, sleep timer, tab shell,
+      station ordering, mini-player shell) — device check pending
 - [ ] **M6** — performance & robustness (lyrics core landed; lyrics UI,
-      session-expiry surfacing, ad handling remain)
+      session-expiry surfacing, ad handling remain; crash triage in
+      progress this session)
 
-## Completed Units
+## Completed Units (condensed; full detail in git log)
 
-- **M0 repo skeleton** — commit `1ec069e`: Amphora app target (AppStore,
-  PlayerService, KeychainStore skeletons), PandoraCore package
-  (`PandoraAPI` + `PandoraAPIClient`), `project.yml`, both CI workflows,
-  `QUEUE.md`, README, `.gitignore`. Both workflows green on first run.
-- **M1 constants** — commit `890933c`: partner password corrected,
-  `encryptKey`/`decryptKey` added from `pithos/pandora/data.py`.
-- **M1 crypto** — commit `a852955`: Blowfish-ECB + known-answer vectors;
-  Core Tests 39816015922 ✅, iOS Build 39816015943 ✅.
-- **M1 URLBuilder** — commit `61027a1`: sorted-key JSON bodies, pithos
-  query order, syncTime/token injection, per-method encrypt flag.
-  Initially red (static-member escape call); repaired in this push.
-- **M1 partner transport** — `c239d0f`: typed errors, envelope decoding,
-  `LegacyPandoraClient` with mock-transport tests; workflow failure
-  summaries + pipefail fix. Repaired by `dd0c0d5` (bash shell + AnyJSON
-  Codable); that push's own Core Tests red (URLSession/Linux) repaired by
-  the SessionManager push.
-- **M1 SessionManager** — `6139d4c`: actor with pithos-connect flow,
-  `restore()`, 1001 retry-once, `SessionStore`/`InMemorySessionStore`,
-  12 tests, syncTime fixtures. iOS Build ✅; Core Tests red (NSLock-noasync
-  in MockTransport) — repaired by `a48f70e`.
-- **Core Tests repair** — `a48f70e`: locked MockTransport work moved into a
-  sync helper (Swift 6 `noasync` NSLock). Then 2 assertion failures →
-  `83af041`: NUL-trim the decrypted-body assert (per-chunk pad survives);
-  assert `baseURL.absoluteString` (`URL.path` drops the trailing slash on
-  Linux Foundation). Both workflows green after `83af041`.
-- **IPA packaging fix** — `4dd1fbf` (user report): zip `Payload` from the
-  workspace root so the archive contains `Payload/Amphora.app/…`.
-  Verified on artifact `amphora-ipa-10`; both workflows green.
-- **M1 login screen** — `fcbb245`: `KeychainSessionStore`, `AppStore`
-  auth phases/intents, `LoginView`, warm-launch restore. Both ✅;
-  user signed in on device.
-- **M1 SessionRecord tests** — `4ebb29e`: Codable round-trip, fixed-JSON
-  fixture (guards stored-session compat), InMemory save/load/clear.
-  Both ✅.
+- **M0** `1ec069e` skeleton; **M1** crypto/URL/session/login
+  (`890933c`…`4ebb29e`); **M2** stations core+UI+CRUD+search
+  (`10abb9c`…`74472e0`); **M3** playlist core, `PlayerService`, Now
+  Playing + remote commands (`396258c`…`cefeb2f`); **M4** feedback/
+  bookmarks core+UI, history (`ed4b9bc`…`c131620`); **M5** artwork cache,
+  sleep timer, tab shell, station ordering, mini-player placement
+  (`efcd062`…`f39c4b2`); **M6** fixes (mini-player/tab bar `316b6c9`,
+  artwork cache/sleep timer/bookmarks `a7dbe49` + repair `03e89ff`),
+  lyrics core `5ef40ab`.
+- **This session:** units A–C above (logging/crash capture/Diagnostics,
+  artwork bounded decode + candidates + logging, single mini-player
+  accessory).
 
 ## Protocol Notes (reference-verified)
 
-- Request encryption: zero-pad each partial 8-byte chunk (aligned inputs gain
-  no extra block) → Blowfish-ECB with `encryptKey` → hex string. Applied to
-  the JSON request body (`pithos.pandora.json_call`, `blowfish=True`).
+- Request encryption: zero-pad each partial 8-byte chunk → Blowfish-ECB
+  with `encryptKey` → hex (`pithos.pandora.json_call`, `blowfish=True`).
   Not PKCS — trailing zeros are never stripped on decrypt.
-- `syncTime` in `auth.partnerLogin` response is hex-encoded ciphertext;
-  decrypt with `decryptKey`, strip padding, take bytes `[4:14]` as the
-  10-digit Pandora timestamp; `time_offset = pandora_time - now`.
+- `syncTime` in `auth.partnerLogin` is hex ciphertext; decrypt with
+  `decryptKey`, strip padding, bytes `[4:14]` are the 10-digit Pandora
+  timestamp; `time_offset = pandora_time - now`.
 - `auth.userLogin` body: `username`, `password`, `loginType: "user"`,
-  `returnIsSubscriber: true` — encrypted; also carries `partnerAuthToken`
-  or `userAuthToken` when present, plus `syncTime`.
-- **Skip limits are NOT exposed as a numeric field by any reference.**
-  Checked pithos, pydora, libpiano (`nx-mod/libpiano-nx`), gopiano
-  (`unclesp1d3r/gopiano`), PandoraSharp (`adammhaile/Elpis`) and
-  sonos-http-api: none of them read a "remaining skips" value. The only
-  signal found is PandoraSharp's handling of two **server-side fault
-  messages** on `station.getPlaylist` — `PLAYLIST_END` and
-  `DAILY_SKIP_LIMIT_REACHED` (Elpis `Station.cs:232`). Neither pithos nor
-  pydora handles them. → Implement as error-message detection, not a
-  numeric counter. (Note: libpiano names code 1039
-  `PIANO_RET_P_RATE_LIMIT`; pithos calls the same code
-  `PLAYLIST_EXCEEDED` — they are the "too many playlist requests" rate
-  limit, *not* the skip limit.)
-- **Explicit content is an account-level filter, not a per-item flag.**
-  pithos reads `user.getSettings` → `isExplicitContentFilterEnabled` /
-  `isExplicitContentFilterPINProtected` and toggles it with
-  `user.setExplicitContentFilter` (`pithos/pandora/pandora.py:310-327`);
-  libpiano parses the same `isExplicitContentFilterEnabled`
-  (`source/response.c:585`). No reference reads an explicit flag on a
-  station or a playlist item — the filter is applied server-side, so
-  explicit tracks simply do not arrive when it is on. → An
-  explicit-content badge has no protocol source; it stays out of scope
-  unless a reference documents a per-item field.
-- **Station allow\* flags** (pydora `pandora/models/station.py:50-59`):
-  `allowAddMusic`, `allowDelete`, `allowRename`, `allowEditDescription`,
-  `processSkips`, plus `isShared` / `isQuickMix` / `isGenreStation` /
-  `isThumbprint`. Amphora currently hard-codes the pithos rule
-  (quickmix + thumbprint are not renameable/deletable) rather than
-  reading `allowRename` / `allowDelete` — a possible M6 refinement.
-- **Ads**: a playlist entry with an `adToken` is an ad (pydora
-  `PlaylistItem.is_ad`). pydora resolves it with `ad.getAdMetadata`
-  (`adToken`, `returnAdTrackingTokens: true`, `supportAudioAds: true`)
-  and registers it with `ad.registerAd` (`stationId`,
-  `adTrackingTokens`) before playback; pithos only labels it
-  ("Commercial Advertisement"). Amphora currently keeps ads in the
-  playlist and flags them (`Track.isAdvertisement`) but neither resolves
-  nor registers them.
+  `returnIsSubscriber: true` — encrypted; carries the partner/user auth
+  token when present, plus `syncTime`.
+- **Skip limits are NOT exposed as a numeric field by any reference**
+  (pithos, pydora, libpiano, gopiano, PandoraSharp, sonos-http-api).
+  Implement as server-fault detection on `station.getPlaylist`
+  (`PLAYLIST_END`, `DAILY_SKIP_LIMIT_REACHED` — Elpis `Station.cs:232`).
+- **Explicit content is an account-level filter** (`user.getSettings` →
+  `isExplicitContentFilterEnabled`), not a per-item flag — a badge has no
+  protocol source.
+- **Ads**: an entry with `adToken` is an ad (pydora `is_ad`); resolution
+  is `ad.getAdMetadata` + `ad.registerAd` (pydora). Amphora keeps ads in
+  the playlist and flags them; neither resolves nor registers yet.
+- Station `allow*` flags exist on the wire (pydora); Amphora hard-codes
+  the pithos rule (quickmix/thumbprint not renameable/deletable).

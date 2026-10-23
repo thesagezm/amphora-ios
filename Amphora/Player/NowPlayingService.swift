@@ -60,18 +60,24 @@ final class NowPlayingService {
     /// `Data` crosses the boundary so the Swift 6 concurrency rules stay
     /// satisfied.
     private func loadArtwork(for track: Track) {
-        guard let urlString = track.artworkUrl,
-              let url = ArtworkCache.normalizedURL(from: urlString) else { return }
+        guard let urlString = track.artworkUrl else {
+            AppLog.debug("lock screen: track has no artwork URL", .playback)
+            return
+        }
         artworkTask?.cancel()
         artworkTask = Task { [weak self] in
-            let image = await ArtworkCache.shared.image(for: url)
+            let image = await ArtworkCache.shared.image(for: urlString)
             guard !Task.isCancelled else { return }
             self?.applyArtwork(image)
         }
     }
 
     private func applyArtwork(_ image: UIImage?) {
-        guard let image else { return }
+        guard let image else {
+            AppLog.debug("lock screen: artwork unavailable", .playback)
+            return
+        }
+        AppLog.info("lock screen artwork applied (\(Int(image.size.width))×\(Int(image.size.height)))", .playback)
         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyArtwork] = artwork

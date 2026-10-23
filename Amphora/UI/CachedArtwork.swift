@@ -31,14 +31,14 @@ struct CachedArtwork: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .task(id: urlString) {
-            // Pandora artwork URLs are not always absolute and are
-            // sometimes plain HTTP (blocked by ATS) — normalize them
-            // before the cache sees them.
-            guard let url = urlString.flatMap(ArtworkCache.normalizedURL(from:)) else {
+            // The cache normalizes the raw URL (Pandora's artwork URLs
+            // are not always absolute and are sometimes plain HTTP) and
+            // tries fallback candidates itself.
+            guard let urlString else {
                 didFail = true
                 return
             }
-            let loaded = await ArtworkCache.shared.image(for: url)
+            let loaded = await ArtworkCache.shared.image(for: urlString)
             guard !Task.isCancelled else { return }
             if let loaded {
                 image = loaded

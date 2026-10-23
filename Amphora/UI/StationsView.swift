@@ -13,6 +13,7 @@ struct StationsView: View {
     @State private var deleteTarget: Station?
     @State private var isAddingStation = false
     @State private var isEditingOrder = false
+    @State private var isShowingDiagnostics = false
 
     var body: some View {
         Group {
@@ -30,6 +31,14 @@ struct StationsView: View {
         }
         .navigationTitle("Stations")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    isShowingDiagnostics = true
+                } label: {
+                    Image(systemName: "stethoscope")
+                }
+                .accessibilityLabel("Diagnostics and logs")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     isAddingStation = true
@@ -50,6 +59,9 @@ struct StationsView: View {
         .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
         .sheet(isPresented: $isAddingStation) {
             AddStationView()
+        }
+        .sheet(isPresented: $isShowingDiagnostics) {
+            DiagnosticsView()
         }
         .alert("Rename Station", isPresented: renameBinding) {
             TextField("Station name", text: $renameText)

@@ -1,8 +1,9 @@
 import PandoraCore
 import SwiftUI
 
-/// Compact player bar shown above the tab bar while something plays.
-/// Shows the current track, a play/pause button and a skip button.
+/// Compact player bar shown by the tab shell's bottom accessory, above
+/// the tab bar while something plays. Shows the current track, a
+/// play/pause button and a skip button.
 struct MiniPlayer: View {
     @Environment(AppStore.self) private var store
 
@@ -51,11 +52,8 @@ struct MiniPlayer: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Next track")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .padding(.horizontal, 12)
-        .padding(.bottom, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .sheet(isPresented: $isShowingNowPlaying) {
             NowPlayingView()
         }
@@ -66,3 +64,4 @@ struct MiniPlayer: View {
             .frame(width: 40, height: 40)
     }
 }
+

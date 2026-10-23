@@ -10,13 +10,20 @@
 //  one fetch and one decode. Callers get a `UIImage` back; SwiftUI views
 //  render it directly — no `AsyncImage` re-download per list render.
 //
-//  Two details matter for real Pandora artwork URLs:
+//  Three details matter for real Pandora artwork URLs:
 //
-//  - **Plain HTTP is upgraded to HTTPS.** Pandora's playlist entries carry
-//    `albumArtUrl` values that are sometimes `http://` (pithos' own mock
-//    API uses `http://…` too). iOS blocks cleartext HTTP by default (ATS),
-//    so those images would silently fail to load *and* never be cached.
-//    Upgrading the scheme lets the same host serve over TLS.
+//  - **Decoding is bounded.** Song (`albumArtUrl`) and station art can be
+//    served far larger than any slot shows them. Decoding at full size
+//    built one multi-megabyte bitmap per consumer (mini player, full
+//    player, lock screen, history rows) — on a device that memory spike
+//    right after playback starts was enough to get the process killed.
+//    Every image is decoded straight to a capped pixel size with ImageIO;
+//    no full-size bitmap is ever built.
+//  - **Plain HTTP is upgraded to HTTPS, with a fallback.** Pandora's
+//    artwork URLs are sometimes `http://` (ATS blocks cleartext) or
+//    scheme-less. The normalized HTTPS URL is tried first; if it fails,
+//    the raw URL is tried as-is. Every attempt is logged with the HTTP
+//    status so a missing artwork is diagnosable from the log.
 //  - **Disk file names are a SHA-256 digest**, not the base64 URL. A raw
 //    base64 name can exceed the file-system name limit for long signed
 //    image URLs (Amazon URLs carry a long `?token=`), which made every
@@ -25,12 +32,18 @@
 
 import CryptoKit
 import Foundation
+import ImageIO
 import UIKit
 
 /// Two-tier artwork cache: an in-memory NSCache of decoded images plus a
 /// disk cache of the raw bytes.
 actor ArtworkCache {
     static let shared = ArtworkCache()
+
+    /// Cap on the decoded image's larger dimension. The full player shows
+    /// artwork at up to ~400 pt (1200 px at 3×) — everything above that is
+    /// waste.
+    private static let maxPixelSize: CGFloat = 1200
 
     /// Decoded images, keyed by URL string. NSCache evicts under pressure
     /// — the disk tier still has the bytes, so a re-decode is cheap.
@@ -55,12 +68,18 @@ actor ArtworkCache {
         }
     }
 
-    /// Returns the cached image for `url`, fetching it if needed.
-    /// `nil` when the artwork cannot be loaded — callers fall back to a
-    /// placeholder.
-    func image(for url: URL) async -> UIImage? {
-        let request = Self.upgradedToHTTPS(url)
-        let key = request.absoluteString
+    /// Returns the cached image for a raw artwork URL (Pandora's
+    /// `albumArtUrl` / `artUrl` strings — normalization and fallback
+    /// candidates are handled here). `nil` when the artwork cannot be
+    /// loaded; callers fall back to a placeholder.
+    func image(for rawArtworkURL: String) async -> UIImage? {
+        let candidates = Self.candidateURLs(for: rawArtworkURL)
+        // Key on the first (normalized) candidate so every consumer of
+        // the same artwork shares one memory/disk/in-flight entry.
+        guard let key = candidates.first?.absoluteString else {
+            AppLog.debug("artwork URL unusable: \(rawArtworkURL.prefix(48))…", .artwork)
+            return nil
+        }
 
         if let cached = memory.object(forKey: key as NSString) {
             return cached
@@ -74,11 +93,10 @@ actor ArtworkCache {
             return await task.value
         }
 
-        // The task runs on the cooperative pool (the actor's executor),
-        // never on the main thread; the download suspends the actor while
-        // it waits.
+        // The task runs on the actor; the download suspends it while it
+        // waits, so other requests keep flowing.
         let task = Task<UIImage?, Never> { [directory] in
-            guard let (image, data) = await Self.fetchImage(from: request) else { return nil }
+            guard let (image, data) = await Self.fetchImage(from: candidates) else { return nil }
             Self.writeToDisk(data: data, key: key, directory: directory)
             return image
         }
@@ -91,22 +109,85 @@ actor ArtworkCache {
         return image
     }
 
-    /// Downloads and decodes one image. A `User-Agent` is sent because
-    /// some artwork CDNs reject requests without one, and the response
-    /// is only accepted when it is a successful HTTP reply with image
-    /// bytes.
-    private static func fetchImage(from url: URL) async -> (UIImage, Data)? {
-        var request = URLRequest(url: url)
-        request.setValue("image/*", forHTTPHeaderField: "Accept")
-        request.setValue("Amphora", forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
-              let image = UIImage(data: data) else { return nil }
-        return (image, data)
+    /// Downloads and decodes one image, trying each candidate URL in
+    /// order. A `User-Agent` is sent because some artwork CDNs reject
+    /// requests without one.
+    private static func fetchImage(from candidates: [URL]) async -> (UIImage, Data)? {
+        for url in candidates {
+            if Task.isCancelled { return nil }
+            var request = URLRequest(url: url)
+            request.setValue("image/*", forHTTPHeaderField: "Accept")
+            request.setValue("Amphora", forHTTPHeaderField: "User-Agent")
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else { continue }
+                guard (200..<300).contains(http.statusCode) else {
+                    AppLog.debug(
+                        "artwork HTTP \(http.statusCode) from \(AppLog.redactedURL(url))",
+                        .artwork
+                    )
+                    continue
+                }
+                if let image = decodedImage(from: data) {
+                    AppLog.info(
+                        "artwork ok: \(AppLog.redactedURL(url)) "
+                            + "(\(data.count) bytes → \(Int(image.size.width))×\(Int(image.size.height)))",
+                        .artwork
+                    )
+                    return (image, data)
+                }
+                AppLog.debug(
+                    "artwork did not decode from \(AppLog.redactedURL(url)) (\(data.count) bytes)",
+                    .artwork
+                )
+            } catch {
+                if Task.isCancelled { return nil }
+                AppLog.debug(
+                    "artwork fetch failed from \(AppLog.redactedURL(url)): \(String(describing: error))",
+                    .artwork
+                )
+            }
+        }
+        AppLog.error("artwork unavailable from \(candidates.count) URL candidate(s)", .artwork)
+        return nil
+    }
+
+    /// Decodes image data at a bounded pixel size (ImageIO thumbnail
+    /// path): the bitmap is built at the target size, never at the
+    /// source's full dimensions.
+    private static func decodedImage(from data: Data) -> UIImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 
     // MARK: - URL handling
+
+    /// The URLs to try, best first: the normalized HTTPS form of the raw
+    /// string, then the raw string itself when it is a distinct usable
+    /// URL (normalization may have re-encoded something a CDN rejects).
+    static func candidateURLs(for raw: String) -> [URL] {
+        var seen = Set<String>()
+        var urls: [URL] = []
+        func add(_ url: URL?) {
+            guard let url, !seen.contains(url.absoluteString) else { return }
+            seen.insert(url.absoluteString)
+            urls.append(url)
+        }
+        add(normalizedURL(from: raw))
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("http"), let direct = URL(string: trimmed) {
+            add(upgradedToHTTPS(direct))
+        }
+        return urls
+    }
 
     /// Turns a raw artwork URL string into a usable `URL`:
     ///
@@ -170,9 +251,8 @@ actor ArtworkCache {
     }
 
     private static func readFromDisk(key: String, directory: URL) -> UIImage? {
-        guard let data = try? Data(contentsOf: fileURL(for: key, in: directory)),
-              let image = UIImage(data: data) else { return nil }
-        return image
+        guard let data = try? Data(contentsOf: fileURL(for: key, in: directory)) else { return nil }
+        return decodedImage(from: data)
     }
 
     private static func writeToDisk(data: Data, key: String, directory: URL) {
