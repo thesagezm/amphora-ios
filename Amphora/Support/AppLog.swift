@@ -37,8 +37,9 @@ enum AppLog {
     private static let subsystem = "dev.personal.amphora"
 
     /// Seconds since launch, used to prefix each buffered line — after a
-    /// crash, "crashed 4.2s after play" is exactly what we need.
-    private static let startedAt = Date()
+    /// crash, "crashed 4.2s after play" is exactly what we need. Shared
+    /// with `LogBuffer` in this file.
+    fileprivate static let startedAt = Date()
 
     private static let loggers: [Category: Logger] = Dictionary(
         uniqueKeysWithValues: Category.allCases.map {
