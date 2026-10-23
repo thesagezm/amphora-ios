@@ -10,20 +10,36 @@ persistence, auto-login, typed errors. (M0 complete.)
 
 ## User Feedback Pending
 
-_(none yet)_
+1. **"Installing Amphora: error — the folder 'payload' doesn't exist"**
+   (2026-10-23, LiveContainer). Diagnosed: the packaging step zipped from
+   *inside* `Payload/`, so the archive's entries were `Amphora.app/…` with
+   no `Payload/` prefix — and the IPA must contain `Payload/`. Fixed by
+   zipping `Payload` from the parent dir (one-line workflow fix, user-
+   reported = approved). **Awaiting user re-test** with the next artifact.
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): repair Core Tests after SessionManager push.**
-  - Last push `6139d4c`: **iOS Build ✅** (39867496012) but **Core Tests ❌**
-    (39867495998): Swift 6 marks `NSLock.lock/unlock` `noasync` —
-    `MockTransport.post` (async) called them inline. Moved the locked
-    record/increment into a sync helper called from the async frame.
-    (Production lock sites were already sync-only: no other changes needed.)
+- **This push (2026-10-23): IPA packaging fix** (see User Feedback 1).
+  One-line change in `ios-build.yml`: `zip -qry Amphora-unsigned.ipa
+  Payload` run from the workspace root, replacing
+  `cd Payload && zip … .`. Verified locally: old form yields entries
+  `Amphora.app/…` (broken); new form yields `Payload/Amphora.app/…`.
+
+- `a48f70e` (2026-10-23): repair Core Tests after SessionManager push.
+  Swift 6 marks `NSLock.lock/unlock` `noasync` — `MockTransport.post`
+  called them inline; moved the locked work into a sync helper.
+  Result: iOS Build ✅ (39868695533), Core Tests ❌ again (39868695527)
+  with 2 assertion failures → repaired by `83af041`.
+
+- `83af041` (2026-10-23): the two assertions: (1) decrypted request body
+  carries the per-chunk NUL pad — trim before comparing (same convention
+  as URLBuilderTests); (2) `URL.path` drops the trailing slash on Linux
+  Foundation — assert `baseURL.absoluteString` instead.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation (step now works and
-logs upload as `core-tests-log`) and repair before any new unit.
+logs upload as `core-tests-log`) and repair before any new unit. Confirm
+the new IPA artifact contains `Payload/Amphora.app/` entries.
 
 ## Pending Queue
 

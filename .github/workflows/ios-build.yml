@@ -61,7 +61,11 @@ jobs:
           fi
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          cd Payload && zip -qry ../Amphora-unsigned.ipa . && cd ..
+          # Run from the workspace root, NOT inside Payload/: zipping "."
+          # from inside records entries as "Amphora.app/…" with no Payload/
+          # folder, and installers then fail with "the folder 'payload'
+          # doesn't exist".
+          zip -qry Amphora-unsigned.ipa Payload
 
       - name: Upload IPA artifact
         if: success()
