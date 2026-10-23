@@ -30,6 +30,7 @@ public enum PandoraAPI {
         public static let renameStation = "station.renameStation"
         public static let deleteStation = "station.deleteStation"
         public static let transformSharedStation = "station.transformSharedStation"
+        public static let musicSearch = "music.search"
     }
 
     /// Client-side identity used by `auth.partnerLogin`, matching the

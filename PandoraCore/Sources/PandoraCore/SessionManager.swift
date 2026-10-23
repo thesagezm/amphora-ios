@@ -349,6 +349,21 @@ public actor SessionManager {
         )
     }
 
+    /// Search artists / songs / genre stations for the add-station flow.
+    /// Params match pithos `Pandora.search()` exactly; scoring/filtering/
+    /// ordering happen in `MusicSearchResult.searchResults(from:)`.
+    public func search(_ query: String) async throws -> [MusicSearchResult] {
+        let result = try await authenticatedRequest(
+            PandoraAPI.Method.musicSearch,
+            parameters: [
+                "includeGenreStations": .bool(true),
+                "includeNearMatches": .bool(true),
+                "searchText": .string(query)
+            ]
+        )
+        return MusicSearchResult.searchResults(from: result)
+    }
+
     // MARK: Helpers
 
     /// partnerId/userId arrive as either JSON string or number depending on
