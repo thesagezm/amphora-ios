@@ -61,15 +61,24 @@ struct LyricsPanel: View {
                     let activeIndex = lyrics.activeLineIndex(at: store.player.elapsed)
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         let isActive = index == activeIndex
-                        Text(line.text)
-                            .font(.title3.weight(isActive ? .semibold : .regular))
-                            .foregroundStyle(isActive ? Color.primary : Color.secondary)
-                            .lineLimit(3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onTapGesture { store.player.seek(to: line.timestamp) }
-                            .accessibilityHint("Double-tap to jump here")
-                            .id(line.id)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(line.text)
+                                .font(.title3.weight(isActive ? .semibold : .regular))
+                                .foregroundStyle(isActive ? Color.primary : Color.secondary)
+                            if let translation = line.translation, !translation.isEmpty {
+                                Text(translation)
+                                    .font(.subheadline)
+                                    .foregroundStyle(
+                                        isActive ? Color.secondary : Color.secondary.opacity(0.6)
+                                    )
+                            }
+                        }
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { store.player.seek(to: line.timestamp) }
+                        .accessibilityHint("Double-tap to jump here")
+                        .id(line.id)
                     }
                 }
                 .padding(.horizontal, 28)

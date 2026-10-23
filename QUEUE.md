@@ -35,7 +35,23 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — snprintf repair round 2 + lyrics unit B):**
+**(this push — lyrics unit C, translation):**
+
+- `AppStore`: after a successful synced-lyrics fetch,
+  `translateIfNeeded` fires `GoogleTranslateClient.englishTranslation(of:)`
+  (endpoint auto-detects the source language; `nil` = English → original
+  stays). The translation is **non-blocking** — lyrics display first,
+  `translation` fills in when it arrives. `translationTask` is cancelled on
+  track change / superseding fetch; `applyTranslation` is guarded by line
+  count (no shifting alignment) and only writes live state if the track is
+  still current. The translated `Lyrics` replaces the cache entry, so
+  repeat listens show translations instantly with no second call.
+- `LyricsPanel`: `LyricLine.translation` renders under the original line,
+  smaller and secondary (brighter on the active line).
+- Local checks: both files parse-clean. (SwiftUI-surface type errors still
+  CI-only.)
+
+**(previous push — snprintf repair round 2 + lyrics unit B):**
 
 - **iOS Build round 2 (`badf68f`) still red, one error**: `snprintf` in
   `CrashReporter.handleSignal` — C variadic functions are unavailable in
@@ -124,22 +140,19 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red —
-   `CrashReporter` now type-checks clean on Linux, so a new failure would
-   come from the lyrics/NowPlaying view changes (SwiftUI surface, CI-only).
-2. **Lyrics unit C (translation)** — call `GoogleTranslateClient.englishTranslation(of:)`
-   when the detected source language is not English; it returns `nil` for
-   English → show the original only. Fill `LyricLine.translation`; render
-   it under the original line (smaller, secondary) in `LyricsPanel`.
-3. **User device test of the latest IPA** — the critical one: play a
+   `CrashReporter` type-checks clean on Linux; new failures would come from
+   the lyrics/NowPlaying view changes (SwiftUI surface, CI-only).
+2. **User device test of the latest IPA** — the critical one: play a
    station for >30 s (crash?), song artwork in mini player + full player,
    tab switching with the mini player, lyrics panel (quote-bubble toggle
-   in the full player), then **open Diagnostics (stethoscope, Stations
+   in the full player — synced scroll, tap-to-seek, translation under
+   non-English lines), then **open Diagnostics (stethoscope, Stations
    toolbar) → Copy → paste the log** if anything is still wrong. If the
    app crashed and relaunched, the "Last crash" section is already filled
    in.
-4. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
-5. Beautify pass (theme, typography, gradients).
-6. Session-expiry surfacing + ad handling (protocol notes at the bottom).
+3. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
+4. Beautify pass (theme, typography, gradients).
+5. Session-expiry surfacing + ad handling (protocol notes at the bottom).
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
 failure summary annotation and repair before any new unit.

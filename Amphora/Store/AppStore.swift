@@ -55,6 +55,9 @@ final class AppStore {
     /// Lyrics provider (lrclib.net). Protocol lives in PandoraCore so a
     /// stub can be injected instead.
     private let lyricsProvider: any LyricsProviding
+    /// English translator for non-English lyrics (the endpoint detects the
+    /// source language; `nil` result means "already English").
+    private let lyricsTranslator: any LyricsTranslating
 
     private(set) var authPhase: AuthPhase = .restoring
     private(set) var stations: [Station] = []
@@ -78,6 +81,9 @@ final class AppStore {
     private var lyricsCache: [String: Lyrics] = [:]
     /// The in-flight lyrics fetch; cancelled when the track changes.
     private var lyricsTask: Task<Void, Never>?
+    /// The in-flight translation for the current track's lyrics; cancelled
+    /// when the track changes or a new lyrics fetch supersedes it.
+    private var translationTask: Task<Void, Never>?
     /// The user's bookmarks (`user.getBookmarks`).
     private(set) var bookmarks: [Bookmark] = []
     private(set) var isLoadingBookmarks = false
@@ -115,13 +121,15 @@ final class AppStore {
         session: SessionManager = SessionManager(store: KeychainSessionStore()),
         historyStore: HistoryStore = HistoryStore(),
         preferencesStore: PreferencesStore = PreferencesStore(),
-        lyricsProvider: any LyricsProviding = LRCLibClient()
+        lyricsProvider: any LyricsProviding = LRCLibClient(),
+        lyricsTranslator: any LyricsTranslating = GoogleTranslateClient()
     ) {
         self.session = session
         self.historyStore = historyStore
         self.preferencesStore = preferencesStore
         self.preferences = preferencesStore.load()
         self.lyricsProvider = lyricsProvider
+        self.lyricsTranslator = lyricsTranslator
         let player = PlayerService()
         self.player = player
         self.nowPlaying = NowPlayingService(player: player)
@@ -442,6 +450,8 @@ final class AppStore {
     private func loadLyrics(for track: Track?, force: Bool = false) {
         lyricsTask?.cancel()
         lyricsTask = nil
+        translationTask?.cancel()
+        translationTask = nil
         guard let track, !track.isAdvertisement else {
             lyrics = nil
             isLoadingLyrics = false
@@ -473,6 +483,7 @@ final class AppStore {
                     "lyrics: \(Self.describe(fetched)) for \"\(track.title)\"",
                     .lyrics
                 )
+                translateIfNeeded(fetched, for: track)
             case .failure(let error):
                 if (error as? LyricsError) == .notFound {
                     lyricsCache[track.trackToken] = .empty
@@ -492,6 +503,49 @@ final class AppStore {
         if lyrics.isSynced { return "synced, \(lyrics.lines.count) lines" }
         if lyrics.plainText != nil { return "plain text" }
         return "empty"
+    }
+
+    /// Kicks off an English translation for a freshly fetched set of
+    /// synced lyrics. The endpoint detects the source language and
+    /// returns nil for English — then the original stays as-is. Lyrics
+    /// display immediately; the translation fills in when it arrives.
+    private func translateIfNeeded(_ fetched: Lyrics, for track: Track) {
+        guard fetched.isSynced, !fetched.lines.isEmpty else { return }
+        let texts = fetched.lines.map(\.text)
+        let translator = lyricsTranslator
+        AppLog.debug("lyrics: translating \(texts.count) lines", .lyrics)
+        translationTask = Task { [weak self] in
+            let translated = await translator.englishTranslation(of: texts)
+            guard let self, !Task.isCancelled else { return }
+            if let translated {
+                self.applyTranslation(translated, for: track.trackToken)
+                AppLog.info("lyrics: translation applied for \"\(track.title)\"", .lyrics)
+            } else {
+                AppLog.debug("lyrics: no translation for \"\(track.title)\" (English or none)", .lyrics)
+            }
+        }
+    }
+
+    /// Fills `LyricLine.translation` on the cached lyrics for `token` and,
+    /// if that track is still current, on the live state. Guarded by line
+    /// count so a mismatched response can never shift the alignment.
+    private func applyTranslation(_ translated: [String], for token: String) {
+        guard var updated = lyricsCache[token], updated.isSynced,
+              updated.lines.count == translated.count else { return }
+        var lines = updated.lines
+        for index in lines.indices {
+            lines[index].translation = translated[index]
+        }
+        updated = Lyrics(
+            lines: lines,
+            plainText: updated.plainText,
+            instrumental: updated.instrumental,
+            trackID: updated.trackID
+        )
+        lyricsCache[token] = updated
+        if player.currentTrack?.trackToken == token {
+            lyrics = updated
+        }
     }
 
     // MARK: Feedback & bookmarks
