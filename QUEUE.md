@@ -35,24 +35,41 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — CI repair of the units-A–C push):**
+**(this push — snprintf repair round 2 + lyrics unit B):**
 
-- **iOS Build was red on `883f636`**: Swift 6 strict concurrency flagged
-  `CrashReporter.swift` — the global `crashTail` pointer (`let` of
-  non-Sendable `UnsafeMutablePointer<CChar>`) and `static let shared` on a
-  non-Sendable class. Both only surface on the macOS toolchain.
-  - Fix mirrors the already-green `LogBuffer` pattern: `nonisolated(unsafe)`
-    on the raw pointer (it is written from a signal handler and must not be
-    isolated), `@unchecked Sendable` on `CrashReporter` (instance state is
-    `NSLock`-guarded; `clearLastCrashReport` now takes the lock too).
-  - Verified the exact fixed pattern type-checks under
-    `swiftc -typecheck -swift-version 6` in the Docker toolchain before
-    pushing (variadic `snprintf` unavailable on Linux forced small
-    reproducer-only substitutions — the real file keeps `snprintf`, which is
-    fine on macOS).
-- Core Tests stayed green throughout.
+- **iOS Build round 2 (`badf68f`) still red, one error**: `snprintf` in
+  `CrashReporter.handleSignal` — C variadic functions are unavailable in
+  Swift on **all** platforms (not a Linux quirk; round 1 masked it because
+  the concurrency errors poisoned the file's type-check). The crash header
+  is now built with Swift interpolation + `withCString`.
+  - **New strongest local check**: the real file `-typecheck`s clean under
+    `swiftc -swift-version 6` on Linux after an `import Darwin` →
+    `import Glibc` sed plus small shims (`strlcpy`, `NSException`,
+    `NSSetUncaughtExceptionHandler`). This catches name-lookup,
+    unavailability, and concurrency errors `-parse` never sees — both red
+    rounds would have been caught locally this way. Reusable: swap the
+    import, append the shims from this session's history, typecheck.
+- **Lyrics unit B landed** (app target) — the lyrics core is now called:
+  - `AppStore`: `lyrics` / `isLoadingLyrics` state, per-`trackToken`
+    cache (not-found cached too), fetch task cancelled + replaced on
+    track change, hooked into `onTrackChanged`; `.refreshLyrics` intent
+    for manual retry; provider injected (default `LRCLibClient`).
+  - `Amphora/UI/LyricsPanel.swift` (new): synced lines auto-scroll with
+    playback (`activeLineIndex(at: player.elapsed)`), active line
+    highlighted, tap-to-seek; plain text scrolls; instrumental and
+    not-found states, Retry on unavailable.
+  - `NowPlayingView`: quote-bubble toolbar toggle swaps the
+    artwork+scrubber region for `LyricsPanel`; transport/feedback stay.
+  - Local checks: all three files parse-clean; CrashReporter now
+    type-checks clean on Linux. LyricsPanel/NowPlayingView type errors
+    (SwiftUI) still only surface on CI.
 
-**(previous push, `883f636` — units A, B, C of the crash/feedback round):**
+**(previous pushes):** CI repair round 1 (`badf68f`, strict-concurrency in
+CrashReporter); units A–C of the crash/feedback round (`883f636` — logging,
+crash capture, Diagnostics screen, bounded artwork decode, single
+mini-player); lyrics core `5ef40ab`.
+
+**Units A–C detail (from `883f636`):**
 
 - **Unit A — logging + crash capture + Diagnostics screen.** The app had
   zero logging (grep: no `Logger`/`print`/`NSLog` anywhere), so a device
@@ -106,27 +123,23 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 
 ## Pending Queue
 
-1. Verify the repair push green (Core Tests + iOS Build). Repair first if
-   red — expect no new errors: the two flagged lines are fixed and the fix
-   pattern was type-checked in Docker.
-2. **Lyrics unit B (app target)** — wire the core in: `AppStore` gains
-   `lyrics` state + a fetch keyed by `track.trackToken` (run from the
-   track-changed path, cached per track, `LRCLibClient` with the 503
-   retry), then a `LyricsPanel` in `NowPlayingView`: scroll `lyrics.lines`,
-   highlight `lyrics.activeLine(at: store.player.elapsed)`, tap a line to
-   seek. Core API: `PandoraCore/Lyrics.swift`, `PandoraCore/LyricsProvider.swift`.
-3. **Lyrics unit C (translation)** — call `GoogleTranslateClient.englishTranslation(of:)`
+1. Verify this push green (Core Tests + iOS Build). Repair first if red —
+   `CrashReporter` now type-checks clean on Linux, so a new failure would
+   come from the lyrics/NowPlaying view changes (SwiftUI surface, CI-only).
+2. **Lyrics unit C (translation)** — call `GoogleTranslateClient.englishTranslation(of:)`
    when the detected source language is not English; it returns `nil` for
-   English → show the original only. Fill `LyricLine.translation`.
-4. **User device test of this push's IPA** — the critical one: play a
+   English → show the original only. Fill `LyricLine.translation`; render
+   it under the original line (smaller, secondary) in `LyricsPanel`.
+3. **User device test of the latest IPA** — the critical one: play a
    station for >30 s (crash?), song artwork in mini player + full player,
-   tab switching with the mini player, then **open Diagnostics
-   (stethoscope, Stations toolbar) → Copy → paste the log** if anything
-   is still wrong. If the app crashed and relaunched, the "Last crash"
-   section is already filled in.
-5. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
-6. Beautify pass (theme, typography, gradients).
-7. Session-expiry surfacing + ad handling (protocol notes at the bottom).
+   tab switching with the mini player, lyrics panel (quote-bubble toggle
+   in the full player), then **open Diagnostics (stethoscope, Stations
+   toolbar) → Copy → paste the log** if anything is still wrong. If the
+   app crashed and relaunched, the "Last crash" section is already filled
+   in.
+4. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
+5. Beautify pass (theme, typography, gradients).
+6. Session-expiry surfacing + ad handling (protocol notes at the bottom).
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
 failure summary annotation and repair before any new unit.
