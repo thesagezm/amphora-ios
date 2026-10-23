@@ -74,29 +74,9 @@ struct NowPlayingView: View {
     }
 
     private func artwork(for track: Track) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.quaternary.opacity(0.5))
-            if let urlString = track.artworkUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    fallbackIcon
-                }
-            } else {
-                fallbackIcon
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
-        .accessibilityHidden(true)
-    }
-
-    private var fallbackIcon: some View {
-        Image(systemName: "music.note")
-            .font(.system(size: 64))
-            .foregroundStyle(.secondary)
+        CachedArtwork(urlString: track.artworkUrl, cornerRadius: 20, fallbackSystemImage: "music.note")
+            .aspectRatio(1, contentMode: .fit)
+            .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
     }
 
     private var scrubber: some View {

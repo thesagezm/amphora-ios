@@ -28,7 +28,19 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M4 unit 3 — playback history ("recently
+- **This push (2026-10-23): M5 unit 1 — artwork cache**:
+  - `ArtworkCache.swift` (new `Amphora/Persistence/`): an actor with a
+    memory tier (NSCache of decoded images, 64 MB budget) and a disk tier
+    (raw bytes in Caches); concurrent requests for the same URL share one
+    in-flight fetch, so a list scroll never re-downloads artwork.
+  - `CachedArtwork.swift` (new `Amphora/UI/`): the view all artwork
+    slots use — placeholder while loading, fallback icon on failure, the
+    load is cancelled when the view disappears.
+  - `StationsView`, `MiniPlayer`, `BookmarksView`, `HistoryView`,
+    `NowPlayingView` now use the cached artwork instead of `AsyncImage`
+    (which re-fetched on every list render).
+
+- **c131620** (2026-10-23): M4 unit 3 — playback history ("recently
   played")**:
   - `HistoryStore.swift` (new, PandoraCore): `PlayHistory` — a bounded
     (100 entries), newest-first list of plays; a repeated track moves to

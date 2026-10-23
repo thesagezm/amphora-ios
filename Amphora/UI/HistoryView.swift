@@ -23,22 +23,8 @@ struct HistoryView: View {
     private var list: some View {
         List(store.history) { entry in
             HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.quaternary.opacity(0.5))
-                    if let urlString = entry.artworkUrl, let url = URL(string: urlString) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            icon
-                        }
-                    } else {
-                        icon
-                    }
-                }
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .accessibilityHidden(true)
+                CachedArtwork(urlString: entry.artworkUrl, cornerRadius: 8)
+                    .frame(width: 44, height: 44)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.title)
@@ -58,11 +44,5 @@ struct HistoryView: View {
             .accessibilityElement(children: .combine)
         }
         .listStyle(.plain)
-    }
-
-    private var icon: some View {
-        Image(systemName: "music.note")
-            .font(.callout)
-            .foregroundStyle(.secondary)
     }
 }

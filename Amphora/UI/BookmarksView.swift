@@ -55,22 +55,12 @@ struct BookmarksView: View {
 
     private func row(_ bookmark: Bookmark) -> some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.quaternary.opacity(0.5))
-                if let urlString = bookmark.artworkUrl, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        icon(for: bookmark.kind)
-                    }
-                } else {
-                    icon(for: bookmark.kind)
-                }
-            }
+            CachedArtwork(
+                urlString: bookmark.artworkUrl,
+                cornerRadius: 8,
+                fallbackSystemImage: bookmark.kind == .song ? "music.note" : "music.mic"
+            )
             .frame(width: 44, height: 44)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(bookmark.title)
@@ -95,11 +85,5 @@ struct BookmarksView: View {
             .accessibilityLabel("Remove bookmark \(bookmark.title)")
         }
         .frame(minHeight: 44)
-    }
-
-    private func icon(for kind: Bookmark.Kind) -> some View {
-        Image(systemName: kind == .song ? "music.note" : "music.mic")
-            .font(.callout)
-            .foregroundStyle(.secondary)
     }
 }

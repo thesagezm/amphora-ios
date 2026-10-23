@@ -260,28 +260,8 @@ private struct StationRow: View {
     }
 
     private var artwork: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.quaternary.opacity(0.5))
-            if let urlString = station.artUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    fallbackIcon
-                }
-            } else {
-                fallbackIcon
-            }
-        }
-        .frame(width: 52, height: 52)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityHidden(true)
-    }
-
-    private var fallbackIcon: some View {
-        Image(systemName: "music.note")
-            .font(.title3)
-            .foregroundStyle(.secondary)
+        CachedArtwork(urlString: station.artUrl, cornerRadius: 10)
+            .frame(width: 52, height: 52)
     }
 
     private var badgeCaption: String? {

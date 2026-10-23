@@ -62,27 +62,7 @@ struct MiniPlayer: View {
     }
 
     private var artwork: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(.quaternary.opacity(0.5))
-            if let urlString = track?.artworkUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    fallbackIcon
-                }
-            } else {
-                fallbackIcon
-            }
-        }
-        .frame(width: 40, height: 40)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .accessibilityHidden(true)
-    }
-
-    private var fallbackIcon: some View {
-        Image(systemName: "music.note")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+        CachedArtwork(urlString: track?.artworkUrl, cornerRadius: 6)
+            .frame(width: 40, height: 40)
     }
 }
