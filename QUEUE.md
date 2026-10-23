@@ -27,7 +27,22 @@ _(none — both resolved below)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): repair red music.search push (ab4e887).**
+- **This push (2026-10-23): M2 unit 6 — add-station sheet UI** (app target):
+  - `AppStore`: `searchStations` / `createStation` intents; debounced,
+    cancellation-safe `search()` (min 2 chars → clears locally, never
+    hammers the endpoint; newer query cancels in-flight); `createStation`
+    appends locally like pithos (dedup by id, no refetch), bumps
+    `stationCreatedTick` so the sheet can dismiss (fire-and-forget intents
+    can't return values); shared `isMutatingStations` guard.
+  - `AddStationView` (new `Amphora/UI/`): `.searchable` field,
+    `.task(id: query)` 350ms debounce → intent, kind-icon rows
+    (mic/note/radio) with artist caption, tap = create + dismiss on tick,
+    Cancel toolbar, empty/prompt/searching states, error banner.
+  - `StationsView`: toolbar `+` button opens the sheet; empty state gets
+    an "Add Station" action.
+
+- `b0f4526` (2026-10-23): **repair red music.search push** —
+  **Core Tests ✅** (39885481763), **iOS Build ✅** (39885481856):
   - `ab4e887` (runs 39884553000 / 39884553004) **and** the QUEUE-only
     follow-up `6641ace` (39884917062 / 39884916740): **both red, same
     compile error in both workflows** — `MusicSearch.swift:67/71` passed
@@ -151,17 +166,17 @@ _(none — both resolved below)_
 
 ## Pending Queue
 
-1. Verify last pushes green (Core Tests + iOS Build). Repair first if red.
-2. **M2 unit 6**: add-station sheet UI — `AppStore.search`/`createStation`
-   intents + `AddStationView` (query field → results list with kind
-   icons → tap creates station → dismiss + reload). Core for it landed in
-   `ab4e887`.
-3. M2 tail: artwork disk cache (only if AsyncImage/URLCache proves
-   insufficient on device), sort-order preference if the user asks for one.
+1. Verify this push green (Core Tests + iOS Build). Repair first if red.
+2. **User re-test build** (stale before `b0f4526`): install latest
+   `amphora-ipa-*` artifact → station list should load; rename/delete via
+   long-press; add via `+` → search → tap.
+3. **M2 done pending user confirmation.** Then **M3 playback** begins:
+   `station.getPlaylist` core (highest quality, `additionalAudioUrl`
+   pattern from pithos), then `PlayerService`/`AVPlayer`.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
-red on `ab4e887` (music.search) or later, read the failure summary
-annotation and repair before any new unit.
+red on this push, read the failure summary annotation and repair before
+any new unit.
 
 ## Milestones
 

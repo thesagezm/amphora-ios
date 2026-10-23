@@ -11,6 +11,7 @@ struct StationsView: View {
     @State private var renameTarget: Station?
     @State private var renameText = ""
     @State private var deleteTarget: Station?
+    @State private var isAddingStation = false
 
     var body: some View {
         Group {
@@ -27,6 +28,19 @@ struct StationsView: View {
             }
         }
         .navigationTitle("Stations")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isAddingStation = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add station")
+            }
+        }
+        .sheet(isPresented: $isAddingStation) {
+            AddStationView()
+        }
         .alert("Rename Station", isPresented: renameBinding) {
             TextField("Station name", text: $renameText)
                 .textInputAutocapitalization(.words)
@@ -63,11 +77,16 @@ struct StationsView: View {
     }
 
     private var empty: some View {
-        ContentUnavailableView(
-            "No stations yet",
-            systemImage: "music.note.list",
-            description: Text("Your stations will appear here.")
-        )
+        ContentUnavailableView {
+            Label("No stations yet", systemImage: "music.note.list")
+        } description: {
+            Text("Your stations will appear here.")
+        } actions: {
+            Button("Add Station") {
+                isAddingStation = true
+            }
+            .buttonStyle(.borderedProminent)
+        }
     }
 
     private func errorState(_ message: String) -> some View {

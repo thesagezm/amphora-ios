@@ -18,6 +18,8 @@ final class AppStore {
         case restoreSession
         case login(username: String, password: String)
         case refreshStations
+        case searchStations(query: String)
+        case createStation(MusicSearchResult)
         case renameStation(Station, to: String)
         case deleteStation(Station)
         case dismissError
@@ -25,11 +27,17 @@ final class AppStore {
 
     private let session: SessionManager
     private var didStartRestore = false
+    private var searchTask: Task<Void, Never>?
 
     private(set) var authPhase: AuthPhase = .restoring
     private(set) var stations: [Station] = []
     private(set) var isLoadingStations = false
     private(set) var isMutatingStations = false
+    private(set) var searchResults: [MusicSearchResult] = []
+    private(set) var isSearching = false
+    /// Increments on each successful create — the add-station sheet's
+    /// dismissal signal (fire-and-forget intents can't return a value).
+    private(set) var stationCreatedTick = 0
     // Current station, current track and feedback state arrive in M3/M4.
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
@@ -47,6 +55,10 @@ final class AppStore {
             login(username: username, password: password)
         case .refreshStations:
             Task { await refreshStations() }
+        case .searchStations(let query):
+            search(query)
+        case .createStation(let result):
+            Task { await createStation(from: result) }
         case .renameStation(let station, let newName):
             Task { await renameStation(station, to: newName) }
         case .deleteStation(let station):
@@ -148,6 +160,57 @@ final class AppStore {
         do {
             try await session.deleteStation(station)
             stations.removeAll { $0.id == station.id }
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    // MARK: Search & create
+
+    /// Debounced callers land here (the view waits out the typing pause).
+    /// Queries under 2 chars clear results instead of hitting the API —
+    /// never hammer the endpoint. A newer query cancels the in-flight one.
+    private func search(_ rawQuery: String) {
+        searchTask?.cancel()
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2 else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        searchTask = Task { [session] in
+            do {
+                let hits = try await session.search(query)
+                guard !Task.isCancelled else { return }
+                searchResults = hits
+                isSearching = false
+            } catch is CancellationError {
+                // Superseded by a newer query — that one owns the state now.
+            } catch {
+                guard !Task.isCancelled else { return }
+                searchResults = []
+                isSearching = false
+                lastErrorMessage = Self.userMessage(for: error)
+            }
+        }
+    }
+
+    /// Creates from a search hit (`musicToken` covers artist/song/genre —
+    /// pithos `add_station_by_music_id`). Appends locally like pithos
+    /// (`stations.append`) — no refetch round trip; deduped by id.
+    /// Bumps `stationCreatedTick` so the sheet dismisses on success.
+    private func createStation(from result: MusicSearchResult) async {
+        guard !isMutatingStations else { return }
+        lastErrorMessage = nil
+        isMutatingStations = true
+        defer { isMutatingStations = false }
+        do {
+            let station = try await session.createStation(musicToken: result.musicToken)
+            if !stations.contains(where: { $0.id == station.id }) {
+                stations.append(station)
+            }
+            stationCreatedTick += 1
         } catch {
             lastErrorMessage = Self.userMessage(for: error)
         }
