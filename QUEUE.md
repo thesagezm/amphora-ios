@@ -310,16 +310,14 @@ _(none)_
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **M3 unit 2** — `PlayerService` (app target): `AVPlayer` +
-   `AVAudioSession(.playback)`, play/pause/next, prefetch the next track's
-   stream URL as soon as the current one starts, interruption + route-change
-   handling. No networking inside — it talks to PandoraCore via AppStore.
-3. **M3 unit 3** — Now Playing (`MPNowPlayingInfoCenter`) + remote commands
-   (`MPRemoteCommandCenter`) + AppStore playback intents.
-4. **M3 unit 4** — Playback UI: tap a station to play, mini-player above
-   the tab bar, full Now Playing screen.
-5. **User re-test** the IPA after M3 lands (play, lock-screen metadata,
-   skip, backgrounding).
+2. **M5 unit 3** — design pass: tab bar (Stations / Bookmarks / History
+   tabs instead of the "More" menu), empty/error state polish, station
+   ordering persistence.
+3. **M6** — robustness: offline/error copy, session-expiry surface
+   (1001 → re-login → retry, already in `SessionManager`), long-session
+   soak.
+4. **User re-test** the IPA: play a station, lock-screen metadata, thumbs
+   up/down, skip, backgrounding, bookmarks, sleep timer.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation and repair before
@@ -332,9 +330,12 @@ any new unit.
       — confirmed signed-in on device 2026-10-23
 - [x] **M2** — stations (fetch/list/create/rename/delete + list UI)
       — confirmed on device 2026-10-23 ("everything so far works")
-- [ ] **M3** — playback (playlist, AVPlayer, background audio, Now Playing)
-- [ ] **M4** — feedback & bookmarks
-- [ ] **M5** — UI/design pass
+- [x] **M3** — playback (playlist, AVPlayer, background audio, Now Playing,
+      remote commands, prefetch) — code complete, user device check pending
+- [x] **M4** — feedback & bookmarks (+ playback history) — code complete,
+      user device check pending
+- [ ] **M5** — UI/design pass (artwork cache + sleep timer landed; tab bar
+      and state polish remain)
 - [ ] **M6** — performance & robustness
 
 ## Completed Units
