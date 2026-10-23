@@ -25,6 +25,7 @@ final class AppStore {
         case playStation(Station)
         case togglePlayback
         case skipToNext
+        case refreshLyrics
         case rateCurrentTrack(FeedbackRating)
         case removeCurrentRating
         case sleepCurrentTrack
@@ -51,6 +52,9 @@ final class AppStore {
     /// Lock-screen / Control Center integration (now playing info +
     /// remote transport commands).
     private let nowPlaying: NowPlayingService
+    /// Lyrics provider (lrclib.net). Protocol lives in PandoraCore so a
+    /// stub can be injected instead.
+    private let lyricsProvider: any LyricsProviding
 
     private(set) var authPhase: AuthPhase = .restoring
     private(set) var stations: [Station] = []
@@ -65,6 +69,15 @@ final class AppStore {
     private(set) var currentStation: Station?
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
+    /// Lyrics for the current track (nil while loading, before the first
+    /// play, or when nothing could be fetched).
+    private(set) var lyrics: Lyrics?
+    private(set) var isLoadingLyrics = false
+    /// Session-scoped lyrics cache keyed by `trackToken` — repeat listens
+    /// don't re-hit the lyrics service. Not-found results are cached too.
+    private var lyricsCache: [String: Lyrics] = [:]
+    /// The in-flight lyrics fetch; cancelled when the track changes.
+    private var lyricsTask: Task<Void, Never>?
     /// The user's bookmarks (`user.getBookmarks`).
     private(set) var bookmarks: [Bookmark] = []
     private(set) var isLoadingBookmarks = false
@@ -101,12 +114,14 @@ final class AppStore {
     init(
         session: SessionManager = SessionManager(store: KeychainSessionStore()),
         historyStore: HistoryStore = HistoryStore(),
-        preferencesStore: PreferencesStore = PreferencesStore()
+        preferencesStore: PreferencesStore = PreferencesStore(),
+        lyricsProvider: any LyricsProviding = LRCLibClient()
     ) {
         self.session = session
         self.historyStore = historyStore
         self.preferencesStore = preferencesStore
         self.preferences = preferencesStore.load()
+        self.lyricsProvider = lyricsProvider
         let player = PlayerService()
         self.player = player
         self.nowPlaying = NowPlayingService(player: player)
@@ -148,6 +163,9 @@ final class AppStore {
             if self.sleepTimer.mode == .endOfTrack, track != nil {
                 self.fireSleepTimer()
             }
+            // Lyrics follow the current track; the per-track cache makes
+            // repeat listens free.
+            self.loadLyrics(for: track)
         }
     }
 
@@ -184,6 +202,8 @@ final class AppStore {
             player.togglePlayback()
         case .skipToNext:
             player.skipToNext()
+        case .refreshLyrics:
+            loadLyrics(for: player.currentTrack, force: true)
         case .rateCurrentTrack(let rating):
             Task { await rateCurrentTrack(rating) }
         case .removeCurrentRating:
@@ -410,6 +430,68 @@ final class AppStore {
         preferences.stationOrder.setOrder(ids)
         stations = preferences.stationOrder.apply(to: stations)
         preferencesStore.save(preferences)
+    }
+
+    // MARK: Lyrics
+
+    /// Loads lyrics for the current track (lrclib.net, via the core's
+    /// provider). Results — including "not found" — are cached per
+    /// `trackToken`, so repeat listens never re-hit the service. A track
+    /// change cancels the in-flight fetch; a superseded fetch never
+    /// touches state.
+    private func loadLyrics(for track: Track?, force: Bool = false) {
+        lyricsTask?.cancel()
+        lyricsTask = nil
+        guard let track, !track.isAdvertisement else {
+            lyrics = nil
+            isLoadingLyrics = false
+            return
+        }
+        if !force, let cached = lyricsCache[track.trackToken] {
+            lyrics = cached
+            isLoadingLyrics = false
+            return
+        }
+        lyrics = nil
+        isLoadingLyrics = true
+        let provider = lyricsProvider
+        AppLog.debug("lyrics: lookup for \"\(track.title)\" — \"\(track.artist)\"", .lyrics)
+        lyricsTask = Task { [weak self] in
+            let outcome: Result<Lyrics, Error>
+            do {
+                outcome = .success(try await provider.lyrics(for: track))
+            } catch {
+                outcome = .failure(error)
+            }
+            guard let self, !Task.isCancelled else { return }
+            isLoadingLyrics = false
+            switch outcome {
+            case .success(let fetched):
+                lyricsCache[track.trackToken] = fetched
+                lyrics = fetched
+                AppLog.info(
+                    "lyrics: \(Self.describe(fetched)) for \"\(track.title)\"",
+                    .lyrics
+                )
+            case .failure(let error):
+                if (error as? LyricsError) == .notFound {
+                    lyricsCache[track.trackToken] = .empty
+                }
+                lyrics = nil
+                AppLog.debug(
+                    "lyrics: unavailable for \"\(track.title)\" (\(String(describing: error)))",
+                    .lyrics
+                )
+            }
+        }
+    }
+
+    /// Short, loggable description of what a lyrics lookup returned.
+    private static func describe(_ lyrics: Lyrics) -> String {
+        if lyrics.instrumental { return "instrumental" }
+        if lyrics.isSynced { return "synced, \(lyrics.lines.count) lines" }
+        if lyrics.plainText != nil { return "plain text" }
+        return "empty"
     }
 
     // MARK: Feedback & bookmarks

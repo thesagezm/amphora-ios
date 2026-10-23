@@ -8,6 +8,7 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isShowingSleepTimer = false
+    @State private var isShowingLyrics = false
 
     var body: some View {
         NavigationStack {
@@ -18,6 +19,14 @@ struct NowPlayingView: View {
             .navigationTitle(store.currentStation?.name ?? "Now Playing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isShowingLyrics.toggle()
+                    } label: {
+                        Image(systemName: isShowingLyrics ? "quote.bubble.fill" : "quote.bubble")
+                    }
+                    .accessibilityLabel(isShowingLyrics ? "Hide lyrics" : "Show lyrics")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
@@ -45,27 +54,31 @@ struct NowPlayingView: View {
     private var content: some View {
         if let track = store.player.currentTrack {
             VStack(spacing: 24) {
-                artwork(for: track)
-                    .padding(.horizontal, 32)
+                if isShowingLyrics {
+                    LyricsPanel()
+                } else {
+                    artwork(for: track)
+                        .padding(.horizontal, 32)
 
-                VStack(spacing: 6) {
-                    Text(track.title)
-                        .font(.title2.weight(.semibold))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                    Text(track.artist)
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    if !track.album.isEmpty {
-                        Text(track.album)
-                            .font(.subheadline)
-                            .foregroundStyle(.tertiary)
+                    VStack(spacing: 6) {
+                        Text(track.title)
+                            .font(.title2.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                        Text(track.artist)
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        if !track.album.isEmpty {
+                            Text(track.album)
+                                .font(.subheadline)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                     }
-                }
 
-                scrubber
+                    scrubber
+                }
 
                 transport
 
