@@ -34,11 +34,18 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
    workspace root; artifact `amphora-ipa-10` verified to contain
    `Payload/Amphora.app/…`. **User then signed in on device — install
    confirmed working.**
-2. **M1 confirmed on device** (2026-10-23): user reports real sign-in
+3. **M1 confirmed on device** (2026-10-23): user reports real sign-in
    succeeded and app shows the signed-in placeholder. **M1 milestone
    complete.**
-3. **M2 confirmed** (2026-10-23): "everything so far works" — station list,
+4. **M2 confirmed** (2026-10-23): "everything so far works" — station list,
    rename/delete, add-station search all good on device. **M2 complete.**
+5. **Artwork / sleep timer / bookmarks** (2026-10-23, user reports) —
+   fixed in `a7dbe49`: artwork is cached under a SHA-256 file name (the
+   old base64 name exceeded the file-system limit, so nothing was ever
+   cached) and plain-HTTP art URLs are upgraded to HTTPS; a duration
+   sleep timer now really stops playback (it was only checked when it
+   was set) and survives a relaunch; the bookmark buttons now show a
+   short confirmation.
 
 ## In Flight / Last Push
 
@@ -425,7 +432,9 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
 
 ## Pending Queue
 
-1. Verify this push green (Core Tests + iOS Build). Repair first if red.
+1. Verify the last push green (Core Tests + iOS Build). Repair first if
+   red. (The iOS Build was red on `a7dbe49`/`5ef40ab` — a static-member
+   call in `ArtworkCache` — repaired in `03e89ff`; check that push.)
 2. **Lyrics unit B (app target)** — wire `LRCLibClient` into `AppStore`
    (fetch when a track starts, cache by track token), then a
    time-synced lyric panel in the Now Playing screen: scroll the lines,
@@ -438,14 +447,14 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
    language is not English and put the English line next to the
    original. The client returns `nil` for English lyrics, so the app
    can simply show the original when that happens.
-5. **App icon** — an "Amphora" icon (the app target has no asset catalog
+4. **App icon** — an "Amphora" icon (the app target has no asset catalog
    today; `project.yml` sets `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
-6. **Beautify pass** — theme, typography, gradients, polished stations /
+5. **Beautify pass** — theme, typography, gradients, polished stations /
    now-playing screens.
-7. **M6 unit — session-expiry surfacing** ("session expired, signed back
+6. **M6 unit — session-expiry surfacing** ("session expired, signed back
    in") and **ad handling** (`ad.getAdMetadata` / `ad.registerAd`, per
    pydora — see the protocol notes below).
-8. **User device test** of the newest IPA: play a station, artwork,
+7. **User device test** of the newest IPA: play a station, artwork,
    lock-screen metadata, thumbs up/down, skip, backgrounding, bookmarks,
    sleep timer, station reorder, mini-player above the tab bar, lyrics.
 
@@ -464,9 +473,10 @@ any new unit.
       remote commands, prefetch) — code complete, user device check pending
 - [x] **M4** — feedback & bookmarks (+ playback history) — code complete,
       user device check pending
-- [ ] **M5** — UI/design pass (artwork cache + sleep timer landed; tab bar
-      and state polish remain)
-- [ ] **M6** — performance & robustness
+- [ ] **M5** — UI/design pass (artwork cache, sleep timer, tab-bar shell,
+      station ordering landed; **beautify pass + app icon remain**)
+- [ ] **M6** — performance & robustness (lyrics core landed; lyrics UI,
+      session-expiry surfacing, ad handling remain)
 
 ## Completed Units
 
