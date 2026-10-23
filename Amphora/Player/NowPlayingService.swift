@@ -53,22 +53,25 @@ final class NowPlayingService {
         loadArtwork(for: track)
     }
 
-    /// Album art for the lock screen. The image is fetched off the main
-    /// actor and applied on it; only `Data` crosses the boundary so the
-    /// Swift 6 concurrency rules stay satisfied.
+    /// Album art for the lock screen. It comes from the shared artwork
+    /// cache, so the lock screen reuses the image the in-app player
+    /// already downloaded instead of fetching it a second time. The
+    /// image is produced off the main actor and applied on it; only
+    /// `Data` crosses the boundary so the Swift 6 concurrency rules stay
+    /// satisfied.
     private func loadArtwork(for track: Track) {
         guard let urlString = track.artworkUrl,
-              let url = URL(string: urlString) else { return }
+              let url = ArtworkCache.normalizedURL(from: urlString) else { return }
         artworkTask?.cancel()
         artworkTask = Task { [weak self] in
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  !Task.isCancelled else { return }
-            self?.applyArtwork(data)
+            let image = await ArtworkCache.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            self?.applyArtwork(image)
         }
     }
 
-    private func applyArtwork(_ data: Data) {
-        guard let image = UIImage(data: data) else { return }
+    private func applyArtwork(_ image: UIImage?) {
+        guard let image else { return }
         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyArtwork] = artwork

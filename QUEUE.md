@@ -11,16 +11,24 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
 
 ## User Feedback Pending
 
-_(none)_
+1. **Lyrics** (2026-10-23, user): "there are No lyrics… i want you to
+   implement how monochrome or jewelcase or deezer does… it should fetch
+   time synced lyrics from lrclib.net or any other reputable api source
+   to fetch time synced lyrics… i also want that option if they are in a
+   foreign language to show both the english version and the foreign
+   language version at the same time."
+2. **"Make sure you beautify the app - it looks too basic and hard to
+   desire to use"** (2026-10-23, user).
+3. **"Add an app icon… based on the name"** (2026-10-23, user).
 
 **Resolved feedback:**
 
 1. **"the miniplayer overlaps and hides the bottom tab bar"** (2026-10-23,
-   user report) — fixed: the mini-player was a `safeAreaInset` on the
-   `TabView` itself, which laid it out in the tab bar's own region and
-   covered the bar. It is now attached to each tab's **content** via a
-   `MiniPlayerInset` view modifier, so it sits directly above the tab bar
-   on every tab. (M6 unit 0 — UI polish.)
+   user report) — fixed in `316b6c9`: the mini-player was a
+   `safeAreaInset` on the `TabView` itself, which laid it out in the tab
+   bar's own region and covered the bar. It is now attached to each tab's
+   **content** via a `MiniPlayerInset` view modifier, so it sits directly
+   above the tab bar on every tab.
 2. **"Installing Amphora: error — the folder 'payload' doesn't exist"**
    (2026-10-23, LiveContainer) — fixed by `4dd1fbf`: zip `Payload` from the
    workspace root; artifact `amphora-ipa-10` verified to contain
@@ -34,12 +42,44 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **(this push)** M6 unit 0 — mini-player no longer covers the tab bar
-  (user report): the mini-player was a `safeAreaInset` on the `TabView`
-  itself, which lays the inset out in the tab bar's own region — the
-  player covered the bar. It is now a `MiniPlayerInset` view modifier
-  applied to **each tab's content**, so it sits directly above the tab
-  bar on every tab (Stations / Bookmarks / History).
+- **(this push, unit 1 of 3)** artwork fixes (user report: player artwork
+  missing and re-fetched every time):
+  - `ArtworkCache`: the disk file name was the **base64 of the URL**, which
+    exceeds the file-system name limit for Pandora's long signed image
+    URLs (`?token=…`) — every write failed, so every appearance
+    re-downloaded. The name is now a SHA-256 digest of the URL.
+  - `ArtworkCache.normalizedURL(from:)`: Pandora's `albumArtUrl` values
+    are sometimes relative or plain `http://` (ATS blocks cleartext, so
+    those images silently failed). Scheme-less URLs get `https://`, `http`
+    is upgraded, and stray characters are percent-encoded.
+  - The fetch now sends `Accept: image/*` and a `User-Agent`.
+  - `NowPlayingService` now pulls lock-screen artwork from the shared
+    cache instead of downloading it a second time.
+
+- **(this push, unit 2 of 3)** sleep timer actually fires (user report:
+  "the one at the bottom… is not doing anything"):
+  - `AppStore`: a **duration** timer only checked `hasExpired()` when it
+    was *set* — nothing re-checked it while playback ran, so a 15-minute
+    timer never stopped anything. A countdown task now polls the
+    deadline (every 30 s) and pauses playback when it passes.
+  - The timer is persisted in `Preferences` and restored on relaunch
+    (an expired one is discarded, a live one resumes counting down).
+  - `sleepTimerLabel` gives the UI a live "12 min left" string without
+    re-rendering every second.
+
+- **(this push, unit 3 of 3)** bookmark buttons confirm themselves
+  (user report: "I don't know if the bookmark and the artist buttons are
+  doing anything"): `AppStore.confirmationMessage` shows "Song
+  bookmarked" / "Artist bookmarked" in the player for three seconds after
+  a successful call; failures keep surfacing through the error banner.
+
+- **316b6c9** (2026-10-23): M6 unit 0 — mini-player no longer covers
+  the tab bar (user report): the mini-player was a `safeAreaInset` on
+  the `TabView` itself, which lays the inset out in the tab bar's own
+  region — the player covered the bar. It is now a `MiniPlayerInset`
+  view modifier applied to **each tab's content**, so it sits directly
+  above the tab bar on every tab. **Core Tests ✅ / iOS Build ✅**
+  (39954767059 / 39954767018).
 
 - **aa31c06** (2026-10-23): repair red iOS Build from M5 unit 4 —
   `StationsView.swift:148` — `onMove`'s source is an `IndexSet`, not an
@@ -358,22 +398,39 @@ _(none)_
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **M6 unit 1** — robustness: offline/error copy (transport failures in
-   the station list, playlist and feedback paths already map to short
-   messages in `AppStore.userMessage`) + **ad handling** (see the protocol
-   note below: ads arrive as playlist entries with an `adToken`, and
-   pydora resolves them through `ad.getAdMetadata`).
-3. **M6 unit 2** — session-expiry soak: the 1001 → re-login → replay-once
-   path is implemented and unit-tested in `SessionManager`; what is left
-   is surfacing "session expired, signed back in" to the user.
-4. **M6 unit 3** — sleep-timer deadline: a `duration` timer currently only
-   checks `hasExpired()` when it is *set*; nothing re-checks it while
-   playback runs, so a 15-minute timer never actually stops playback.
-   Needs a ticker in `PlayerService`/`AppStore`.
-5. **User device test** of the M3–M5 IPA: install the newest
-   `amphora-ipa-*` artifact → play a station, lock-screen metadata, thumbs
-   up/down, skip, backgrounding, bookmarks, sleep timer, station reorder,
-   and confirm the mini-player no longer covers the tab bar.
+2. **Lyrics unit A (core)** — `PandoraCore`: an `LRCTimestamp`/LRC parser
+   (timestamped lines, `mm:ss.xx`, multiple timestamps per line, metadata
+   tags) plus an lrclib.net client. **API verified live from this
+   workstation:** `GET https://lrclib.net/api/get?artist_name=…&track_name=…&album_name=…&duration=…`
+   → `{id, name, trackName, artistName, albumName, duration, instrumental,
+   hasWordSync, plainLyrics, syncedLyrics, lyricsfile}`; `GET
+   /api/search?track_name=…&artist_name=…` → an array of the same shape;
+   `GET /api/get/{id}` → one track. The server accepts a `User-Agent`
+   (`Lrclib-Client` / `X-User-Agent` headers also work) and answers 503
+   with `{"name":"ServerOverloaded"}` when busy — that must be retried,
+   not surfaced as an error. **The lrclib server source has no
+   translation endpoint** (checked `server/src/router.rs`: only `/get`,
+   `/get/:track_id`, `/search`, `/publish`, `/flag`,
+   `/request-challenge`) — translations need a second service.
+3. **Lyrics unit B (UI)** — a scrolling, time-synced lyric panel in the
+   Now Playing screen (highlight the active line, tap a line to seek).
+4. **Lyrics unit C (translation)** — show the original line and an
+   English line side by side. **Verified live:** the Google `translate_a`
+   endpoint (`client=gtx&sl=auto&tl=en&dt=t&q=…`) auto-detects the source
+   language and returns `[[["translated","original",…]],null,"de",…]` —
+   the third element is the detected source language, so English lyrics
+   can be skipped. MyMemory (`api.mymemory.translated.net`) works too but
+   needs an explicit source language (it rejects an empty one).
+5. **App icon** — an "Amphora" icon (the app target has no asset catalog
+   today; `project.yml` sets `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
+6. **Beautify pass** — theme, typography, gradients, polished stations /
+   now-playing screens.
+7. **M6 unit — session-expiry surfacing** ("session expired, signed back
+   in") and **ad handling** (`ad.getAdMetadata` / `ad.registerAd`, per
+   pydora — see the protocol notes below).
+8. **User device test** of the newest IPA: play a station, artwork,
+   lock-screen metadata, thumbs up/down, skip, backgrounding, bookmarks,
+   sleep timer, station reorder, mini-player above the tab bar, lyrics.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation and repair before

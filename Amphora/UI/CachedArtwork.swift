@@ -31,7 +31,10 @@ struct CachedArtwork: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .task(id: urlString) {
-            guard let urlString, let url = URL(string: urlString) else {
+            // Pandora artwork URLs are not always absolute and are
+            // sometimes plain HTTP (blocked by ATS) — normalize them
+            // before the cache sees them.
+            guard let url = urlString.flatMap(ArtworkCache.normalizedURL(from:)) else {
                 didFail = true
                 return
             }
@@ -39,6 +42,7 @@ struct CachedArtwork: View {
             guard !Task.isCancelled else { return }
             if let loaded {
                 image = loaded
+                didFail = false
             } else {
                 didFail = true
             }

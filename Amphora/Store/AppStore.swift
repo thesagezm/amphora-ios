@@ -72,10 +72,22 @@ final class AppStore {
     private(set) var history: PlayHistory = PlayHistory()
     /// The sleep timer (off by default).
     private(set) var sleepTimer: SleepTimer = .off
+    /// Live status text for the sleep timer ("12 min left", "End of
+    /// track", "Off"). Refreshed when the remaining minutes change, so
+    /// the UI re-renders about once a minute instead of every second.
+    private(set) var sleepTimerLabel: String = SleepTimer.off.label()
+    /// The countdown task for a duration sleep timer. Cancelled and
+    /// replaced whenever the timer changes.
+    private var sleepTimerTask: Task<Void, Never>?
     /// The `feedbackId` of the rating on the current track (needed to undo
     /// it) and the rating itself.
     private(set) var currentRating: FeedbackRating = .none
     private var currentFeedbackId: String?
+    /// Short confirmation of the last successful action ("Song
+    /// bookmarked"), shown briefly in the player so the user can see
+    /// that a button did something. Nil when there is nothing to show.
+    private(set) var confirmationMessage: String?
+    private var confirmationTask: Task<Void, Never>?
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
 
@@ -99,6 +111,17 @@ final class AppStore {
         self.player = player
         self.nowPlaying = NowPlayingService(player: player)
         self.history = historyStore.load()
+        // A sleep timer survives a relaunch: restore it and resume the
+        // countdown if its deadline is still ahead.
+        let storedTimer = preferences.sleepTimer
+        if storedTimer.mode == .duration, !storedTimer.hasExpired() {
+            sleepTimer = storedTimer
+            sleepTimerLabel = storedTimer.label()
+            startSleepTimerCountdown()
+        } else if storedTimer.mode == .endOfTrack {
+            sleepTimer = storedTimer
+            sleepTimerLabel = storedTimer.label()
+        }
         // The player asks for more tracks when its queue runs low — pithos
         // preloads the next playlist when one song remains.
         player.onNeedMoreTracks = { [weak self] in
@@ -118,8 +141,7 @@ final class AppStore {
             }
             // An "end of track" sleep timer stops playback here.
             if self.sleepTimer.mode == .endOfTrack, track != nil {
-                self.player.pause()
-                self.sleepTimer = .off
+                self.fireSleepTimer()
             }
         }
     }
@@ -379,10 +401,59 @@ final class AppStore {
     /// current track finishes.
     private func setSleepTimer(_ timer: SleepTimer) {
         sleepTimer = timer
+        sleepTimerLabel = timer.label()
+        preferences.sleepTimer = timer
+        preferencesStore.save(preferences)
+        // A new timer replaces the old countdown.
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
         if timer.hasExpired() {
             player.pause()
             sleepTimer = .off
+            sleepTimerLabel = SleepTimer.off.label()
+            preferences.sleepTimer = .off
+            preferencesStore.save(preferences)
+            return
         }
+        guard timer.mode == .duration else { return }
+        startSleepTimerCountdown()
+    }
+
+    /// Counts a duration timer down and stops playback when it expires.
+    /// The label is refreshed only when the visible minute count changes,
+    /// so the UI re-renders about once a minute — not every second.
+    private func startSleepTimerCountdown() {
+        let timer = sleepTimer
+        guard timer.mode == .duration else { return }
+        sleepTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let remaining = self.sleepTimer.remaining()
+                let label = self.sleepTimer.label()
+                if label != self.sleepTimerLabel {
+                    self.sleepTimerLabel = label
+                }
+                if remaining <= 0 {
+                    self.fireSleepTimer()
+                    return
+                }
+                // Wake up when the next label changes (or when the timer
+                // ends) instead of polling every second.
+                let sleepFor = min(remaining, 30)
+                try? await Task.sleep(for: .seconds(sleepFor))
+            }
+        }
+    }
+
+    /// The timer expired: pause playback and clear the timer.
+    private func fireSleepTimer() {
+        player.pause()
+        sleepTimer = .off
+        sleepTimerLabel = SleepTimer.off.label()
+        preferences.sleepTimer = .off
+        preferencesStore.save(preferences)
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
     }
     /// old rating: the previous feedback is deleted first, exactly like
     /// pithos' `Song.rate`.
@@ -446,6 +517,7 @@ final class AppStore {
         do {
             try await session.addSongBookmark(trackToken: track.trackToken)
             await refreshBookmarks()
+            showConfirmation("Song bookmarked")
         } catch {
             lastErrorMessage = Self.userMessage(for: error)
         }
@@ -458,8 +530,21 @@ final class AppStore {
         do {
             try await session.addArtistBookmark(trackToken: track.trackToken)
             await refreshBookmarks()
+            showConfirmation("Artist bookmarked")
         } catch {
             lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Shows a short confirmation in the player, clearing it after a few
+    /// seconds. A newer message replaces the pending one.
+    private func showConfirmation(_ message: String) {
+        confirmationTask?.cancel()
+        confirmationMessage = message
+        confirmationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.confirmationMessage = nil
         }
     }
 

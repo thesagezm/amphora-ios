@@ -30,7 +30,7 @@ struct NowPlayingView: View {
                     .accessibilityLabel(
                         store.sleepTimer.isOff
                             ? "Sleep timer"
-                            : "Sleep timer, \(store.sleepTimer.label())"
+                            : "Sleep timer, \(store.sleepTimerLabel)"
                     )
                 }
             }
@@ -72,6 +72,8 @@ struct NowPlayingView: View {
                 FeedbackBar()
 
                 bookmarkButtons
+
+                confirmation
 
                 if let message = store.player.errorMessage {
                     Text(message)
@@ -173,6 +175,21 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.bordered)
             .accessibilityLabel("Bookmark this artist")
+        }
+    }
+
+    /// A short, self-dismissing confirmation ("Song bookmarked") — the
+    /// user can see that a button did something.
+    @ViewBuilder
+    private var confirmation: some View {
+        if let message = store.confirmationMessage {
+            Text(message)
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.thinMaterial, in: Capsule())
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .accessibilityAddTraits(.isStaticText)
         }
     }
 
