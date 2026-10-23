@@ -28,14 +28,39 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): repair red iOS Build from M3 unit 3** —
-  `MiniPlayer.swift:55` — `private var fallbackIcon: View` (an existential)
-  was passed to `AsyncImage`'s `placeholder:` closure, which needs a
-  concrete `View`. Fixed to `some View`. Also made `AppStore.player` an
-  explicitly initialized `let` so the `NowPlayingService` wiring is
-  unambiguous. (Lesson: never type a SwiftUI helper as bare `View` — use
-  `some View`.)
-- **f919e24** (2026-10-23): M3 unit 3 — Now Playing + remote commands:
+- **This push (2026-10-23): M4 unit 1 — feedback + bookmarks core**
+  (PandoraCore only):
+  - `Feedback.swift` (new): `FeedbackRating` (loved/banned/none),
+    `FeedbackReceipt` (the `feedbackId` needed to undo a rating),
+    `Bookmark` (song/artist bookmarks with `bookmarkToken`, `musicToken`,
+    artist/song/album names, art, `dateCreated`).
+  - `SessionManager`: `addFeedback` (`station.addFeedback` with
+    `trackToken` + `stationToken` + `isPositive`), `deleteFeedback`
+    (`station.deleteFeedback`), `sleepSong` (`user.sleepSong`),
+    `getBookmarks` (`user.getBookmarks`), `addSongBookmark` /
+    `addArtistBookmark` / `deleteSongBookmark` / `deleteArtistBookmark`.
+  - **Protocol note:** the legacy v5 API has **no "why"/reason parameter**
+    for dislikes in any reference (pithos, pydora, libpiano, PandoraSharp,
+    gopiano, volumio, sonos-http-api all send only `isPositive`). Amphora
+    therefore does not invent a reason field — the "why" reason list is
+    out of scope until a reference documents it.
+  - `FeedbackTests`: 8 tests (thumbs up/down request shape, missing
+    feedbackId → malformed, delete shape, sleep shape, bookmarks
+    decoding, malformed bookmark skip, add/delete bookmark endpoints).
+  - **Local Docker Swift 6.0.3 run: 93/93 tests green.**
+
+- **cefeb2f** (2026-10-23): repair red iOS Build from M3 unit 3 —
+  **Core Tests ✅** (39931996059), **iOS Build ✅** (39931995916):
+  - `MiniPlayer.swift` — `private var fallbackIcon: View` (an existential)
+    was passed to `AsyncImage`'s `placeholder:` closure, which needs a
+    concrete `View`. Fixed to `some View`. (Lesson: never type a SwiftUI
+    helper as bare `View` — use `some View`.)
+  - `AppStore.player` is now an explicitly initialized `let` so the
+    `NowPlayingService` wiring is unambiguous.
+
+- **f919e24** (2026-10-23): M3 unit 3 — Now Playing + remote commands —
+  **Core Tests ✅** (39931443915), **iOS Build ❌** (39931443965 — the
+  `fallbackIcon: View` error above):
   - `NowPlayingService` (new `Amphora/Player/`): publishes title/artist/
     album/duration/elapsed/rate to `MPNowPlayingInfoCenter`, loads lock-screen
     artwork off the main actor, wires `MPRemoteCommandCenter` (play, pause,
@@ -47,7 +72,7 @@ _(none)_
 
 - **24d8464** (2026-10-23): M3 unit 2 — `PlayerService` + tap-to-play —
   **Core Tests ✅** (39929262651), **iOS Build ❌** (39929262603 — the
-  `fallbackIcon: View` error above, repaired in the next push):
+  same `fallbackIcon: View` error, repaired in `cefeb2f`):
   - `PlayerService` (real implementation now): `AVQueuePlayer` with a
     two-slot queue (current + prefetched next → near-gapless hand-over),
     `AVAudioSession(.playback, .default)` activation, `preferredForwardBufferDuration

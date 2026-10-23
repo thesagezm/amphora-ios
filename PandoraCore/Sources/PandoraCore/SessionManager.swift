@@ -381,6 +381,100 @@ public actor SessionManager {
         return Playlist(tracks: Track.tracks(from: result), fetchedAt: now())
     }
 
+    // MARK: Feedback
+
+    /// Rate a track (thumbs up / thumbs down).
+    ///
+    /// `station.addFeedback` with `trackToken`, `stationToken` and
+    /// `isPositive` (pithos `Pandora.add_feedback` + libpiano's
+    /// `PIANO_REQUEST_ADD_FEEDBACK`). The reply carries the
+    /// `feedbackId` needed to undo the rating.
+    public func addFeedback(
+        trackToken: String,
+        stationToken: String,
+        rating: FeedbackRating
+    ) async throws -> FeedbackReceipt {
+        guard rating != .none else {
+            throw PandoraAPIError(code: 0, message: "cannot add a 'none' rating")
+        }
+        let result = try await authenticatedRequest(
+            PandoraAPI.Method.addFeedback,
+            parameters: [
+                "trackToken": .string(trackToken),
+                "stationToken": .string(stationToken),
+                "isPositive": .bool(rating.isPositive)
+            ]
+        )
+        return try FeedbackReceipt(result: result)
+    }
+
+    /// Remove a rating (thumbs up/down → unrated).
+    /// `station.deleteFeedback` with `feedbackId` and `stationToken`
+    /// (pithos `Pandora.delete_feedback`; libpiano sends only the id).
+    public func deleteFeedback(feedbackId: String, stationToken: String) async throws {
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.deleteFeedback,
+            parameters: [
+                "feedbackId": .string(feedbackId),
+                "stationToken": .string(stationToken)
+            ]
+        )
+    }
+
+    /// Hide a track for the next few hours (`user.sleepSong`, pithos
+    /// `Song.set_tired`).
+    public func sleepSong(trackToken: String) async throws {
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.sleepSong,
+            parameters: ["trackToken": .string(trackToken)]
+        )
+    }
+
+    // MARK: Bookmarks
+
+    /// The user's bookmarks (`user.getBookmarks`, pydora
+    /// `APIClient.get_bookmarks`).
+    public func getBookmarks() async throws -> [Bookmark] {
+        let result = try await authenticatedRequest(PandoraAPI.Method.getBookmarks)
+        return Bookmark.bookmarks(from: result)
+    }
+
+    /// Bookmark a song (`bookmark.addSongBookmark`, pithos
+    /// `Song.bookmark`).
+    public func addSongBookmark(trackToken: String) async throws {
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.addSongBookmark,
+            parameters: ["trackToken": .string(trackToken)]
+        )
+    }
+
+    /// Bookmark the artist of a track (`bookmark.addArtistBookmark`,
+    /// pithos `Song.bookmark_artist`).
+    public func addArtistBookmark(trackToken: String) async throws {
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.addArtistBookmark,
+            parameters: ["trackToken": .string(trackToken)]
+        )
+    }
+
+    /// Remove a song bookmark (`bookmark.deleteSongBookmark`, pydora
+    /// `delete_song_bookmark`).
+    public func deleteSongBookmark(bookmarkToken: String) async throws {
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.deleteSongBookmark,
+            parameters: ["bookmarkToken": .string(bookmarkToken)]
+        )
+    }
+
+    /// Remove an artist bookmark (`bookmark.deleteArtistBookmark`, pydora
+    /// `delete_artist_bookmark`).
+    public func deleteArtistBookmark(bookmarkToken: String) async throws {
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.deleteArtistBookmark,
+            parameters: ["bookmarkToken": .string(bookmarkToken)]
+        )
+    }
+
     // MARK: Helpers
 
     /// partnerId/userId arrive as either JSON string or number depending on

@@ -32,6 +32,14 @@ public enum PandoraAPI {
         public static let transformSharedStation = "station.transformSharedStation"
         public static let musicSearch = "music.search"
         public static let getPlaylist = "station.getPlaylist"
+        public static let addFeedback = "station.addFeedback"
+        public static let deleteFeedback = "station.deleteFeedback"
+        public static let getBookmarks = "user.getBookmarks"
+        public static let addSongBookmark = "bookmark.addSongBookmark"
+        public static let addArtistBookmark = "bookmark.addArtistBookmark"
+        public static let deleteSongBookmark = "bookmark.deleteSongBookmark"
+        public static let deleteArtistBookmark = "bookmark.deleteArtistBookmark"
+        public static let sleepSong = "user.sleepSong"
     }
 
     /// Extra stream formats requested alongside a playlist, in the order
