@@ -21,7 +21,14 @@ on their phone.)
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M1 login screen** (app target — last M1 unit).
+- **This push (2026-10-23): M1 SessionRecord store tests.** 3 tests in
+  `SessionRecordTests`: encode/decode round-trip, decode from the exact
+  fixed JSON the Keychain store persists (guards against a synthesized-
+  Codable rename stranding stored sessions), `InMemorySessionStore`
+  save/load/clear.
+
+- `fcbb245` (2026-10-23): **M1 login screen** — **Core Tests ✅**
+  (39876459087), **iOS Build ✅** (39876459009).
   - `KeychainSessionStore` (`Amphora/Persistence/`): `SessionStore` conformance
     over the existing `KeychainStore` — JSON-encodes `SessionRecord`, missing
     or undecodable item ⇒ `nil` (fail closed to login screen).
