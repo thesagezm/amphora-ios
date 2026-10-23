@@ -7,7 +7,7 @@ struct HistoryView: View {
 
     var body: some View {
         Group {
-            if store.history.isEmpty {
+            if store.history.entries.isEmpty {
                 ContentUnavailableView {
                     Label("Nothing played yet", systemImage: "clock")
                 } description: {
@@ -21,7 +21,7 @@ struct HistoryView: View {
     }
 
     private var list: some View {
-        List(store.history) { entry in
+        List(store.history.entries) { entry in
             HStack(spacing: 12) {
                 CachedArtwork(urlString: entry.artworkUrl, cornerRadius: 8)
                     .frame(width: 44, height: 44)

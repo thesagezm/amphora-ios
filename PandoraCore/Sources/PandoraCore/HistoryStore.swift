@@ -63,6 +63,15 @@ public struct PlayHistory: Codable, Sendable, Equatable {
     /// Newest first.
     public private(set) var entries: [Entry]
 
+    /// Whether anything has been played yet.
+    public var isEmpty: Bool { entries.isEmpty }
+
+    /// The remembered plays, newest first.
+    public var count: Int { entries.count }
+
+    /// The plays as a plain array (for `List`/`ForEach`).
+    public var items: [Entry] { entries }
+
     /// The maximum number of entries kept.
     public let capacity: Int
 
