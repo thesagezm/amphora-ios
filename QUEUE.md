@@ -28,7 +28,15 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M5 unit 4 — station ordering + preferences**:
+- **aa31c06** (2026-10-23): repair red iOS Build from M5 unit 4 —
+  `StationsView.swift:148` — `onMove`'s source is an `IndexSet`, not an
+  `Int`; take `source.first` and pass that to the intent. Core Tests was
+  already green on `f39c4b2` (39940148781); iOS Build re-verified on this
+  push.
+
+- **f39c4b2** (2026-10-23): M5 unit 4 — station ordering —
+  **Core Tests ✅** (39940148781), **iOS Build ❌** (39940148326 — the
+  `onMove` IndexSet error above):
   - `StationOrder.swift` (new, PandoraCore): the user's station ordering
     — an ordered id list applied to the server's list (unknown ids are
     dropped, the rest keep the server order). `StationOrderTests`: 7
