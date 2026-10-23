@@ -5,9 +5,9 @@ Updated in the same commit as the work it describes.
 
 ## Current Milestone
 
-**M3** — Playback: `station.getPlaylist` core → `PlayerService`/`AVPlayer`
-→ background audio, Now Playing, remote commands, prefetch next.
-(M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works" 2026-10-23.)
+**M5** — UI/design pass, last polish unit → **M6** — performance &
+robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
+2026-10-23. M3–M5 code complete, device check pending.)
 
 ## User Feedback Pending
 
@@ -15,7 +15,13 @@ _(none)_
 
 **Resolved feedback:**
 
-1. **"Installing Amphora: error — the folder 'payload' doesn't exist"**
+1. **"the miniplayer overlaps and hides the bottom tab bar"** (2026-10-23,
+   user report) — fixed: the mini-player was a `safeAreaInset` on the
+   `TabView` itself, which laid it out in the tab bar's own region and
+   covered the bar. It is now attached to each tab's **content** via a
+   `MiniPlayerInset` view modifier, so it sits directly above the tab bar
+   on every tab. (M6 unit 0 — UI polish.)
+2. **"Installing Amphora: error — the folder 'payload' doesn't exist"**
    (2026-10-23, LiveContainer) — fixed by `4dd1fbf`: zip `Payload` from the
    workspace root; artifact `amphora-ipa-10` verified to contain
    `Payload/Amphora.app/…`. **User then signed in on device — install
@@ -27,6 +33,13 @@ _(none)_
    rename/delete, add-station search all good on device. **M2 complete.**
 
 ## In Flight / Last Push
+
+- **(this push)** M6 unit 0 — mini-player no longer covers the tab bar
+  (user report): the mini-player was a `safeAreaInset` on the `TabView`
+  itself, which lays the inset out in the tab bar's own region — the
+  player covered the bar. It is now a `MiniPlayerInset` view modifier
+  applied to **each tab's content**, so it sits directly above the tab
+  bar on every tab (Stations / Bookmarks / History).
 
 - **aa31c06** (2026-10-23): repair red iOS Build from M5 unit 4 —
   `StationsView.swift:148` — `onMove`'s source is an `IndexSet`, not an
@@ -347,14 +360,20 @@ _(none)_
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
 2. **M6 unit 1** — robustness: offline/error copy (transport failures in
    the station list, playlist and feedback paths already map to short
-   messages in `AppStore.userMessage`), explicit-content badge, skip-limit
-   awareness if the API exposes it.
+   messages in `AppStore.userMessage`) + **ad handling** (see the protocol
+   note below: ads arrive as playlist entries with an `adToken`, and
+   pydora resolves them through `ad.getAdMetadata`).
 3. **M6 unit 2** — session-expiry soak: the 1001 → re-login → replay-once
    path is implemented and unit-tested in `SessionManager`; what is left
    is surfacing "session expired, signed back in" to the user.
-4. **User device test** of the M3–M5 IPA: install the newest
+4. **M6 unit 3** — sleep-timer deadline: a `duration` timer currently only
+   checks `hasExpired()` when it is *set*; nothing re-checks it while
+   playback runs, so a 15-minute timer never actually stops playback.
+   Needs a ticker in `PlayerService`/`AppStore`.
+5. **User device test** of the M3–M5 IPA: install the newest
    `amphora-ipa-*` artifact → play a station, lock-screen metadata, thumbs
-   up/down, skip, backgrounding, bookmarks, sleep timer, station reorder.
+   up/down, skip, backgrounding, bookmarks, sleep timer, station reorder,
+   and confirm the mini-player no longer covers the tab bar.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation and repair before
@@ -424,3 +443,39 @@ any new unit.
 - `auth.userLogin` body: `username`, `password`, `loginType: "user"`,
   `returnIsSubscriber: true` — encrypted; also carries `partnerAuthToken`
   or `userAuthToken` when present, plus `syncTime`.
+- **Skip limits are NOT exposed as a numeric field by any reference.**
+  Checked pithos, pydora, libpiano (`nx-mod/libpiano-nx`), gopiano
+  (`unclesp1d3r/gopiano`), PandoraSharp (`adammhaile/Elpis`) and
+  sonos-http-api: none of them read a "remaining skips" value. The only
+  signal found is PandoraSharp's handling of two **server-side fault
+  messages** on `station.getPlaylist` — `PLAYLIST_END` and
+  `DAILY_SKIP_LIMIT_REACHED` (Elpis `Station.cs:232`). Neither pithos nor
+  pydora handles them. → Implement as error-message detection, not a
+  numeric counter. (Note: libpiano names code 1039
+  `PIANO_RET_P_RATE_LIMIT`; pithos calls the same code
+  `PLAYLIST_EXCEEDED` — they are the "too many playlist requests" rate
+  limit, *not* the skip limit.)
+- **Explicit content is an account-level filter, not a per-item flag.**
+  pithos reads `user.getSettings` → `isExplicitContentFilterEnabled` /
+  `isExplicitContentFilterPINProtected` and toggles it with
+  `user.setExplicitContentFilter` (`pithos/pandora/pandora.py:310-327`);
+  libpiano parses the same `isExplicitContentFilterEnabled`
+  (`source/response.c:585`). No reference reads an explicit flag on a
+  station or a playlist item — the filter is applied server-side, so
+  explicit tracks simply do not arrive when it is on. → An
+  explicit-content badge has no protocol source; it stays out of scope
+  unless a reference documents a per-item field.
+- **Station allow\* flags** (pydora `pandora/models/station.py:50-59`):
+  `allowAddMusic`, `allowDelete`, `allowRename`, `allowEditDescription`,
+  `processSkips`, plus `isShared` / `isQuickMix` / `isGenreStation` /
+  `isThumbprint`. Amphora currently hard-codes the pithos rule
+  (quickmix + thumbprint are not renameable/deletable) rather than
+  reading `allowRename` / `allowDelete` — a possible M6 refinement.
+- **Ads**: a playlist entry with an `adToken` is an ad (pydora
+  `PlaylistItem.is_ad`). pydora resolves it with `ad.getAdMetadata`
+  (`adToken`, `returnAdTrackingTokens: true`, `supportAudioAds: true`)
+  and registers it with `ad.registerAd` (`stationId`,
+  `adTrackingTokens`) before playback; pithos only labels it
+  ("Commercial Advertisement"). Amphora currently keeps ads in the
+  playlist and flags them (`Track.isAdvertisement`) but neither resolves
+  nor registers them.
