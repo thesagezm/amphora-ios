@@ -27,7 +27,14 @@ _(none — both resolved below)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M2 unit 1 — station list core.** PandoraCore
+- **This push (2026-10-23): repair Core Tests after station-list core push.**
+  - `10abb9c`: **iOS Build ✅** (39879789581), **Core Tests ❌**
+    (39879789613) — 1 failure: `StationTests.testDecodesFullStationFields`
+    threw `undecodable response body`. Cause: the fixture was assembled by
+    concatenating string literals and a doubled `,"` broke the JSON.
+    Fixed by making `fullStationJSON` one literal.
+
+- `10abb9c` (2026-10-23): **M2 unit 1 — station list core**. PandoraCore
   only (no app changes yet):
   - `Station`/`StationList` models (`Station.swift`): wire keys from
     pithos `Station.__init__` (required: `stationId`, `stationToken`,

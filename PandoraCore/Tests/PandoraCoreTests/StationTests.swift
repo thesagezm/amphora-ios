@@ -13,12 +13,10 @@ import XCTest
 final class StationTests: XCTestCase {
 
     /// Full station as the API returns it: pithos' required set plus
-    /// pydora's optional set.
+    /// pydora's optional set. One literal — splitting it across lines
+    /// previously produced a doubled comma and an undecodable envelope.
     private let fullStationJSON =
-        #"{"stationId":"123456","stationToken":"ST123","stationName":"Weezer Radio","#
-        + #","isShared":false,"isQuickMix":false,"isThumbprint":false,"isGenreStation":false,"#
-        + #""artUrl":"https://art.example/s.png","allowAddMusic":true,"allowDelete":true,"#
-        + #""allowRename":true,"thumbCount":7}"#
+        #"{"stationId":"123456","stationToken":"ST123","stationName":"Weezer Radio","isShared":false,"isQuickMix":false,"isThumbprint":false,"isGenreStation":false,"artUrl":"https://art.example/s.png","allowAddMusic":true,"allowDelete":true,"allowRename":true,"thumbCount":7}"#
 
     func testDecodesFullStationFields() throws {
         let json = #"{"stations":[\#(fullStationJSON)],"checksum":"abc"}"#
