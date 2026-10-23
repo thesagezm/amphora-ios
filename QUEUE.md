@@ -11,7 +11,23 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
-**2026-10-23 device report (this session's driver, top priority):**
+**2026-10-23 station-tuning request (this session's driver):**
+
+> "there is an app called panedora… which has the ability to customise
+> the station i.e deep cuts etc… is there anyway to allow the tuning of
+> the station … everything should be for a free pandora account"
+
+**Answer: yes — free accounts can tune stations.** Panedora's "Tune your
+station" is Pandora's *listening modes* (My Mix / Deep Cuts / Crowd
+Faves / Discovery / …). The endpoints live on the modern web API but
+accept the **legacy session's `userAuthToken`** — pandoCast logs in with
+the very same android-generic legacy flow Amphora uses and then drives
+them (see Protocol Notes). Free accounts get every mode except the
+`isPremiumOnly` one ("Artist Only", id 5). Core unit landed this push;
+the app UI unit is next (Pending Queue item 3).
+
+**2026-10-23 device report (prior session's driver; units A–C + lyrics
+landed, device test still pending):**
 
 1. **Crash**: "once I start to play a station it's only a matter of
    seconds before the app crashes LiveContainer". One song did show its
@@ -35,7 +51,47 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — lyrics unit C, translation):**
+**(this push — station-tuning core + AppLog repair):**
+
+- **Repair first (`4b60252`)**: iOS Build was red on the lyrics-unit-C
+  push — `AppLog.startedAt` was `private` while `LogBuffer.store` (same
+  file) references it; now `fileprivate`. The fix was found uncommitted
+  in the tree and committed as-is.
+- **Station tuning core (PandoraCore, `StationModes.swift` new)**:
+  - `StationMode` / `StationModes` decode the `interactiveradio` reply
+    (`modeId` number-or-digit-string, sparse flags defaulted, entries
+    without id/name dropped, duplicate ids keep first, missing
+    `availableModes` only valid when `interactiveRadioAvailable` is
+    false, `errorCode`/`stat:fail` → malformed).
+  - `PandoraModesClient`: POSTs plain JSON to
+    `https://www.pandora.com/api/v1/interactiveradio/
+    getAvailableModesSimple` (`{"stationId": …}`) and
+    `setAndGetAvailableModes` (`{"stationId": …, "modeId": …,
+    "previousModeId": …}`) with `X-AuthToken` (the **legacy**
+    `userAuthToken`) + `X-CsrfToken` + browser-like headers;
+    401/403 → fresh csrf → retry once → `.unauthorized`; 200 with an
+    unmoved `currentModeId` → `.modeNotOffered`. `CookieCSRFProvider`
+    bootstraps the `csrftoken` cookie (HEAD then GET on
+    `https://www.pandora.com/`, pandoCast `EnsureCsrfTokenAsync`).
+  - `SessionManager`: `getStationModes(for:)` /
+    `setStationMode(_:for:previousModeID:)`; refuses premium-only modes
+    on free accounts (`isSubscriber`) and unoffered modes **before any
+    network**; `.unauthorized` → transparent re-login, retry once (same
+    contract as the 1001 path).
+  - Protocol evidence (both clients read from source this session):
+    pandoCast (`lennyxc/PandoCast`, `PandoraRestApi.cs`) does the legacy
+    android-generic login then calls these endpoints with that token and
+    the numeric station id; Panedora (`MitchellBrovarnik/Panedora`,
+    `pandora-api.js`) calls the same two endpoints from a web session
+    and hard-codes id 5 / `isPremiumOnly` as the Premium gate. Free
+    accounts can use the rest (Deep Cuts included).
+  - Tests: 23 new (decoding 9, client 8, SessionManager facade 6) —
+    **161/161 green** in Docker (`swift:6.0`).
+- Remaining risk: iOS Build compiles PandoraCore under macOS Swift 6 —
+  new code mirrors the proven `SessionBox`/`LogBuffer` patterns; still,
+  verify the run before trusting it.
+
+**(previous push — lyrics unit C, translation):**
 
 - `AppStore`: after a successful synced-lyrics fetch,
   `translateIfNeeded` fires `GoogleTranslateClient.englishTranslation(of:)`
@@ -150,9 +206,18 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
    toolbar) → Copy → paste the log** if anything is still wrong. If the
    app crashed and relaunched, the "Last crash" section is already filled
    in.
-3. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
-4. Beautify pass (theme, typography, gradients).
-5. Session-expiry surfacing + ad handling (protocol notes at the bottom).
+3. **Station-tuning UI (app target)** — `AppStore`: `stationModes` state
+   + `loadModes`/`setMode` intents (fetch when a station starts playing;
+   `setMode` → `sessionManager.setStationMode`, then **refetch the
+   playlist and start a fresh track** — "changing modes starts a new
+   song", per Panedora). UI: a "Tune station" entry in the player
+   toolbar (and/or station long-press menu) opening a modes sheet —
+   checkmark on the current mode, premium-only rows shown disabled with
+   "Premium", hide the whole panel when
+   `isInteractiveRadioAvailable == false` (QuickMix).
+4. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
+5. Beautify pass (theme, typography, gradients).
+6. Session-expiry surfacing + ad handling (protocol notes at the bottom).
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
 failure summary annotation and repair before any new unit.
@@ -223,6 +288,28 @@ session-expiry surfacing, ad handling.
 
 ## Protocol Notes (reference-verified)
 
+- **Listening modes (station tuning)** — modern web API, plain JSON (no
+  Blowfish), verified from pandoCast `PandoraRestApi.cs` and Panedora
+  `pandora-api.js`:
+  - `POST https://www.pandora.com/api/v1/interactiveradio/
+    getAvailableModesSimple` body `{"stationId": "<numeric stationId>"}`
+    → `{interactiveRadioAvailable, currentModeId, availableModes:
+    [{modeId, modeName, modeDescription, isModeAvailable,
+    isPremiumOnly}], availableModesHeader, hasTakeoverModes, …}`.
+  - `POST …/setAndGetAvailableModes` body `{"stationId": …, "modeId":
+    n, "previousModeId": n}` (panedora omits `previousModeId`; optional)
+    → same reply shape. Pandora can answer 200 while keeping the old
+    mode — re-check `currentModeId`.
+  - Auth: header `X-AuthToken: <legacy userAuthToken>` — pandoCast
+    obtains it from the legacy android-generic `auth.userLogin` and
+    calls these endpoints with it; the numeric `stationId` is shared by
+    both API generations. CSRF: `X-CsrfToken` = the `csrftoken` cookie
+    from `https://www.pandora.com/` (HEAD, then GET); on 401/403
+    re-bootstrap the cookie and retry once.
+  - Free accounts: all modes except `isPremiumOnly` (id 5 "Artist
+    Only" — panedora also hard-codes id 5 when the flag is missing).
+    `interactiveRadioAvailable: false` → station cannot be tuned
+    (e.g. QuickMix).
 - Request encryption: zero-pad each partial 8-byte chunk → Blowfish-ECB
   with `encryptKey` → hex (`pithos.pandora.json_call`, `blowfish=True`).
   Not PKCS — trailing zeros are never stripped on decrypt.

@@ -119,6 +119,7 @@ public enum SessionManagerError: Error, Equatable, Sendable {
 
 public actor SessionManager {
     private let client: LegacyPandoraClient
+    private let modes: PandoraModesClient
     private let store: (any SessionStore)?
     private let now: @Sendable () -> Date
 
@@ -128,10 +129,12 @@ public actor SessionManager {
 
     public init(
         client: LegacyPandoraClient = LegacyPandoraClient(),
+        modes: PandoraModesClient = PandoraModesClient(),
         store: (any SessionStore)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.client = client
+        self.modes = modes
         self.store = store
         self.now = now
     }
@@ -379,6 +382,74 @@ public actor SessionManager {
             ]
         )
         return Playlist(tracks: Track.tracks(from: result), fetchedAt: now())
+    }
+
+    // MARK: Station tuning (listening modes)
+
+    /// The station's listening modes ("My Mix", "Deep Cuts", …) from the
+    /// modern `interactiveradio` web API, authenticated with the legacy
+    /// session's user token (see `PandoraModesClient`). The station's
+    /// numeric `stationId` is the identifier both API generations share
+    /// (pandoCast passes it as `stationId`).
+    ///
+    /// 401/403 (the modern API's session-expiry signal) → transparent
+    /// re-login, retry once — the same contract as `authenticatedRequest`.
+    public func getStationModes(for station: Station) async throws -> StationModes {
+        guard let authToken = tokens?.userAuthToken else {
+            throw SessionManagerError.notAuthenticated
+        }
+        do {
+            return try await modes.getModes(userAuthToken: authToken, stationId: station.id)
+        } catch StationModesError.unauthorized {
+            try await reloginAfterUnauthorized()
+            guard let fresh = tokens?.userAuthToken else {
+                throw SessionManagerError.notAuthenticated
+            }
+            return try await modes.getModes(userAuthToken: fresh, stationId: station.id)
+        }
+    }
+
+    /// Select a listening mode. Refuses the call without touching the
+    /// network when the mode is not offered for the station, or when it is
+    /// premium-only and the account is free (panedora gates both ways).
+    /// Changing the mode changes what the *next* playlist fetch returns —
+    /// "changing modes starts a new song".
+    public func setStationMode(
+        _ mode: StationMode,
+        for station: Station,
+        previousModeID: Int? = nil
+    ) async throws -> StationModes {
+        guard mode.isAvailable else { throw StationModesError.modeNotOffered }
+        if mode.isPremiumOnly && !subscriber {
+            throw StationModesError.notEntitled
+        }
+        guard let authToken = tokens?.userAuthToken else {
+            throw SessionManagerError.notAuthenticated
+        }
+        do {
+            return try await modes.setMode(
+                userAuthToken: authToken,
+                stationId: station.id,
+                modeId: mode.id,
+                previousModeId: previousModeID
+            )
+        } catch StationModesError.unauthorized {
+            try await reloginAfterUnauthorized()
+            guard let fresh = tokens?.userAuthToken else {
+                throw SessionManagerError.notAuthenticated
+            }
+            return try await modes.setMode(
+                userAuthToken: fresh,
+                stationId: station.id,
+                modeId: mode.id,
+                previousModeId: previousModeID
+            )
+        }
+    }
+
+    private func reloginAfterUnauthorized() async throws {
+        guard let credentials else { throw SessionManagerError.notAuthenticated }
+        _ = try await login(username: credentials.username, password: credentials.password)
     }
 
     // MARK: Feedback
