@@ -34,8 +34,14 @@ final class PlayerService {
 
     // MARK: Observable state
 
-    private(set) var currentTrack: Track?
-    private(set) var state: PlaybackState = .idle
+    private(set) var currentTrack: Track? {
+        didSet { onTrackChanged?(currentTrack) }
+    }
+    private(set) var state: PlaybackState = .idle {
+        didSet {
+            if oldValue != state { onPlaybackStateChanged?() }
+        }
+    }
     /// Playback position in seconds.
     private(set) var elapsed: TimeInterval = 0
     /// Track length in seconds (from Pandora's `trackLength`).
@@ -53,6 +59,10 @@ final class PlayerService {
     var onTrackEnded: (() -> Void)?
     /// Fired when playback of the current track failed.
     var onPlaybackFailed: ((String) -> Void)?
+    /// Fired when the current track changed (start, skip, natural end).
+    var onTrackChanged: ((Track?) -> Void)?
+    /// Fired when the playback state changed (play/pause/buffering/failed).
+    var onPlaybackStateChanged: (() -> Void)?
 
     // MARK: Private state
 
@@ -170,6 +180,38 @@ final class PlayerService {
         case .idle:
             break
         }
+    }
+
+    /// Jumps forward in the current track (remote command).
+    func skipForward(by seconds: TimeInterval) {
+        guard !slots.isEmpty else { return }
+        seek(to: min(elapsed + seconds, maxDuration))
+    }
+
+    /// Jumps backward in the current track (remote command).
+    func skipBackward(by seconds: TimeInterval) {
+        guard !slots.isEmpty else { return }
+        seek(to: max(0, elapsed - seconds))
+    }
+
+    /// Seeks within the current track.
+    func seek(to seconds: TimeInterval) {
+        guard !slots.isEmpty else { return }
+        let target = max(0, min(seconds, maxDuration))
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
+        elapsed = target
+    }
+
+    /// Track length in seconds; falls back to the player item's duration
+    /// when Pandora did not send one.
+    private var maxDuration: TimeInterval {
+        if duration > 0 { return duration }
+        let itemDuration = player.currentItem?.duration.seconds ?? 0
+        return itemDuration.isFinite ? itemDuration : 0
     }
 
     /// Stops playback and clears the queue (sign-out, station switch).

@@ -6,21 +6,32 @@ import SwiftUI
 struct MiniPlayer: View {
     @Environment(AppStore.self) private var store
 
+    @State private var isShowingNowPlaying = false
+
     private var track: Track? { store.player.currentTrack }
 
     var body: some View {
         HStack(spacing: 12) {
-            artwork
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track?.title ?? "")
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                Text(track?.artist ?? "")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            Button {
+                isShowingNowPlaying = true
+            } label: {
+                HStack(spacing: 12) {
+                    artwork
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track?.title ?? "")
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
+                        Text(track?.artist ?? "")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open now playing")
             Button {
                 store.send(.togglePlayback)
             } label: {
@@ -45,6 +56,9 @@ struct MiniPlayer: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
+        .sheet(isPresented: $isShowingNowPlaying) {
+            NowPlayingView()
+        }
     }
 
     private var artwork: some View {
