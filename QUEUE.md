@@ -6,49 +6,50 @@ Updated in the same commit as the work it describes.
 ## Current Milestone
 
 **M1** — Auth: Blowfish password, partner login, user login, Keychain
-persistence, auto-login, typed errors. (M0 complete.)
+persistence, auto-login, typed errors. (M0 complete. All M1 units are
+pushed; milestone stays open until the user confirms login + auto-login
+on their phone.)
 
 ## User Feedback Pending
 
 1. **"Installing Amphora: error — the folder 'payload' doesn't exist"**
-   (2026-10-23, LiveContainer). Diagnosed: the packaging step zipped from
-   *inside* `Payload/`, so the archive's entries were `Amphora.app/…` with
-   no `Payload/` prefix — and the IPA must contain `Payload/`. Fixed by
-   zipping `Payload` from the parent dir (one-line workflow fix, user-
-   reported = approved). **Awaiting user re-test** with the next artifact.
+   (2026-10-23, LiveContainer) — **fixed by `4dd1fbf`**: the packaging step
+   zipped from *inside* `Payload/`, so entries were `Amphora.app/…` with no
+   `Payload/` prefix. Now zips `Payload` from the workspace root; artifact
+   `amphora-ipa-10` verified to contain `Payload/Amphora.app/…`.
+   **Awaiting user re-test** (download run 10's artifact).
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): IPA packaging fix** (see User Feedback 1).
-  One-line change in `ios-build.yml`: `zip -qry Amphora-unsigned.ipa
-  Payload` run from the workspace root, replacing
-  `cd Payload && zip … .`. Verified locally: old form yields entries
-  `Amphora.app/…` (broken); new form yields `Payload/Amphora.app/…`.
-
-- `a48f70e` (2026-10-23): repair Core Tests after SessionManager push.
-  Swift 6 marks `NSLock.lock/unlock` `noasync` — `MockTransport.post`
-  called them inline; moved the locked work into a sync helper.
-  Result: iOS Build ✅ (39868695533), Core Tests ❌ again (39868695527)
-  with 2 assertion failures → repaired by `83af041`.
-
-- `83af041` (2026-10-23): the two assertions: (1) decrypted request body
-  carries the per-chunk NUL pad — trim before comparing (same convention
-  as URLBuilderTests); (2) `URL.path` drops the trailing slash on Linux
-  Foundation — assert `baseURL.absoluteString` instead.
-
-**FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
-red on this push, read the failure summary annotation (step now works and
-logs upload as `core-tests-log`) and repair before any new unit. Confirm
-the new IPA artifact contains `Payload/Amphora.app/` entries.
+- **This push (2026-10-23): M1 login screen** (app target — last M1 unit).
+  - `KeychainSessionStore` (`Amphora/Persistence/`): `SessionStore` conformance
+    over the existing `KeychainStore` — JSON-encodes `SessionRecord`, missing
+    or undecodable item ⇒ `nil` (fail closed to login screen).
+  - `AppStore`: `AuthPhase` (restoring/signedOut/signingIn/signedIn),
+    intents `restoreSession` / `login` / `dismissError`; login runs
+    `SessionManager.login` off the UI's control flow (Task), maps typed
+    PandoraCore errors (PandoraAPIError copy, transport, malformed,
+    SessionManagerError) to short safe strings — no credentials/tokens in
+    messages. Idempotent warm-launch `restoreSession` (zero network).
+  - `LoginView` (new `Amphora/UI/`): email + password, focus chain,
+    submit-on-return, in-flight spinner + disabled button, error text,
+    44pt target, VoiceOver labels. No networking in the view — intents only.
+  - `RootView`: switches on `authPhase` (restoring spinner → LoginView →
+    signed-in placeholder for M2 station list); fires `restoreSession`
+    once via `.task`.
 
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **M1 login screen** (app target): wire `SessionStore` → Keychain
-   (`KeychainStore` already scaffolded at `Amphora/Persistence/`),
-   `AppStore` gains login intent → `SessionManager.login`/`restore`,
-   login form UI with mocked-success path, typed errors surfaced.
-3. Warm-launch path: `restore()` on app start → station list later (M2).
+   Confirm the IPA artifact still contains `Payload/Amphora.app/`.
+2. **User confirms M1 on device**: install `amphora-ipa-10` (or newer),
+   real login works, relaunch auto-logs-in. Milestone gate for M2.
+3. **M2 stations** (next milestone unit once M1 confirmed): `user.getStationList`
+   → AppStore stations → basic list UI.
+
+**FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
+red on this push, read the failure summary annotation (step now works and
+logs upload as `core-tests-log`) and repair before any new unit.
 
 ## Milestones
 
@@ -81,7 +82,15 @@ the new IPA artifact contains `Payload/Amphora.app/` entries.
 - **M1 SessionManager** — `6139d4c`: actor with pithos-connect flow,
   `restore()`, 1001 retry-once, `SessionStore`/`InMemorySessionStore`,
   12 tests, syncTime fixtures. iOS Build ✅; Core Tests red (NSLock-noasync
-  in MockTransport) — repaired by the next push.
+  in MockTransport) — repaired by `a48f70e`.
+- **Core Tests repair** — `a48f70e`: locked MockTransport work moved into a
+  sync helper (Swift 6 `noasync` NSLock). Then 2 assertion failures →
+  `83af041`: NUL-trim the decrypted-body assert (per-chunk pad survives);
+  assert `baseURL.absoluteString` (`URL.path` drops the trailing slash on
+  Linux Foundation). Both workflows green after `83af041`.
+- **IPA packaging fix** — `4dd1fbf` (user report): zip `Payload` from the
+  workspace root so the archive contains `Payload/Amphora.app/…`.
+  Verified on artifact `amphora-ipa-10`; both workflows green.
 
 ## Protocol Notes (reference-verified)
 

@@ -1,26 +1,104 @@
 import Observation
+import PandoraCore
 
 @MainActor
 @Observable
 final class AppStore {
-    // Auth state is filled in during M1; until then the app shows its
-    // placeholder root view.
-    private(set) var isSignedIn: Bool = false
+    /// Where the app is in the auth lifecycle. Drives `RootView`'s switch.
+    enum AuthPhase {
+        case restoring      // warm-launch restore attempt in flight
+        case signedOut
+        case signingIn
+        case signedIn
+    }
 
+    /// UI intents. Kept as an enum so adding an intent later never changes
+    /// the UI call sites.
+    enum Intent {
+        case restoreSession
+        case login(username: String, password: String)
+        case dismissError
+    }
+
+    private let session: SessionManager
+    private var didStartRestore = false
+
+    private(set) var authPhase: AuthPhase = .restoring
     // Stations, current station, current track and feedback state arrive in
     // M2/M4. Errors surface here too.
     private(set) var lastErrorMessage: String?
 
-    /// Entry point for UI intents. Kept as an enum so adding an intent later
-    /// never changes the UI call sites.
+    init(session: SessionManager = SessionManager(store: KeychainSessionStore())) {
+        self.session = session
+    }
+
+    /// Entry point for UI intents.
     func send(_ intent: Intent) {
         switch intent {
+        case .restoreSession:
+            restoreSession()
+        case .login(let username, let password):
+            login(username: username, password: password)
         case .dismissError:
             lastErrorMessage = nil
         }
     }
 
-    enum Intent {
-        case dismissError
+    // MARK: Auth
+
+    /// Warm start: pull the Keychain session into memory with zero network.
+    /// Expiry surfaces later as a 1001 on the first authenticated call, and
+    /// `SessionManager` re-logins transparently then.
+    private func restoreSession() {
+        guard !didStartRestore else { return }
+        didStartRestore = true
+        Task {
+            let restored = await session.restore()
+            authPhase = restored ? .signedIn : .signedOut
+        }
+    }
+
+    private func login(username: String, password: String) {
+        let user = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !user.isEmpty, !password.isEmpty else {
+            lastErrorMessage = "Enter your email and password."
+            return
+        }
+        guard authPhase == .signedOut else { return }
+
+        lastErrorMessage = nil
+        authPhase = .signingIn
+        Task {
+            do {
+                _ = try await session.login(username: user, password: password)
+                authPhase = .signedIn
+            } catch {
+                authPhase = .signedOut
+                lastErrorMessage = Self.userMessage(for: error)
+            }
+        }
+    }
+
+    /// Typed PandoraCore errors → short copy safe to render. Never includes
+    /// credentials, tokens, or stream material.
+    private static func userMessage(for error: Error) -> String {
+        if let error = error as? PandoraAPIError {
+            return error.localizedDescription
+        }
+        if let error = error as? PandoraTransportError {
+            return "Couldn't reach Pandora (\(error.reason)). Check your connection."
+        }
+        if error is PandoraMalformedResponseError {
+            return "Pandora sent an unexpected response. Try again."
+        }
+        if let error = error as? SessionManagerError {
+            switch error {
+            case .notAuthenticated:
+                return "Not signed in. Try again."
+            case .malformedSession:
+                return "Pandora sent an unexpected response. Try again."
+            }
+        }
+        return "Something went wrong. Try again."
     }
 }
