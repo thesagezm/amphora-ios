@@ -28,7 +28,17 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M5 unit 2 — sleep timer**:
+- **This push (2026-10-23): M5 unit 3 — tab bar shell**:
+  - `MainTabView` (new `Amphora/UI/`): `TabView` with Stations /
+    Bookmarks / History tabs; the mini-player now lives here as a
+    `safeAreaInset` above the tab bar, so it stays visible on every tab
+    (AGENTS.md: "Persistent mini-player above the tab bar").
+  - `RootView`: the signed-in phase hosts `MainTabView`; the "More"
+    toolbar menu is gone (its two destinations are tabs now).
+  - `StationsView`: the inline mini-player was removed (it now lives in
+    the tab shell) — the error banner stays.
+
+- **f901ed9** (2026-10-23): M5 unit 2 — sleep timer**:
   - `SleepTimer.swift` (new, PandoraCore): `SleepTimer` with `off` /
     `duration` / `endOfTrack` modes, deadline math, remaining minutes and
     a UI label. `SleepTimerTests`: 9 tests (expiry, countdown, clamping,

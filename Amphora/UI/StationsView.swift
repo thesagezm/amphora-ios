@@ -140,13 +140,8 @@ struct StationsView: View {
         // Non-blocking error surface once a list exists (empty-state errors
         // render above); M5 restyles these.
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 8) {
-                if !store.stations.isEmpty, let message = store.lastErrorMessage {
-                    errorBanner(message)
-                }
-                if store.player.currentTrack != nil {
-                    MiniPlayer()
-                }
+            if !store.stations.isEmpty, let message = store.lastErrorMessage {
+                errorBanner(message)
             }
         }
     }

@@ -26,28 +26,7 @@ struct RootView: View {
         case .signedOut, .signingIn:
             LoginView()
         case .signedIn:
-            NavigationStack {
-                StationsView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Menu {
-                                NavigationLink {
-                                    BookmarksView()
-                                } label: {
-                                    Label("Bookmarks", systemImage: "bookmark")
-                                }
-                                NavigationLink {
-                                    HistoryView()
-                                } label: {
-                                    Label("Recently Played", systemImage: "clock")
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                            }
-                            .accessibilityLabel("More")
-                        }
-                    }
-            }
+            MainTabView()
         }
     }
 }
