@@ -42,7 +42,29 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
 
 ## In Flight / Last Push
 
-- **(this push, unit 1 of 3)** artwork fixes (user report: player artwork
+- **(this push) lyrics core (unit A of the lyrics feature)** — PandoraCore
+  only, **138/138 tests green locally** (Docker `swift:6.0`):
+  - `Lyrics.swift` (new): the LRC format — timestamps (`mm:ss`,
+    `mm:ss.f`, `mm:ss.ff`, `mm:ss.fff`, `mm:ss:ff`), several timestamps
+    per line, metadata tags (`[ar:]`, `[ti:]`, `[offset:]`, …) that are
+    not lyrics, plain (unsynchronised) lyrics kept as text, lines sorted
+    by time, and the lookup helpers (`activeLine(at:)`,
+    `nextLine(after:)`, `progress(at:)`). The `[offset:]` tag is in
+    milliseconds and shifts the lyrics **earlier** for a positive value
+    (same convention as FFmpeg's LRC demuxer, `libavformat/lrcdec.c`:
+    `sub->pts = ts_start - ts_offset`).
+  - `LyricsProvider.swift` (new): `LRCLibClient` (lrclib.net) and
+    `GoogleTranslateClient` (the `translate_a` endpoint with `sl=auto`),
+    both behind small protocols so they can be stubbed in tests.
+    `HTTPGETTransport` is the injectable GET seam.
+  - `LyricsTests.swift` (14 tests) and `LyricsProviderTests.swift`
+    (10 tests): parsing, timestamp forms, tags, offset, sorting, active
+    line / next line / progress, the lrclib request shape and headers,
+    404 → `LyricsError.notFound`, 503 → retry then
+    `LyricsError.serviceBusy`, malformed body → `.malformedResponse`,
+    and the translation client (translated / already-English / failure).
+
+- **(previous push, `a7dbe49`)** artwork fixes (user report: player artwork
   missing and re-fetched every time):
   - `ArtworkCache`: the disk file name was the **base64 of the URL**, which
     exceeds the file-system name limit for Pandora's long signed image
@@ -56,8 +78,8 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
   - `NowPlayingService` now pulls lock-screen artwork from the shared
     cache instead of downloading it a second time.
 
-- **(this push, unit 2 of 3)** sleep timer actually fires (user report:
-  "the one at the bottom… is not doing anything"):
+- **(previous push, `a7dbe49`, units 2 and 3)** sleep timer actually fires
+  (user report: "the one at the bottom… is not doing anything"):
   - `AppStore`: a **duration** timer only checked `hasExpired()` when it
     was *set* — nothing re-checked it while playback ran, so a 15-minute
     timer never stopped anything. A countdown task now polls the
@@ -67,7 +89,7 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
   - `sleepTimerLabel` gives the UI a live "12 min left" string without
     re-rendering every second.
 
-- **(this push, unit 3 of 3)** bookmark buttons confirm themselves
+- **(previous push, `a7dbe49`, unit 3)** bookmark buttons confirm themselves
   (user report: "I don't know if the bookmark and the artist buttons are
   doing anything"): `AppStore.confirmationMessage` shows "Song
   bookmarked" / "Artist bookmarked" in the player for three seconds after
@@ -398,29 +420,18 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **Lyrics unit A (core)** — `PandoraCore`: an `LRCTimestamp`/LRC parser
-   (timestamped lines, `mm:ss.xx`, multiple timestamps per line, metadata
-   tags) plus an lrclib.net client. **API verified live from this
-   workstation:** `GET https://lrclib.net/api/get?artist_name=…&track_name=…&album_name=…&duration=…`
-   → `{id, name, trackName, artistName, albumName, duration, instrumental,
-   hasWordSync, plainLyrics, syncedLyrics, lyricsfile}`; `GET
-   /api/search?track_name=…&artist_name=…` → an array of the same shape;
-   `GET /api/get/{id}` → one track. The server accepts a `User-Agent`
-   (`Lrclib-Client` / `X-User-Agent` headers also work) and answers 503
-   with `{"name":"ServerOverloaded"}` when busy — that must be retried,
-   not surfaced as an error. **The lrclib server source has no
-   translation endpoint** (checked `server/src/router.rs`: only `/get`,
-   `/get/:track_id`, `/search`, `/publish`, `/flag`,
-   `/request-challenge`) — translations need a second service.
-3. **Lyrics unit B (UI)** — a scrolling, time-synced lyric panel in the
-   Now Playing screen (highlight the active line, tap a line to seek).
-4. **Lyrics unit C (translation)** — show the original line and an
-   English line side by side. **Verified live:** the Google `translate_a`
-   endpoint (`client=gtx&sl=auto&tl=en&dt=t&q=…`) auto-detects the source
-   language and returns `[[["translated","original",…]],null,"de",…]` —
-   the third element is the detected source language, so English lyrics
-   can be skipped. MyMemory (`api.mymemory.translated.net`) works too but
-   needs an explicit source language (it rejects an empty one).
+2. **Lyrics unit B (app target)** — wire `LRCLibClient` into `AppStore`
+   (fetch when a track starts, cache by track token), then a
+   time-synced lyric panel in the Now Playing screen: scroll the lines,
+   highlight the active one, tap a line to seek. The core parser and
+   clients already exist (`PandoraCore/Lyrics.swift`,
+   `PandoraCore/LyricsProvider.swift`) — only the UI and the store
+   plumbing are missing.
+3. **Lyrics unit C (translation)** — `GoogleTranslateClient` is written
+   but **not yet used**: the app must call it when the detected source
+   language is not English and put the English line next to the
+   original. The client returns `nil` for English lyrics, so the app
+   can simply show the original when that happens.
 5. **App icon** — an "Amphora" icon (the app target has no asset catalog
    today; `project.yml` sets `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
 6. **Beautify pass** — theme, typography, gradients, polished stations /
