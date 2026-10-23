@@ -65,6 +65,8 @@ final class AppStore {
     /// The user's bookmarks (`user.getBookmarks`).
     private(set) var bookmarks: [Bookmark] = []
     private(set) var isLoadingBookmarks = false
+    /// Local playback history ("recently played"), newest first.
+    private(set) var history: PlayHistory = PlayHistory()
     /// The `feedbackId` of the rating on the current track (needed to undo
     /// it) and the rating itself.
     private(set) var currentRating: FeedbackRating = .none
@@ -72,11 +74,19 @@ final class AppStore {
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
 
-    init(session: SessionManager = SessionManager(store: KeychainSessionStore())) {
+    /// Disk persistence for the history (Codable-to-disk, per AGENTS.md).
+    private let historyStore: HistoryStore
+
+    init(
+        session: SessionManager = SessionManager(store: KeychainSessionStore()),
+        historyStore: HistoryStore = HistoryStore()
+    ) {
         self.session = session
+        self.historyStore = historyStore
         let player = PlayerService()
         self.player = player
         self.nowPlaying = NowPlayingService(player: player)
+        self.history = historyStore.load()
         // The player asks for more tracks when its queue runs low — pithos
         // preloads the next playlist when one song remains.
         player.onNeedMoreTracks = { [weak self] in
@@ -89,6 +99,11 @@ final class AppStore {
             guard let self else { return }
             self.currentFeedbackId = nil
             self.currentRating = Self.feedbackRating(for: track?.rating)
+            // Record the play in the local history.
+            if let track {
+                self.history.record(track)
+                self.historyStore.save(self.history)
+            }
         }
     }
 

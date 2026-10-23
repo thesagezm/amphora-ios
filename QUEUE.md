@@ -28,7 +28,23 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M4 unit 2 — feedback + bookmarks UI**
+- **This push (2026-10-23): M4 unit 3 — playback history ("recently
+  played")**:
+  - `HistoryStore.swift` (new, PandoraCore): `PlayHistory` — a bounded
+    (100 entries), newest-first list of plays; a repeated track moves to
+    the front instead of duplicating; `Codable` for disk persistence.
+    `PlayHistoryTests`: 5 tests (order, de-dup, capacity, metadata,
+    Codable round-trip).
+  - `Amphora/Persistence/HistoryStore.swift` (new): JSON file in
+    Application Support (`Amphora/history.json`); missing/unreadable file
+    ⇒ empty history, saves are best-effort.
+  - `AppStore`: loads the history at launch and records every track the
+    player starts.
+  - `HistoryView` (new `Amphora/UI/`): recently-played list with artwork,
+    artist caption and relative time.
+  - `RootView`: a "More" menu in the toolbar (Bookmarks / Recently Played).
+
+- **39746b8** (2026-10-23): M4 unit 2 — feedback + bookmarks UI**
   (app target):
   - `AppStore`: `rateCurrentTrack` / `removeCurrentRating` /
     `sleepCurrentTrack` / `bookmarkCurrentSong` /

@@ -30,12 +30,21 @@ struct RootView: View {
                 StationsView()
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            NavigationLink {
-                                BookmarksView()
+                            Menu {
+                                NavigationLink {
+                                    BookmarksView()
+                                } label: {
+                                    Label("Bookmarks", systemImage: "bookmark")
+                                }
+                                NavigationLink {
+                                    HistoryView()
+                                } label: {
+                                    Label("Recently Played", systemImage: "clock")
+                                }
                             } label: {
-                                Image(systemName: "bookmark")
+                                Image(systemName: "ellipsis.circle")
                             }
-                            .accessibilityLabel("Bookmarks")
+                            .accessibilityLabel("More")
                         }
                     }
             }
