@@ -26,26 +26,10 @@ struct RootView: View {
         case .signedOut, .signingIn:
             LoginView()
         case .signedIn:
-            signedInPlaceholder
+            NavigationStack {
+                StationsView()
+            }
         }
-    }
-
-    /// Stands in for the station list (M2). Auth is the last M1 unit.
-    private var signedInPlaceholder: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 48, weight: .light))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-            Text("Signed in")
-                .font(.title2.weight(.semibold))
-            Text("Stations are coming next.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding()
     }
 }
 

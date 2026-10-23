@@ -17,6 +17,7 @@ final class AppStore {
     enum Intent {
         case restoreSession
         case login(username: String, password: String)
+        case refreshStations
         case dismissError
     }
 
@@ -24,8 +25,10 @@ final class AppStore {
     private var didStartRestore = false
 
     private(set) var authPhase: AuthPhase = .restoring
-    // Stations, current station, current track and feedback state arrive in
-    // M2/M4. Errors surface here too.
+    private(set) var stations: [Station] = []
+    private(set) var isLoadingStations = false
+    // Current station, current track and feedback state arrive in M3/M4.
+    // Errors surface here too.
     private(set) var lastErrorMessage: String?
 
     init(session: SessionManager = SessionManager(store: KeychainSessionStore())) {
@@ -39,6 +42,8 @@ final class AppStore {
             restoreSession()
         case .login(let username, let password):
             login(username: username, password: password)
+        case .refreshStations:
+            Task { await refreshStations() }
         case .dismissError:
             lastErrorMessage = nil
         }
@@ -54,7 +59,12 @@ final class AppStore {
         didStartRestore = true
         Task {
             let restored = await session.restore()
-            authPhase = restored ? .signedIn : .signedOut
+            if restored {
+                authPhase = .signedIn
+                await refreshStations()
+            } else {
+                authPhase = .signedOut
+            }
         }
     }
 
@@ -72,8 +82,31 @@ final class AppStore {
             do {
                 _ = try await session.login(username: user, password: password)
                 authPhase = .signedIn
+                await refreshStations()
             } catch {
                 authPhase = .signedOut
+                lastErrorMessage = Self.userMessage(for: error)
+            }
+        }
+    }
+
+    // MARK: Stations
+
+    /// Fetches `user.getStationList` (M2). Fire-and-forget via the intent;
+    /// `refreshStations()` is also awaited directly for pull-to-refresh and
+    /// the post-sign-in load. A guard keeps concurrent calls from stacking.
+    func refreshStations() async {
+        guard !isLoadingStations else { return }
+        lastErrorMessage = nil
+        isLoadingStations = true
+        defer { isLoadingStations = false }
+        do {
+            let list = try await session.getStationList()
+            stations = list.stations
+        } catch {
+            // Keep any already-loaded list; surface the error when empty
+            // (error/empty-state polish lands in M5).
+            if stations.isEmpty {
                 lastErrorMessage = Self.userMessage(for: error)
             }
         }

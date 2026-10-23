@@ -27,15 +27,28 @@ _(none — both resolved below)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): repair Core Tests after station-list core push.**
-  - `10abb9c`: **iOS Build ✅** (39879789581), **Core Tests ❌**
-    (39879789613) — 1 failure: `StationTests.testDecodesFullStationFields`
-    threw `undecodable response body`. Cause: the fixture was assembled by
-    concatenating string literals and a doubled `,"` broke the JSON.
-    Fixed by making `fullStationJSON` one literal.
+- **This push (2026-10-23): M2 unit 2 — stations list UI** (app target).
+  - `AppStore`: `stations` / `isLoadingStations` state, `refreshStations`
+    intent (guarded against concurrent loads); auto-refresh after login
+    success and after warm-launch restore; error kept only when the list
+    is empty (keeps a loaded list usable on background refetch failure).
+  - `StationsView` (new `Amphora/UI/`): plain `List` + `refreshable`
+    pull-to-refresh; rows = 52pt artwork (`AsyncImage`, URLCache until the
+    dedicated cache lands in M6) + name + badges (QuickMix shuffle icon /
+    "Quick mix", "Thumbprint station", shared `person.2` icon);
+    44pt rows, combined VoiceOver elements. Sorting: QuickMix pinned first,
+    then case-insensitive name, id tiebreak (stable across reloads).
+    Empty (`ContentUnavailableView`), loading, and error+Retry states.
+  - `RootView`: signed-in phase now hosts `NavigationStack { StationsView() }`
+    (placeholder removed).
+
+- `7b602fe` (2026-10-23): repair Core Tests after station-list core —
+  **Core Tests ✅** (39881169360), **iOS Build ✅** (39881169362). Cause:
+  `StationTests` fixture assembled from split string literals had a doubled
+  comma → undecodable envelope; now one literal.
 
 - `10abb9c` (2026-10-23): **M2 unit 1 — station list core**. PandoraCore
-  only (no app changes yet):
+  only:
   - `Station`/`StationList` models (`Station.swift`): wire keys from
     pithos `Station.__init__` (required: `stationId`, `stationToken`,
     `stationName`, `isShared`, `isQuickMix`, `quickMixStationIds`) +
@@ -79,10 +92,12 @@ _(none — both resolved below)_
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **M2 unit 2**: wire `getStationList` into `AppStore` (stations state +
-   refresh intent) + station list UI (artwork, quick-mix, explicit badge,
-   sorting) — the signed-in placeholder becomes the real list.
-3. M2 units after that: create / rename / delete station.
+2. **M2 unit 3**: `station.createStation` / `renameStation` /
+   `deleteStation` core methods (pithos flow incl.
+   `transformSharedStation` before renaming a shared station) + tests;
+   then the list-row actions UI.
+3. M2 tail: artwork disk cache (only if AsyncImage/URLCache proves
+   insufficient on device), sort-order preference if the user asks for one.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation (step now works and
