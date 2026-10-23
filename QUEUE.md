@@ -42,8 +42,14 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
 
 ## In Flight / Last Push
 
-- **(this push) lyrics core (unit A of the lyrics feature)** — PandoraCore
-  only, **138/138 tests green locally** (Docker `swift:6.0`):
+- **`03e89ff`** (this push): repair the red iOS Build from the previous
+  push (39975384505) — `ArtworkCache.imageCost` is a static member, so
+  the two calls inside the actor needed an explicit `Self.` prefix
+  (`ArtworkCache.swift:69` and `:89`). Core Tests were already green on
+  `5ef40ab` (39975385209).
+
+- **5ef40ab**: M6 lyrics core (unit A of the lyrics feature) —
+  PandoraCore only, **138/138 tests green locally** (Docker `swift:6.0`):
   - `Lyrics.swift` (new): the LRC format — timestamps (`mm:ss`,
     `mm:ss.f`, `mm:ss.ff`, `mm:ss.fff`, `mm:ss:ff`), several timestamps
     per line, metadata tags (`[ar:]`, `[ti:]`, `[offset:]`, …) that are
