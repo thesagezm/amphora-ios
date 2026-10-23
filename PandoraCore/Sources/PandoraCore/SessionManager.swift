@@ -278,6 +278,23 @@ public actor SessionManager {
         }
     }
 
+    // MARK: Stations
+
+    /// The user's station list: `user.getStationList` with
+    /// `returnAllStations=true` (pithos `get_stations`) and
+    /// `includeStationArtUrl=true` (pydora `get_all_stations`) under the
+    /// current session — 1001 → transparent re-login, replay once.
+    public func getStationList() async throws -> StationList {
+        let result = try await authenticatedRequest(
+            PandoraAPI.Method.getStationList,
+            parameters: [
+                "returnAllStations": .bool(true),
+                "includeStationArtUrl": .bool(true)
+            ]
+        )
+        return try StationList(result: result)
+    }
+
     // MARK: Helpers
 
     /// partnerId/userId arrive as either JSON string or number depending on

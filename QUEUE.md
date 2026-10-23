@@ -12,20 +12,39 @@ on their phone.)
 
 ## User Feedback Pending
 
+_(none — both resolved below)_
+
+**Resolved feedback:**
+
 1. **"Installing Amphora: error — the folder 'payload' doesn't exist"**
-   (2026-10-23, LiveContainer) — **fixed by `4dd1fbf`**: the packaging step
-   zipped from *inside* `Payload/`, so entries were `Amphora.app/…` with no
-   `Payload/` prefix. Now zips `Payload` from the workspace root; artifact
-   `amphora-ipa-10` verified to contain `Payload/Amphora.app/…`.
-   **Awaiting user re-test** (download run 10's artifact).
+   (2026-10-23, LiveContainer) — fixed by `4dd1fbf`: zip `Payload` from the
+   workspace root; artifact `amphora-ipa-10` verified to contain
+   `Payload/Amphora.app/…`. **User then signed in on device — install
+   confirmed working.**
+2. **M1 confirmed on device** (2026-10-23): user reports real sign-in
+   succeeded and app shows the signed-in placeholder. **M1 milestone
+   complete.**
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M1 SessionRecord store tests.** 3 tests in
-  `SessionRecordTests`: encode/decode round-trip, decode from the exact
-  fixed JSON the Keychain store persists (guards against a synthesized-
-  Codable rename stranding stored sessions), `InMemorySessionStore`
-  save/load/clear.
+- **This push (2026-10-23): M2 unit 1 — station list core.** PandoraCore
+  only (no app changes yet):
+  - `Station`/`StationList` models (`Station.swift`): wire keys from
+    pithos `Station.__init__` (required: `stationId`, `stationToken`,
+    `stationName`, `isShared`, `isQuickMix`, `quickMixStationIds`) +
+    pydora's optional set (`artUrl`, `isThumbprint`, `isGenreStation`,
+    allow* flags, `checksum`). String-or-number ids; sparse/minimal
+    stations decode with defaults; `Identifiable` for SwiftUI.
+  - `SessionManager.getStationList()` — `user.getStationList` with
+    `returnAllStations=true` (pithos `get_stations`) +
+    `includeStationArtUrl=true` (pydora), via `authenticatedRequest`
+    (1001 retry-once applies). New `PandoraAPI.Method.getStationList`.
+  - Tests: 4 StationTests (full/minimal/quickmix ids/typed error) +
+    2 SessionManagerTests (params+encrypted-body assert with NUL-trim;
+    1001 re-auth replay) + requires-session.
+
+- `4ebb29e` (2026-10-23): **M1 SessionRecord store tests** —
+  **Core Tests ✅** (39877281790), **iOS Build ✅** (39877281785).
 
 - `fcbb245` (2026-10-23): **M1 login screen** — **Core Tests ✅**
   (39876459087), **iOS Build ✅** (39876459009).
@@ -45,14 +64,18 @@ on their phone.)
     signed-in placeholder for M2 station list); fires `restoreSession`
     once via `.task`.
 
+## Current Milestone
+
+**M2** — Stations: fetch / list / create / rename / delete + list UI.
+(M0 ✅, M1 ✅ — user signed in on device 2026-10-23.)
+
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-   Confirm the IPA artifact still contains `Payload/Amphora.app/`.
-2. **User confirms M1 on device**: install `amphora-ipa-10` (or newer),
-   real login works, relaunch auto-logs-in. Milestone gate for M2.
-3. **M2 stations** (next milestone unit once M1 confirmed): `user.getStationList`
-   → AppStore stations → basic list UI.
+2. **M2 unit 2**: wire `getStationList` into `AppStore` (stations state +
+   refresh intent) + station list UI (artwork, quick-mix, explicit badge,
+   sorting) — the signed-in placeholder becomes the real list.
+3. M2 units after that: create / rename / delete station.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation (step now works and
@@ -61,7 +84,8 @@ logs upload as `core-tests-log`) and repair before any new unit.
 ## Milestones
 
 - [x] **M0** — skeleton, green CI
-- [ ] **M1** — auth (partner login, Blowfish, user login, Keychain, auto-login)
+- [x] **M1** — auth (partner login, Blowfish, user login, Keychain, auto-login)
+      — confirmed signed-in on device 2026-10-23
 - [ ] **M2** — stations (fetch/list/create/rename/delete + list UI)
 - [ ] **M3** — playback (playlist, AVPlayer, background audio, Now Playing)
 - [ ] **M4** — feedback & bookmarks
@@ -98,6 +122,12 @@ logs upload as `core-tests-log`) and repair before any new unit.
 - **IPA packaging fix** — `4dd1fbf` (user report): zip `Payload` from the
   workspace root so the archive contains `Payload/Amphora.app/…`.
   Verified on artifact `amphora-ipa-10`; both workflows green.
+- **M1 login screen** — `fcbb245`: `KeychainSessionStore`, `AppStore`
+  auth phases/intents, `LoginView`, warm-launch restore. Both ✅;
+  user signed in on device.
+- **M1 SessionRecord tests** — `4ebb29e`: Codable round-trip, fixed-JSON
+  fixture (guards stored-session compat), InMemory save/load/clear.
+  Both ✅.
 
 ## Protocol Notes (reference-verified)
 

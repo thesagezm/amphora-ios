@@ -25,6 +25,7 @@ public enum PandoraAPI {
     public enum Method {
         public static let partnerLogin = "auth.partnerLogin"
         public static let userLogin = "auth.userLogin"
+        public static let getStationList = "user.getStationList"
     }
 
     /// Client-side identity used by `auth.partnerLogin`, matching the

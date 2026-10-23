@@ -291,6 +291,64 @@ final class SessionManagerTests: XCTestCase {
         )
     }
 
+    // MARK: - getStationList
+
+    func testGetStationListSendsParamsAndDecodesResult() async throws {
+        // Restored (cached) session → no login traffic; single
+        // user.getStationList call under the stored token.
+        let store = InMemorySessionStore(record: cachedRecord(token: "U-LISTED"))
+        let transport = MockTransport(responses: [
+            ok(#"{"stations":[{"stationId":"1","stationToken":"S1","stationName":"A","isShared":false,"isQuickMix":false},{"stationId":"2","stationToken":"S2","stationName":"B","isShared":true,"isQuickMix":true,"quickMixStationIds":["1"]}],"checksum":"xyz"}"#)
+        ])
+        let subject = makeManager(transport: transport, store: store)
+        let restored = await subject.restore()
+        XCTAssertTrue(restored)
+
+        let list = try await subject.getStationList()
+
+        XCTAssertEqual(list.checksum, "xyz")
+        XCTAssertEqual(list.stations.map(\.name), ["A", "B"])
+        XCTAssertEqual(list.stations.map(\.id), ["1", "2"])
+        XCTAssertTrue(list.stations[1].isQuickMix)
+
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertTrue(request.url.absoluteString.contains("method=user.getStationList"))
+        XCTAssertTrue(request.url.absoluteString.contains("auth_token=U-LISTED"))
+
+        // Encrypted body carries both reference-derived params (pithos:
+        // returnAllStations; pydora: includeStationArtUrl). Trim the
+        // per-chunk NUL pad before substring checks.
+        let hex = String(decoding: request.body, as: UTF8.self)
+        let plain = try PandoraCrypto.decryptFromHex(hex, key: PandoraAPI.encryptKey)
+        let body = String(decoding: plain.prefix { $0 != 0 }, as: UTF8.self)
+        XCTAssertTrue(body.contains(#""returnAllStations":true"#), body)
+        XCTAssertTrue(body.contains(#""includeStationArtUrl":true"#), body)
+        XCTAssertTrue(body.contains(#""userAuthToken":"U-LISTED""#), body)
+    }
+
+    func testGetStationListExpiredSessionReauthsThenReplays() async throws {
+        // Same 1001 contract as authenticatedRequest, through the typed API.
+        let store = InMemorySessionStore(record: cachedRecord(token: "U-EXPIRED"))
+        let transport = MockTransport(responses: [
+            fail(code: 1001, message: "Invalid auth token"),
+            partnerOK(),
+            userOK(token: "U-FRESH"),
+            ok(#"{"stations":[]}"#)
+        ])
+        let subject = makeManager(transport: transport, store: store)
+        let restored = await subject.restore()
+        XCTAssertTrue(restored)
+
+        let list = try await subject.getStationList()
+        XCTAssertEqual(list.stations, [])
+
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 4, "original, partner, user, replay")
+        XCTAssertTrue(requests[3].url.absoluteString.contains("auth_token=U-FRESH"))
+    }
+
     // MARK: - syncTime offset math (static — no actor)
 
     func testTimeOffsetFromEncryptedSyncTime() throws {
