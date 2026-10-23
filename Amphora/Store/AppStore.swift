@@ -34,6 +34,7 @@ final class AppStore {
         case deleteBookmark(Bookmark)
         case setSleepTimer(SleepTimer)
         case cancelSleepTimer
+        case moveStation(from: Int, to: Int)
         case dismissError
     }
 
@@ -80,13 +81,20 @@ final class AppStore {
 
     /// Disk persistence for the history (Codable-to-disk, per AGENTS.md).
     private let historyStore: HistoryStore
+    /// Disk persistence for the non-secret preferences (station order,
+    /// last station).
+    private let preferencesStore: PreferencesStore
+    private var preferences: Preferences
 
     init(
         session: SessionManager = SessionManager(store: KeychainSessionStore()),
-        historyStore: HistoryStore = HistoryStore()
+        historyStore: HistoryStore = HistoryStore(),
+        preferencesStore: PreferencesStore = PreferencesStore()
     ) {
         self.session = session
         self.historyStore = historyStore
+        self.preferencesStore = preferencesStore
+        self.preferences = preferencesStore.load()
         let player = PlayerService()
         self.player = player
         self.nowPlaying = NowPlayingService(player: player)
@@ -167,6 +175,8 @@ final class AppStore {
             setSleepTimer(timer)
         case .cancelSleepTimer:
             setSleepTimer(.off)
+        case .moveStation(let source, let destination):
+            moveStation(from: source, to: destination)
         case .dismissError:
             lastErrorMessage = nil
         }
@@ -225,7 +235,7 @@ final class AppStore {
         defer { isLoadingStations = false }
         do {
             let list = try await session.getStationList()
-            stations = list.stations
+            stations = displayOrder(for: list.stations)
         } catch {
             // Keep any already-loaded list; surface the error when empty
             // (error/empty-state polish lands in M5).
@@ -293,6 +303,8 @@ final class AppStore {
             }
             currentStation = station
             queuedTrackTokens = Set(playable.map(\.trackToken))
+            preferences.lastStationId = station.id
+            preferencesStore.save(preferences)
             player.play(track: first, prefetching: playable.dropFirst().first)
         } catch {
             lastErrorMessage = Self.userMessage(for: error)
@@ -320,6 +332,44 @@ final class AppStore {
                 lastErrorMessage = Self.userMessage(for: error)
             }
         }
+    }
+
+    /// The list as the user sees it: QuickMix first, then the stored
+    /// order, then the remaining stations by name (case-insensitive, id
+    /// as the tiebreak so the order never shuffles between reloads).
+    private func displayOrder(for stations: [Station]) -> [Station] {
+        let ordered = preferences.stationOrder.apply(to: stations)
+        let custom = Set(preferences.stationOrder.orderedIds)
+        return ordered.sorted { lhs, rhs in
+            if lhs.isQuickMix != rhs.isQuickMix { return lhs.isQuickMix }
+            let lhsCustom = custom.contains(lhs.id)
+            let rhsCustom = custom.contains(rhs.id)
+            if lhsCustom != rhsCustom { return lhsCustom }
+            if lhsCustom {
+                // Both are user-ordered — keep the stored sequence.
+                let lhsIndex = preferences.stationOrder.orderedIds.firstIndex(of: lhs.id) ?? 0
+                let rhsIndex = preferences.stationOrder.orderedIds.firstIndex(of: rhs.id) ?? 0
+                return lhsIndex < rhsIndex
+            }
+            switch lhs.name.localizedCaseInsensitiveCompare(rhs.name) {
+            case .orderedAscending: return true
+            case .orderedDescending: return false
+            case .orderedSame: return lhs.id < rhs.id
+            }
+        }
+    }
+
+    /// Moves a station to a new position in the list and persists the
+    /// new order.
+    private func moveStation(from source: Int, to destination: Int) {
+        guard stations.indices.contains(source) else { return }
+        var ids = stations.map(\.id)
+        let moved = ids.remove(at: source)
+        let target = min(max(0, destination), ids.count)
+        ids.insert(moved, at: target)
+        preferences.stationOrder.setOrder(ids)
+        stations = preferences.stationOrder.apply(to: stations)
+        preferencesStore.save(preferences)
     }
 
     // MARK: Feedback & bookmarks

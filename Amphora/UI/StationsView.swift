@@ -12,6 +12,7 @@ struct StationsView: View {
     @State private var renameText = ""
     @State private var deleteTarget: Station?
     @State private var isAddingStation = false
+    @State private var isEditingOrder = false
 
     var body: some View {
         Group {
@@ -37,7 +38,16 @@ struct StationsView: View {
                 }
                 .accessibilityLabel("Add station")
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isEditingOrder.toggle()
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Reorder stations")
+            }
         }
+        .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
         .sheet(isPresented: $isAddingStation) {
             AddStationView()
         }
@@ -103,34 +113,39 @@ struct StationsView: View {
     }
 
     private var list: some View {
-        List(sortedStations) { station in
-            Button {
-                store.send(.playStation(station))
-            } label: {
-                StationRow(
-                    station: station,
-                    isCurrent: store.currentStation?.id == station.id,
-                    isPlaying: store.currentStation?.id == station.id && store.player.isPlaying
-                )
-            }
-            .buttonStyle(.plain)
-            .listRowBackground(Color.primaryBackground.opacity(0.4))
-            .contextMenu {
-                // pithos' edit dialog filters quickmix + thumbprint out
-                // of rename/delete — mirror that here.
-                if !station.isQuickMix && !station.isThumbprint {
-                    Button {
-                        renameText = station.name
-                        renameTarget = station
-                    } label: {
-                        Label("Rename", systemImage: "pencil")
-                    }
-                    Button(role: .destructive) {
-                        deleteTarget = station
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+        List {
+            ForEach(store.stations) { station in
+                Button {
+                    store.send(.playStation(station))
+                } label: {
+                    StationRow(
+                        station: station,
+                        isCurrent: store.currentStation?.id == station.id,
+                        isPlaying: store.currentStation?.id == station.id && store.player.isPlaying
+                    )
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color.primaryBackground.opacity(0.4))
+                .contextMenu {
+                    // pithos' edit dialog filters quickmix + thumbprint out
+                    // of rename/delete — mirror that here.
+                    if !station.isQuickMix && !station.isThumbprint {
+                        Button {
+                            renameText = station.name
+                            renameTarget = station
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            deleteTarget = station
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 }
+            }
+            .onMove { source, destination in
+                store.send(.moveStation(from: source, to: destination))
             }
         }
         .listStyle(.plain)
@@ -188,21 +203,8 @@ struct StationsView: View {
 
     // MARK: Sorting
 
-    /// QuickMix first (it's the default landing station everywhere else),
-    /// then A–Z case-insensitively; station id breaks ties so equal names
-    /// never shuffle between reloads (Swift's sort is not stable).
-    private var sortedStations: [Station] {
-        store.stations.sorted { lhs, rhs in
-            if lhs.isQuickMix != rhs.isQuickMix {
-                return lhs.isQuickMix
-            }
-            switch lhs.name.localizedCaseInsensitiveCompare(rhs.name) {
-            case .orderedAscending: return true
-            case .orderedDescending: return false
-            case .orderedSame: return lhs.id < rhs.id
-            }
-        }
-    }
+    // The store owns the order (QuickMix first, then the user's stored
+    // order, then A–Z); the view renders `store.stations` as given.
 }
 
 /// One station row: artwork (AsyncImage → URLCache until the dedicated

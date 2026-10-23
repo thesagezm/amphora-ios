@@ -28,7 +28,24 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M5 unit 3 — tab bar shell**:
+- **This push (2026-10-23): M5 unit 4 — station ordering + preferences**:
+  - `StationOrder.swift` (new, PandoraCore): the user's station ordering
+    — an ordered id list applied to the server's list (unknown ids are
+    dropped, the rest keep the server order). `StationOrderTests`: 7
+    tests (empty order, stored-first, unknown ids, move, clamping,
+    unknown move, Codable round-trip).
+  - `PreferencesStore.swift` (new `Amphora/Persistence/`): one JSON file
+    (`Amphora/preferences.json`) for the non-secret preferences — station
+    order, last played station, sleep-timer preference. (Credentials stay
+    in the Keychain.)
+  - `AppStore`: the list order is now owned by the store (QuickMix first,
+    then the user's stored order, then A–Z with an id tiebreak);
+    `moveStation(from:to:)` persists the new order; the last played
+    station is remembered.
+  - `StationsView`: an "arrow.up.arrow.down" toolbar button toggles edit
+    mode so the user can drag stations into a new order.
+
+- **5174f10** (2026-10-23): M5 unit 3 — tab bar shell**:
   - `MainTabView` (new `Amphora/UI/`): `TabView` with Stations /
     Bookmarks / History tabs; the mini-player now lives here as a
     `safeAreaInset` above the tab bar, so it stays visible on every tab
