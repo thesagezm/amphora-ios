@@ -8,6 +8,10 @@ import SwiftUI
 struct StationsView: View {
     @Environment(AppStore.self) private var store
 
+    @State private var renameTarget: Station?
+    @State private var renameText = ""
+    @State private var deleteTarget: Station?
+
     var body: some View {
         Group {
             if store.stations.isEmpty {
@@ -23,6 +27,31 @@ struct StationsView: View {
             }
         }
         .navigationTitle("Stations")
+        .alert("Rename Station", isPresented: renameBinding) {
+            TextField("Station name", text: $renameText)
+                .textInputAutocapitalization(.words)
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Rename") {
+                if let station = renameTarget {
+                    store.send(.renameStation(station, to: renameText))
+                }
+                renameTarget = nil
+            }
+        } message: {
+            Text("Choose a new name for this station.")
+        }
+        .alert(
+            "Delete “\(deleteTarget?.name ?? "")”?",
+            isPresented: deleteBinding,
+            presenting: deleteTarget
+        ) { station in
+            Button("Delete", role: .destructive) {
+                store.send(.deleteStation(station))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This removes the station from your list. It can't be undone here.")
+        }
     }
 
     // MARK: States
@@ -58,11 +87,75 @@ struct StationsView: View {
         List(sortedStations) { station in
             StationRow(station: station)
                 .listRowBackground(Color.primaryBackground.opacity(0.4))
+                .contextMenu {
+                    // pithos' edit dialog filters quickmix + thumbprint out
+                    // of rename/delete — mirror that here.
+                    if !station.isQuickMix && !station.isThumbprint {
+                        Button {
+                            renameText = station.name
+                            renameTarget = station
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            deleteTarget = station
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
         }
         .listStyle(.plain)
         .refreshable {
             await store.refreshStations()
         }
+        // Non-blocking error surface once a list exists (empty-state errors
+        // render above); M5 restyles these.
+        .safeAreaInset(edge: .bottom) {
+            if !store.stations.isEmpty, let message = store.lastErrorMessage {
+                errorBanner(message)
+            }
+        }
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.footnote)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                store.send(.dismissError)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .accessibilityAddTraits(.isStaticText)
+    }
+
+    // MARK: Alert bindings
+
+    private var renameBinding: Binding<Bool> {
+        Binding(
+            get: { renameTarget != nil },
+            set: { if !$0 { renameTarget = nil } }
+        )
+    }
+
+    private var deleteBinding: Binding<Bool> {
+        Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        )
     }
 
     // MARK: Sorting

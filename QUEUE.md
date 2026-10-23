@@ -27,7 +27,26 @@ _(none — both resolved below)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M2 unit 3 — stations CRUD core** (PandoraCore).
+- **This push (2026-10-23): M2 unit 4 — station row actions UI** (app
+  target, on top of the `797c2a0` fixture repair):
+  - `AppStore`: `renameStation`/`deleteStation` intents →
+    `SessionManager` calls; rename trims + rejects empty, reloads list
+    for sort order; delete removes locally by id; `isMutatingStations`
+    guard against overlapping mutations; errors via `userMessage`.
+  - `StationsView`: long-press context menu (Rename / Delete — hidden for
+    quickmix + thumbprint, matching pithos' StationsDialog filter), rename
+    alert with text field, destructive confirm for delete, error banner
+    safe-area inset for post-load failures (M5 restyles).
+
+- `a6a6f59` (2026-10-23): **repair Core Tests after CRUD core**:
+  - `797c2a0`: **iOS Build ✅** (39882133244), **Core Tests ❌**
+    (39882133242) — 5 failures, all `missing id field partnerId`: the new
+    CRUD tests scripted only the operation reply, but `login()` consumes
+    two responses first (partner + user). Prepended `partnerOK()` +
+    `userOK()` to all five fixtures; expected request counts already
+    assumed partner+user+op, so they now match.
+
+- `797c2a0` (2026-10-23): **M2 unit 3 — stations CRUD core** (PandoraCore).
   - `SessionManager`: `createStation(musicToken:)` and
     `createStation(trackToken:musicType:)` (pithos `add_station_by_music_id`
     / `add_station_by_track_token`), `renameStation(_:to:)` — transforms a
@@ -105,12 +124,11 @@ _(none — both resolved below)_
 
 ## Pending Queue
 
-1. Verify last two pushes green (Core Tests + iOS Build). Repair first if red.
-2. **M2 unit 4**: station row actions UI — context menu / swipe for rename
-   (inline prompt) and delete (confirm), dispatching existing intents;
-   create-station needs `music.search` first (its own core unit before UI).
-3. **M2 unit 5**: `music.search` core + create-from-search flow.
-4. M2 tail: artwork disk cache (only if AsyncImage/URLCache proves
+1. Verify last pushes green (Core Tests + iOS Build). Repair first if red.
+2. **M2 unit 5**: `music.search` core (pithos `search()`: score ≥ 80 for
+   artists/songs, genreStations as-is) + `station.createStation` wiring
+   from a result, then the add-station sheet UI.
+3. M2 tail: artwork disk cache (only if AsyncImage/URLCache proves
    insufficient on device), sort-order preference if the user asks for one.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is

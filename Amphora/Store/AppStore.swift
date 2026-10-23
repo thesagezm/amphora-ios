@@ -18,6 +18,8 @@ final class AppStore {
         case restoreSession
         case login(username: String, password: String)
         case refreshStations
+        case renameStation(Station, to: String)
+        case deleteStation(Station)
         case dismissError
     }
 
@@ -27,6 +29,7 @@ final class AppStore {
     private(set) var authPhase: AuthPhase = .restoring
     private(set) var stations: [Station] = []
     private(set) var isLoadingStations = false
+    private(set) var isMutatingStations = false
     // Current station, current track and feedback state arrive in M3/M4.
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
@@ -44,6 +47,10 @@ final class AppStore {
             login(username: username, password: password)
         case .refreshStations:
             Task { await refreshStations() }
+        case .renameStation(let station, let newName):
+            Task { await renameStation(station, to: newName) }
+        case .deleteStation(let station):
+            Task { await deleteStation(station) }
         case .dismissError:
             lastErrorMessage = nil
         }
@@ -109,6 +116,40 @@ final class AppStore {
             if stations.isEmpty {
                 lastErrorMessage = Self.userMessage(for: error)
             }
+        }
+    }
+
+    /// Rename via `SessionManager` (shared stations transform first on the
+    /// core side), then reload so sort order reflects the new name.
+    private func renameStation(_ station: Station, to newName: String) async {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isMutatingStations else {
+            if trimmed.isEmpty {
+                lastErrorMessage = "Enter a station name."
+            }
+            return
+        }
+        lastErrorMessage = nil
+        isMutatingStations = true
+        defer { isMutatingStations = false }
+        do {
+            try await session.renameStation(station, to: trimmed)
+            await refreshStations()
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    private func deleteStation(_ station: Station) async {
+        guard !isMutatingStations else { return }
+        lastErrorMessage = nil
+        isMutatingStations = true
+        defer { isMutatingStations = false }
+        do {
+            try await session.deleteStation(station)
+            stations.removeAll { $0.id == station.id }
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
         }
     }
 
