@@ -66,7 +66,7 @@ actor ArtworkCache {
             return cached
         }
         if let image = Self.readFromDisk(key: key, directory: directory) {
-            memory.setObject(image, forKey: key as NSString, cost: imageCost(image))
+            memory.setObject(image, forKey: key as NSString, cost: Self.imageCost(image))
             return image
         }
 
@@ -86,7 +86,7 @@ actor ArtworkCache {
         let image = await task.value
         inFlight[key] = nil
         if let image {
-            memory.setObject(image, forKey: key as NSString, cost: imageCost(image))
+            memory.setObject(image, forKey: key as NSString, cost: Self.imageCost(image))
         }
         return image
     }
