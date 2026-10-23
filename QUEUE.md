@@ -27,6 +27,17 @@ _(none — both resolved below)_
 
 ## In Flight / Last Push
 
+- **This push (2026-10-23): repair red music.search push (ab4e887).**
+  - `ab4e887` (runs 39884553000 / 39884553004) **and** the QUEUE-only
+    follow-up `6641ace` (39884917062 / 39884916740): **both red, same
+    compile error in both workflows** — `MusicSearch.swift:67/71` passed
+    `AnyJSON` array elements where `artistOrSong` takes
+    `[String: AnyJSON]`. Fixed via `entry.objectValue.flatMap(…)`.
+    (Lesson: array elements are `AnyJSON`; unwrap with `objectValue`.)
+
+- `6641ace` (2026-10-23): QUEUE-only bookkeeping for the green
+  row-actions run.
+
 - **This push (2026-10-23): M2 unit 5 — `music.search` core**
   (runs 39884553000/39884553004 queued at push; verify first next session):
   - `MusicSearchResult` (new `MusicSearch.swift`): `kind`

@@ -64,11 +64,13 @@ public struct MusicSearchResult: Codable, Sendable, Equatable, Identifiable {
 
         for entry in result["artists"]?.arrayValue ?? [] {
             // pithos: `if i['score'] >= 80`
-            guard let hit = artistOrSong(entry, kind: .artist), hit.score >= 80 else { continue }
+            guard let hit = entry.objectValue.flatMap({ artistOrSong($0, kind: .artist) }),
+                  hit.score >= 80 else { continue }
             append(hit)
         }
         for entry in result["songs"]?.arrayValue ?? [] {
-            guard let hit = artistOrSong(entry, kind: .song), hit.score >= 80 else { continue }
+            guard let hit = entry.objectValue.flatMap({ artistOrSong($0, kind: .song) }),
+                  hit.score >= 80 else { continue }
             append(hit)
         }
         for entry in result["genreStations"]?.arrayValue ?? [] {
