@@ -295,6 +295,60 @@ public actor SessionManager {
         return try StationList(result: result)
     }
 
+    /// Create from an artist/seed token (pithos `add_station_by_music_id`).
+    /// The reply is a full station dict — same shape as list entries.
+    public func createStation(musicToken: String) async throws -> Station {
+        let result = try await authenticatedRequest(
+            PandoraAPI.Method.createStation,
+            parameters: ["musicToken": .string(musicToken)]
+        )
+        return try Station(result: result)
+    }
+
+    /// Create seeded from a song (pithos `add_station_by_track_token`).
+    /// `musicType` is the seed's type tag from the search reply
+    /// (e.g. `"song"` / `"track"` — the value the API returned, not a
+    /// guessed literal).
+    public func createStation(trackToken: String, musicType: String) async throws -> Station {
+        let result = try await authenticatedRequest(
+            PandoraAPI.Method.createStation,
+            parameters: [
+                "trackToken": .string(trackToken),
+                "musicType": .string(musicType)
+            ]
+        )
+        return try Station(result: result)
+    }
+
+    /// Rename (pithos `Station.rename`): a shared station must first be
+    /// transformed into a personal one (`station.transformSharedStation`,
+    /// pithos `transformIfShared`) or the rename is rejected.
+    public func renameStation(_ station: Station, to newName: String) async throws {
+        guard newName != station.name else { return }
+        if station.isShared {
+            _ = try await authenticatedRequest(
+                PandoraAPI.Method.transformSharedStation,
+                parameters: ["stationToken": .string(station.token)]
+            )
+        }
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.renameStation,
+            parameters: [
+                "stationToken": .string(station.token),
+                "stationName": .string(newName)
+            ]
+        )
+    }
+
+    /// Delete (pithos `delete_station` — station list membership only;
+    /// the API does not delete the account-level seed).
+    public func deleteStation(_ station: Station) async throws {
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.deleteStation,
+            parameters: ["stationToken": .string(station.token)]
+        )
+    }
+
     // MARK: Helpers
 
     /// partnerId/userId arrive as either JSON string or number depending on

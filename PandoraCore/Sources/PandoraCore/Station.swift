@@ -19,7 +19,8 @@
 
 import Foundation
 
-/// One station from `user.getStationList`.
+/// One station from `user.getStationList` (or a `station.createStation`
+/// result — same wire shape, pithos constructs `Station(d)` from both).
 public struct Station: Codable, Sendable, Equatable, Identifiable {
     /// `stationId` — stable numeric id (pithos `Station.id`).
     public let id: String
@@ -29,7 +30,7 @@ public struct Station: Codable, Sendable, Equatable, Identifiable {
     /// `stationName` (pithos `Station.name`).
     public let name: String
     /// `isShared` — shared stations are not the user's own
-    /// (pithos: `isCreator = not isShared`).
+    /// (pithos: `isCreator = not isShared`; rename transforms them first).
     public let isShared: Bool
     /// `isQuickMix` — the QuickMix aggregator station.
     public let isQuickMix: Bool
@@ -64,6 +65,12 @@ public struct Station: Codable, Sendable, Equatable, Identifiable {
         self.isGenreStation = isGenreStation
         self.artUrl = artUrl
         self.quickMixStationIds = quickMixStationIds
+    }
+
+    /// Decodes one station from an unwrapped result object (e.g.
+    /// `station.createStation`'s reply).
+    public init(result: [String: AnyJSON]) throws {
+        self = try JSONDecoder().decode(Station.self, from: JSONEncoder().encode(AnyJSON.object(result)))
     }
 
     /// Wire-key decoding: `stationId`/`stationToken` map onto the Swift

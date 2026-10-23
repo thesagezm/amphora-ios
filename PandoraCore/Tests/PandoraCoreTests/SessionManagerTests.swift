@@ -349,6 +349,120 @@ final class SessionManagerTests: XCTestCase {
         XCTAssertTrue(requests[3].url.absoluteString.contains("auth_token=U-FRESH"))
     }
 
+    // MARK: - Station create / rename / delete
+
+    func testCreateStationFromMusicTokenSendsParamAndDecodesReply() async throws {
+        let transport = MockTransport(responses: [
+            ok(#"{"stationId":"555","stationToken":"S555","stationName":"New Station","isShared":false,"isQuickMix":false}"#)
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let created = try await subject.createStation(musicToken: "MUSIC-1")
+
+        XCTAssertEqual(created.id, "555")
+        XCTAssertEqual(created.token, "S555")
+        XCTAssertEqual(created.name, "New Station")
+        XCTAssertFalse(created.isQuickMix)
+
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 3, "partner, user, create")
+        let request = try XCTUnwrap(requests.last)
+        XCTAssertTrue(request.url.absoluteString.contains("method=station.createStation"))
+        let body = try decryptedBody(request)
+        XCTAssertTrue(body.contains(#""musicToken":"MUSIC-1""#), body)
+    }
+
+    func testCreateStationFromTrackTokenSendsBothParams() async throws {
+        let transport = MockTransport(responses: [
+            ok(#"{"stationId":"666","stationToken":"S666","stationName":"From Song","isShared":false,"isQuickMix":false}"#)
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let created = try await subject.createStation(trackToken: "TRACK-1", musicType: "song")
+        XCTAssertEqual(created.id, "666")
+
+        let requests = transport.requests
+        let request = try XCTUnwrap(requests.last)
+        let body = try decryptedBody(request)
+        XCTAssertTrue(body.contains(#""trackToken":"TRACK-1""#), body)
+        XCTAssertTrue(body.contains(#""musicType":"song""#), body)
+    }
+
+    func testRenameTransformsSharedStationFirstThenRenames() async throws {
+        // pithos: shared → transformSharedStation, then renameStation.
+        let transport = MockTransport(responses: [
+            ok("{}"),  // transform
+            ok("{}")   // rename
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let shared = Station(
+            id: "1", token: "ST-1", name: "Old Name",
+            isShared: true, isQuickMix: false
+        )
+        try await subject.renameStation(shared, to: "New Name")
+
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 4, "partner, user, transform, rename")
+        XCTAssertTrue(
+            requests[2].url.absoluteString.contains("method=station.transformSharedStation")
+        )
+        XCTAssertTrue(requests[3].url.absoluteString.contains("method=station.renameStation"))
+        let renameBody = try decryptedBody(requests[3])
+        XCTAssertTrue(renameBody.contains(#""stationName":"New Name""#), renameBody)
+        XCTAssertTrue(renameBody.contains(#""stationToken":"ST-1""#), renameBody)
+    }
+
+    func testRenamePersonalStationSkipsTransformAndNoOpRenameSendsNothing() async throws {
+        let transport = MockTransport(responses: [ok("{}")])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let personal = Station(
+            id: "2", token: "ST-2", name: "Mine",
+            isShared: false, isQuickMix: false
+        )
+        try await subject.renameStation(personal, to: "Renamed")
+        var requests = transport.requests
+        XCTAssertEqual(requests.count, 3, "partner, user, rename — no transform")
+        XCTAssertTrue(requests[2].url.absoluteString.contains("method=station.renameStation"))
+
+        // Same name → no call at all (pithos: `if new_name != self.name`).
+        try await subject.renameStation(personal, to: "Mine")
+        requests = transport.requests
+        XCTAssertEqual(requests.count, 3)
+    }
+
+    func testDeleteStationSendsToken() async throws {
+        let transport = MockTransport(responses: [ok("{}")])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let doomed = Station(
+            id: "3", token: "ST-3", name: "Bye",
+            isShared: false, isQuickMix: false
+        )
+        try await subject.deleteStation(doomed)
+
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 3, "partner, user, delete")
+        let request = try XCTUnwrap(requests.last)
+        XCTAssertTrue(request.url.absoluteString.contains("method=station.deleteStation"))
+        let body = try decryptedBody(request)
+        XCTAssertTrue(body.contains(#""stationToken":"ST-3""#), body)
+    }
+
+    /// Decrypts a recorded request body (hex → Blowfish-ECB → JSON) and
+    /// trims the per-chunk NUL pad, for substring assertions.
+    private func decryptedBody(_ request: MockTransport.RecordedRequest) throws -> String {
+        let hex = String(decoding: request.body, as: UTF8.self)
+        let plain = try PandoraCrypto.decryptFromHex(hex, key: PandoraAPI.encryptKey)
+        return String(decoding: plain.prefix { $0 != 0 }, as: UTF8.self)
+    }
+
     // MARK: - syncTime offset math (static — no actor)
 
     func testTimeOffsetFromEncryptedSyncTime() throws {

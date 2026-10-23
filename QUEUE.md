@@ -27,7 +27,21 @@ _(none — both resolved below)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M2 unit 2 — stations list UI** (app target).
+- **This push (2026-10-23): M2 unit 3 — stations CRUD core** (PandoraCore).
+  - `SessionManager`: `createStation(musicToken:)` and
+    `createStation(trackToken:musicType:)` (pithos `add_station_by_music_id`
+    / `add_station_by_track_token`), `renameStation(_:to:)` — transforms a
+    shared station first (`station.transformSharedStation`, pithos
+    `transformIfShared`), no-op when the name is unchanged — and
+    `deleteStation(_:)` (list membership only, like pithos).
+    `Station(result:)` decodes the `createStation` reply (same wire shape
+    as list entries). New `PandoraAPI.Method` constants.
+  - 5 new tests: create×2 (params asserted in decrypted bodies, NUL-trimmed
+    helper), rename shared→transform-then-rename ordering, personal skip +
+    same-name no-op, delete token.
+
+- `46276e4` (2026-10-23): **M2 unit 2 — stations list UI** (runs 39882019409
+  / 39882019499 in flight at this push; verify first next session):
   - `AppStore`: `stations` / `isLoadingStations` state, `refreshStations`
     intent (guarded against concurrent loads); auto-refresh after login
     success and after warm-launch restore; error kept only when the list
@@ -91,12 +105,12 @@ _(none — both resolved below)_
 
 ## Pending Queue
 
-1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **M2 unit 3**: `station.createStation` / `renameStation` /
-   `deleteStation` core methods (pithos flow incl.
-   `transformSharedStation` before renaming a shared station) + tests;
-   then the list-row actions UI.
-3. M2 tail: artwork disk cache (only if AsyncImage/URLCache proves
+1. Verify last two pushes green (Core Tests + iOS Build). Repair first if red.
+2. **M2 unit 4**: station row actions UI — context menu / swipe for rename
+   (inline prompt) and delete (confirm), dispatching existing intents;
+   create-station needs `music.search` first (its own core unit before UI).
+3. **M2 unit 5**: `music.search` core + create-from-search flow.
+4. M2 tail: artwork disk cache (only if AsyncImage/URLCache proves
    insufficient on device), sort-order preference if the user asks for one.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
