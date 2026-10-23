@@ -353,6 +353,8 @@ final class SessionManagerTests: XCTestCase {
 
     func testCreateStationFromMusicTokenSendsParamAndDecodesReply() async throws {
         let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
             ok(#"{"stationId":"555","stationToken":"S555","stationName":"New Station","isShared":false,"isQuickMix":false}"#)
         ])
         let subject = makeManager(transport: transport)
@@ -375,6 +377,8 @@ final class SessionManagerTests: XCTestCase {
 
     func testCreateStationFromTrackTokenSendsBothParams() async throws {
         let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
             ok(#"{"stationId":"666","stationToken":"S666","stationName":"From Song","isShared":false,"isQuickMix":false}"#)
         ])
         let subject = makeManager(transport: transport)
@@ -393,6 +397,8 @@ final class SessionManagerTests: XCTestCase {
     func testRenameTransformsSharedStationFirstThenRenames() async throws {
         // pithos: shared → transformSharedStation, then renameStation.
         let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
             ok("{}"),  // transform
             ok("{}")   // rename
         ])
@@ -417,7 +423,7 @@ final class SessionManagerTests: XCTestCase {
     }
 
     func testRenamePersonalStationSkipsTransformAndNoOpRenameSendsNothing() async throws {
-        let transport = MockTransport(responses: [ok("{}")])
+        let transport = MockTransport(responses: [partnerOK(), userOK(), ok("{}")])
         let subject = makeManager(transport: transport)
         _ = try await subject.login(username: "u", password: "p")
 
@@ -437,7 +443,7 @@ final class SessionManagerTests: XCTestCase {
     }
 
     func testDeleteStationSendsToken() async throws {
-        let transport = MockTransport(responses: [ok("{}")])
+        let transport = MockTransport(responses: [partnerOK(), userOK(), ok("{}")])
         let subject = makeManager(transport: transport)
         _ = try await subject.login(username: "u", password: "p")
 
