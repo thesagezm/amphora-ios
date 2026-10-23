@@ -5,14 +5,13 @@ Updated in the same commit as the work it describes.
 
 ## Current Milestone
 
-**M1** — Auth: Blowfish password, partner login, user login, Keychain
-persistence, auto-login, typed errors. (M0 complete. All M1 units are
-pushed; milestone stays open until the user confirms login + auto-login
-on their phone.)
+**M3** — Playback: `station.getPlaylist` core → `PlayerService`/`AVPlayer`
+→ background audio, Now Playing, remote commands, prefetch next.
+(M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works" 2026-10-23.)
 
 ## User Feedback Pending
 
-_(none — both resolved below)_
+_(none)_
 
 **Resolved feedback:**
 
@@ -24,24 +23,39 @@ _(none — both resolved below)_
 2. **M1 confirmed on device** (2026-10-23): user reports real sign-in
    succeeded and app shows the signed-in placeholder. **M1 milestone
    complete.**
+3. **M2 confirmed** (2026-10-23): "everything so far works" — station list,
+   rename/delete, add-station search all good on device. **M2 complete.**
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M2 unit 6 — add-station sheet UI** (app target):
-  - `AppStore`: `searchStations` / `createStation` intents; debounced,
-    cancellation-safe `search()` (min 2 chars → clears locally, never
-    hammers the endpoint; newer query cancels in-flight); `createStation`
-    appends locally like pithos (dedup by id, no refetch), bumps
-    `stationCreatedTick` so the sheet can dismiss (fire-and-forget intents
-    can't return values); shared `isMutatingStations` guard.
-  - `AddStationView` (new `Amphora/UI/`): `.searchable` field,
-    `.task(id: query)` 350ms debounce → intent, kind-icon rows
-    (mic/note/radio) with artist caption, tap = create + dismiss on tick,
-    Cancel toolbar, empty/prompt/searching states, error banner.
-  - `StationsView`: toolbar `+` button opens the sheet; empty state gets
-    an "Add Station" action.
+- **This push (2026-10-23): M3 unit 1 — `station.getPlaylist` core**
+  (PandoraCore only):
+  - `Playlist.swift` (new): `Track` (token, title, artist, album, artwork,
+    duration, station id, rating, gain, ad flag) + `AudioVariant`
+    (quality bucket, encoding, bitrate, URL) + `Playlist` (tracks + fetched
+    time, 1h validity per pithos `PLAYLIST_VALIDITY_TIME`).
+  - Quality selection mirrors both references: pithos' promotion rule —
+    the extra `HTTP_128_MP3` URL becomes the new `highQuality` when the
+    server's high quality is < 128 kbps (old high → `mediumQuality`),
+    otherwise the extra `HTTP_32_AACPLUS` becomes a `lowQuality` fallback;
+    pydora's `AudioField` — a bare `audioUrl` with no map is treated as
+    64 kbps aacplus high quality. Variants are ordered best-quality first.
+  - Entries without `songName` are dropped (pithos' filter); ads are kept
+    and flagged (`adToken` → `isAdvertisement`).
+  - `SessionManager.getPlaylist(for:)` — `station.getPlaylist` with pithos'
+    exact params (`stationToken`, `includeTrackLength: true`,
+    `additionalAudioUrl: 'HTTP_32_AACPLUS,HTTP_128_MP3'`).
+  - `PlaylistTests`: 10 tests (full entry, songName filter, non-object
+    entries, both promotion branches, bare URL, no-audio entry, variant
+    ordering, 1h expiry, request shape + encrypted-body asserts).
+  - **Local Docker Swift 6.0.3 run: 85/85 tests green** (the `swift:6.0`
+    image on this workstation — same toolchain as the CI Linux runner).
 
-- `b0f4526` (2026-10-23): **repair red music.search push** —
+- **71cbad7** (2026-10-23): M2 unit 6 — add-station sheet UI (search/create
+  intents, debounced `AddStationView`). Both workflows ✅ (39886272967 /
+  39886272956).
+
+- **b0f4526** (2026-10-23): **repair red music.search push** —
   **Core Tests ✅** (39885481763), **iOS Build ✅** (39885481856):
   - `ab4e887` (runs 39884553000 / 39884553004) **and** the QUEUE-only
     follow-up `6641ace` (39884917062 / 39884916740): **both red, same
@@ -49,6 +63,7 @@ _(none — both resolved below)_
     `AnyJSON` array elements where `artistOrSong` takes
     `[String: AnyJSON]`. Fixed via `entry.objectValue.flatMap(…)`.
     (Lesson: array elements are `AnyJSON`; unwrap with `objectValue`.)
+
 
 - `6641ace` (2026-10-23): QUEUE-only bookkeeping for the green
   row-actions run.
@@ -161,18 +176,21 @@ _(none — both resolved below)_
 
 ## Current Milestone
 
-**M2** — Stations: fetch / list / create / rename / delete + list UI.
-(M0 ✅, M1 ✅ — user signed in on device 2026-10-23.)
+**M3** — Playback (see top of file).
 
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **User re-test build** (stale before `b0f4526`): install latest
-   `amphora-ipa-*` artifact → station list should load; rename/delete via
-   long-press; add via `+` → search → tap.
-3. **M2 done pending user confirmation.** Then **M3 playback** begins:
-   `station.getPlaylist` core (highest quality, `additionalAudioUrl`
-   pattern from pithos), then `PlayerService`/`AVPlayer`.
+2. **M3 unit 2** — `PlayerService` (app target): `AVPlayer` +
+   `AVAudioSession(.playback)`, play/pause/next, prefetch the next track's
+   stream URL as soon as the current one starts, interruption + route-change
+   handling. No networking inside — it talks to PandoraCore via AppStore.
+3. **M3 unit 3** — Now Playing (`MPNowPlayingInfoCenter`) + remote commands
+   (`MPRemoteCommandCenter`) + AppStore playback intents.
+4. **M3 unit 4** — Playback UI: tap a station to play, mini-player above
+   the tab bar, full Now Playing screen.
+5. **User re-test** the IPA after M3 lands (play, lock-screen metadata,
+   skip, backgrounding).
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation and repair before
@@ -183,7 +201,8 @@ any new unit.
 - [x] **M0** — skeleton, green CI
 - [x] **M1** — auth (partner login, Blowfish, user login, Keychain, auto-login)
       — confirmed signed-in on device 2026-10-23
-- [ ] **M2** — stations (fetch/list/create/rename/delete + list UI)
+- [x] **M2** — stations (fetch/list/create/rename/delete + list UI)
+      — confirmed on device 2026-10-23 ("everything so far works")
 - [ ] **M3** — playback (playlist, AVPlayer, background audio, Now Playing)
 - [ ] **M4** — feedback & bookmarks
 - [ ] **M5** — UI/design pass

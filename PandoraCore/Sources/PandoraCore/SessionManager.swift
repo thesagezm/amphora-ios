@@ -364,6 +364,23 @@ public actor SessionManager {
         return MusicSearchResult.searchResults(from: result)
     }
 
+    // MARK: Playback
+
+    /// Fetch a station's playlist (pithos `Station.get_playlist`).
+    /// Requests track lengths and both extra stream formats so the client
+    /// can always pick the highest available quality (see `Track.variants`).
+    public func getPlaylist(for station: Station) async throws -> Playlist {
+        let result = try await authenticatedRequest(
+            PandoraAPI.Method.getPlaylist,
+            parameters: [
+                "stationToken": .string(station.token),
+                "includeTrackLength": .bool(true),
+                "additionalAudioUrl": .string(PandoraAPI.additionalAudioURLs)
+            ]
+        )
+        return Playlist(tracks: Track.tracks(from: result), fetchedAt: now())
+    }
+
     // MARK: Helpers
 
     /// partnerId/userId arrive as either JSON string or number depending on

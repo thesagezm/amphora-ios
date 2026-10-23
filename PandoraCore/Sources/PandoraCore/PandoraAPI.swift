@@ -31,7 +31,13 @@ public enum PandoraAPI {
         public static let deleteStation = "station.deleteStation"
         public static let transformSharedStation = "station.transformSharedStation"
         public static let musicSearch = "music.search"
+        public static let getPlaylist = "station.getPlaylist"
     }
+
+    /// Extra stream formats requested alongside a playlist, in the order
+    /// pithos asks for them: `additionalAudioUrl[0]` = 32 kbps AAC+,
+    /// `additionalAudioUrl[1]` = 128 kbps MP3.
+    public static let additionalAudioURLs = "HTTP_32_AACPLUS,HTTP_128_MP3"
 
     /// Client-side identity used by `auth.partnerLogin`, matching the
     /// `android-generic` entry in `pithos/pandora/data.py`.
