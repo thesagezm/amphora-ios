@@ -22,12 +22,22 @@ final class AppStore {
         case createStation(MusicSearchResult)
         case renameStation(Station, to: String)
         case deleteStation(Station)
+        case playStation(Station)
+        case togglePlayback
+        case skipToNext
         case dismissError
     }
 
     private let session: SessionManager
     private var didStartRestore = false
     private var searchTask: Task<Void, Never>?
+    /// Tracks already handed to the player — the next playlist must not
+    /// queue the same track twice.
+    private var queuedTrackTokens: Set<String> = []
+
+    /// Playback engine. Owns the player, the audio session and the
+    /// now-playing track; it never talks to the network.
+    let player = PlayerService()
 
     private(set) var authPhase: AuthPhase = .restoring
     private(set) var stations: [Station] = []
@@ -38,12 +48,20 @@ final class AppStore {
     /// Increments on each successful create — the add-station sheet's
     /// dismissal signal (fire-and-forget intents can't return a value).
     private(set) var stationCreatedTick = 0
-    // Current station, current track and feedback state arrive in M3/M4.
+    /// The station whose playlist is playing (nil before the first play).
+    private(set) var currentStation: Station?
+    /// True while a playlist request for a station is in flight.
+    private(set) var isLoadingPlaylist = false
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
 
     init(session: SessionManager = SessionManager(store: KeychainSessionStore())) {
         self.session = session
+        // The player asks for more tracks when its queue runs low — pithos
+        // preloads the next playlist when one song remains.
+        player.onNeedMoreTracks = { [weak self] in
+            self?.fetchMoreTracks()
+        }
     }
 
     /// Entry point for UI intents.
@@ -63,6 +81,12 @@ final class AppStore {
             Task { await renameStation(station, to: newName) }
         case .deleteStation(let station):
             Task { await deleteStation(station) }
+        case .playStation(let station):
+            Task { await play(station) }
+        case .togglePlayback:
+            player.togglePlayback()
+        case .skipToNext:
+            player.skipToNext()
         case .dismissError:
             lastErrorMessage = nil
         }
@@ -162,6 +186,59 @@ final class AppStore {
             stations.removeAll { $0.id == station.id }
         } catch {
             lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    // MARK: Playback
+
+    /// Plays a station: fetches its playlist, starts the first track and
+    /// queues the next one (prefetch). Tapping the station that is already
+    /// playing toggles playback instead of restarting it.
+    private func play(_ station: Station) async {
+        if currentStation?.id == station.id, player.currentTrack != nil {
+            player.togglePlayback()
+            return
+        }
+        guard !isLoadingPlaylist else { return }
+        lastErrorMessage = nil
+        isLoadingPlaylist = true
+        defer { isLoadingPlaylist = false }
+        do {
+            let playlist = try await session.getPlaylist(for: station)
+            let playable = playlist.tracks.filter { $0.streamURL != nil }
+            guard let first = playable.first else {
+                currentStation = station
+                lastErrorMessage = "No playable tracks in this station right now."
+                return
+            }
+            currentStation = station
+            queuedTrackTokens = Set(playable.map(\.trackToken))
+            player.play(track: first, prefetching: playable.dropFirst().first)
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Called by the player when its queue runs low — fetch the next
+    /// playlist for the current station and queue the new tracks.
+    private func fetchMoreTracks() {
+        guard let station = currentStation, !isLoadingPlaylist else { return }
+        isLoadingPlaylist = true
+        Task {
+            defer { isLoadingPlaylist = false }
+            do {
+                let playlist = try await session.getPlaylist(for: station)
+                let fresh = playlist.tracks.filter {
+                    $0.streamURL != nil && !queuedTrackTokens.contains($0.trackToken)
+                }
+                guard !fresh.isEmpty else { return }
+                queuedTrackTokens.formUnion(fresh.map(\.trackToken))
+                player.enqueue(fresh)
+            } catch {
+                // A failed prefetch is not fatal — the current track keeps
+                // playing; the next skip retries.
+                lastErrorMessage = Self.userMessage(for: error)
+            }
         }
     }
 

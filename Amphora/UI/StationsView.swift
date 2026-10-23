@@ -104,25 +104,34 @@ struct StationsView: View {
 
     private var list: some View {
         List(sortedStations) { station in
-            StationRow(station: station)
-                .listRowBackground(Color.primaryBackground.opacity(0.4))
-                .contextMenu {
-                    // pithos' edit dialog filters quickmix + thumbprint out
-                    // of rename/delete — mirror that here.
-                    if !station.isQuickMix && !station.isThumbprint {
-                        Button {
-                            renameText = station.name
-                            renameTarget = station
-                        } label: {
-                            Label("Rename", systemImage: "pencil")
-                        }
-                        Button(role: .destructive) {
-                            deleteTarget = station
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
+            Button {
+                store.send(.playStation(station))
+            } label: {
+                StationRow(
+                    station: station,
+                    isCurrent: store.currentStation?.id == station.id,
+                    isPlaying: store.currentStation?.id == station.id && store.player.isPlaying
+                )
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(Color.primaryBackground.opacity(0.4))
+            .contextMenu {
+                // pithos' edit dialog filters quickmix + thumbprint out
+                // of rename/delete — mirror that here.
+                if !station.isQuickMix && !station.isThumbprint {
+                    Button {
+                        renameText = station.name
+                        renameTarget = station
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        deleteTarget = station
+                    } label: {
+                        Label("Delete", systemImage: "trash")
                     }
                 }
+            }
         }
         .listStyle(.plain)
         .refreshable {
@@ -131,8 +140,13 @@ struct StationsView: View {
         // Non-blocking error surface once a list exists (empty-state errors
         // render above); M5 restyles these.
         .safeAreaInset(edge: .bottom) {
-            if !store.stations.isEmpty, let message = store.lastErrorMessage {
-                errorBanner(message)
+            VStack(spacing: 8) {
+                if !store.stations.isEmpty, let message = store.lastErrorMessage {
+                    errorBanner(message)
+                }
+                if store.player.currentTrack != nil {
+                    MiniPlayer()
+                }
             }
         }
     }
@@ -200,6 +214,8 @@ struct StationsView: View {
 /// cache lands), name, badge caption for the non-plain cases.
 private struct StationRow: View {
     let station: Station
+    var isCurrent = false
+    var isPlaying = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -223,7 +239,12 @@ private struct StationRow: View {
                 }
             }
             Spacer(minLength: 0)
-            if station.isShared {
+            if isPlaying {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.tint)
+                    .accessibilityLabel("Playing")
+            } else if station.isShared {
                 Image(systemName: "person.2")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -233,6 +254,9 @@ private struct StationRow: View {
         .padding(.vertical, 4)
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            isCurrent ? "\(station.name), currently playing" : station.name
+        )
     }
 
     private var artwork: some View {

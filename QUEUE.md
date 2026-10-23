@@ -28,8 +28,29 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M3 unit 1 — `station.getPlaylist` core**
-  (PandoraCore only):
+- **This push (2026-10-23): M3 unit 2 — `PlayerService` + tap-to-play**
+  (app target):
+  - `PlayerService` (real implementation now): `AVQueuePlayer` with a
+    two-slot queue (current + prefetched next → near-gapless hand-over),
+    `AVAudioSession(.playback, .default)` activation, `preferredForwardBufferDuration
+    = 30`, periodic time observer (0.5s) for elapsed time, KVO on
+    `timeControlStatus` for play/pause/buffering state.
+  - Interruption / route-change / `mediaServicesWereReset` handling:
+    pause on interruption, resume when `.shouldResume`, re-activate the
+    session on route changes, rebuild the player + queue after a media
+    services reset.
+  - `AppStore`: `playStation` / `togglePlayback` / `skipToNext` intents,
+    `currentStation`, `isLoadingPlaylist`; `play` fetches the playlist,
+    starts the first playable track and prefetches the next; the player's
+    "queue running low" callback fetches the next playlist (pithos
+    preloads when one song remains) and queues only unseen tracks.
+  - `StationsView`: tapping a station plays it (tapping the playing
+    station toggles), "now playing" indicator on the active row.
+  - `MiniPlayer` (new): compact bar with artwork, title/artist, play/pause
+    and next, shown above the tab bar while something plays.
+
+- **396258c** (2026-10-23): M3 unit 1 — `station.getPlaylist` core —
+  **Core Tests ✅** (39927947866), **iOS Build ✅** (39927948033):
   - `Playlist.swift` (new): `Track` (token, title, artist, album, artwork,
     duration, station id, rating, gain, ad flag) + `AudioVariant`
     (quality bucket, encoding, bitrate, URL) + `Playlist` (tracks + fetched
