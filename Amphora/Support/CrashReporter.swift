@@ -124,18 +124,21 @@ final class CrashReporter: @unchecked Sendable {
     /// The signal path — async-signal-safe calls only, then re-raise.
     private static func handleSignal(_ number: Int32) {
         if exceptionReportWritten == 0, crashFileDescriptor >= 0 {
-            var header = [CChar](repeating: 0, count: 128)
-            _ = header.withUnsafeMutableBufferPointer { buffer in
-                snprintf(buffer.baseAddress, 128, "Amphora crashed: signal %d\n", number)
+            // Swift cannot call C variadics (`snprintf` is unavailable),
+            // so the header is formatted in Swift. The small allocation
+            // is a best-effort trade-off the rest of this path already
+            // makes.
+            let header = "Amphora crashed: signal \(number)\n"
+            header.withCString { cHeader in
+                _ = lseek(crashFileDescriptor, 0, SEEK_SET)
+                let headerLength = strlen(cHeader)
+                _ = write(crashFileDescriptor, cHeader, headerLength)
+                let tailLength = strlen(crashTail)
+                if tailLength > 0 {
+                    _ = write(crashFileDescriptor, crashTail, tailLength)
+                }
+                _ = ftruncate(crashFileDescriptor, off_t(headerLength + tailLength))
             }
-            _ = lseek(crashFileDescriptor, 0, SEEK_SET)
-            let headerLength = strlen(header)
-            _ = write(crashFileDescriptor, header, headerLength)
-            let tailLength = strlen(crashTail)
-            if tailLength > 0 {
-                _ = write(crashFileDescriptor, crashTail, tailLength)
-            }
-            _ = ftruncate(crashFileDescriptor, off_t(headerLength + tailLength))
         }
         signal(number, SIG_DFL)
         raise(number)
