@@ -332,19 +332,21 @@ _(none)_
 
 ## Current Milestone
 
-**M3** — Playback (see top of file).
+**M5** — UI/design pass (see top of file).
 
 ## Pending Queue
 
 1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **M5 unit 3** — design pass: tab bar (Stations / Bookmarks / History
-   tabs instead of the "More" menu), empty/error state polish, station
-   ordering persistence.
-3. **M6** — robustness: offline/error copy, session-expiry surface
-   (1001 → re-login → retry, already in `SessionManager`), long-session
-   soak.
-4. **User re-test** the IPA: play a station, lock-screen metadata, thumbs
-   up/down, skip, backgrounding, bookmarks, sleep timer.
+2. **M6 unit 1** — robustness: offline/error copy (transport failures in
+   the station list, playlist and feedback paths already map to short
+   messages in `AppStore.userMessage`), explicit-content badge, skip-limit
+   awareness if the API exposes it.
+3. **M6 unit 2** — session-expiry soak: the 1001 → re-login → replay-once
+   path is implemented and unit-tested in `SessionManager`; what is left
+   is surfacing "session expired, signed back in" to the user.
+4. **User device test** of the M3–M5 IPA: install the newest
+   `amphora-ipa-*` artifact → play a station, lock-screen metadata, thumbs
+   up/down, skip, backgrounding, bookmarks, sleep timer, station reorder.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If Core Tests is
 red on this push, read the failure summary annotation and repair before
