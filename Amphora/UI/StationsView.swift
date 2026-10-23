@@ -145,7 +145,9 @@ struct StationsView: View {
                 }
             }
             .onMove { source, destination in
-                store.send(.moveStation(from: source, to: destination))
+                // onMove reports an IndexSet; Amphora moves one row at a time.
+                guard let from = source.first else { return }
+                store.send(.moveStation(from: from, to: destination))
             }
         }
         .listStyle(.plain)
