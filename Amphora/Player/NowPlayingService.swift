@@ -22,17 +22,16 @@ final class NowPlayingService {
 
     init(player: PlayerService) {
         self.player = player
-        player.onTrackChanged = { [weak self] track in
+        player.onTrackChanged.append { [weak self] track in
             self?.updateNowPlaying(for: track)
         }
-        player.onPlaybackStateChanged = { [weak self] in
+        player.onPlaybackStateChanged.append { [weak self] in
             self?.updatePlaybackState()
         }
         updateNowPlaying(for: player.currentTrack)
         configureRemoteCommands()
         observeElapsedTime()
     }
-
     // MARK: - Now Playing info
 
     private func updateNowPlaying(for track: Track?) {

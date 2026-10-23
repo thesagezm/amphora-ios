@@ -35,11 +35,13 @@ final class PlayerService {
     // MARK: Observable state
 
     private(set) var currentTrack: Track? {
-        didSet { onTrackChanged?(currentTrack) }
+        didSet { for observer in onTrackChanged { observer(currentTrack) } }
     }
     private(set) var state: PlaybackState = .idle {
         didSet {
-            if oldValue != state { onPlaybackStateChanged?() }
+            if oldValue != state {
+                for observer in onPlaybackStateChanged { observer() }
+            }
         }
     }
     /// Playback position in seconds.
@@ -60,9 +62,11 @@ final class PlayerService {
     /// Fired when playback of the current track failed.
     var onPlaybackFailed: ((String) -> Void)?
     /// Fired when the current track changed (start, skip, natural end).
-    var onTrackChanged: ((Track?) -> Void)?
+    /// A list of observers: the now-playing service and the app store
+    /// both need the hook, so neither may overwrite the other.
+    var onTrackChanged: [(Track?) -> Void] = []
     /// Fired when the playback state changed (play/pause/buffering/failed).
-    var onPlaybackStateChanged: (() -> Void)?
+    var onPlaybackStateChanged: [() -> Void] = []
 
     // MARK: Private state
 

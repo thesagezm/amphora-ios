@@ -28,8 +28,26 @@ _(none)_
 
 ## In Flight / Last Push
 
-- **This push (2026-10-23): M4 unit 1 — feedback + bookmarks core**
-  (PandoraCore only):
+- **This push (2026-10-23): M4 unit 2 — feedback + bookmarks UI**
+  (app target):
+  - `AppStore`: `rateCurrentTrack` / `removeCurrentRating` /
+    `sleepCurrentTrack` / `bookmarkCurrentSong` /
+    `bookmarkCurrentArtist` / `refreshBookmarks` / `deleteBookmark`
+    intents; the current track's rating is tracked per track (the
+    `feedbackId` belongs to the song — pithos' `Song.rate` deletes the
+    old feedback before adding a new one); the rating is seeded from the
+    playlist entry's `songRating`.
+  - `PlayerService.onTrackChanged` / `onPlaybackStateChanged` are now
+    **lists** of observers (the now-playing service and the store both
+    subscribe — neither may overwrite the other).
+  - `FeedbackBar` (new): thumbs up / thumbs down / hide-this-song; the
+    active rating is highlighted and tapping it again removes the rating.
+  - `BookmarksView` (new): song + artist bookmark lists with delete,
+    pull-to-refresh; reachable from the toolbar bookmark icon.
+  - `NowPlayingView`: feedback bar + bookmark song/artist buttons.
+
+- **ed4b9bc** (2026-10-23): M4 unit 1 — feedback + bookmarks core —
+  **Core Tests ✅** (39934322752), **iOS Build ✅** (39934322742):
   - `Feedback.swift` (new): `FeedbackRating` (loved/banned/none),
     `FeedbackReceipt` (the `feedbackId` needed to undo a rating),
     `Bookmark` (song/artist bookmarks with `bookmarkToken`, `musicToken`,

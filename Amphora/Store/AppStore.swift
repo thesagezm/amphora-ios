@@ -25,6 +25,13 @@ final class AppStore {
         case playStation(Station)
         case togglePlayback
         case skipToNext
+        case rateCurrentTrack(FeedbackRating)
+        case removeCurrentRating
+        case sleepCurrentTrack
+        case bookmarkCurrentSong
+        case bookmarkCurrentArtist
+        case refreshBookmarks
+        case deleteBookmark(Bookmark)
         case dismissError
     }
 
@@ -55,6 +62,13 @@ final class AppStore {
     private(set) var currentStation: Station?
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
+    /// The user's bookmarks (`user.getBookmarks`).
+    private(set) var bookmarks: [Bookmark] = []
+    private(set) var isLoadingBookmarks = false
+    /// The `feedbackId` of the rating on the current track (needed to undo
+    /// it) and the rating itself.
+    private(set) var currentRating: FeedbackRating = .none
+    private var currentFeedbackId: String?
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
 
@@ -67,6 +81,24 @@ final class AppStore {
         // preloads the next playlist when one song remains.
         player.onNeedMoreTracks = { [weak self] in
             self?.fetchMoreTracks()
+        }
+        // A new track means a new rating state: the feedback id belongs to
+        // the previous track (pithos keeps it per song). The rating comes
+        // from the playlist entry (`songRating`).
+        player.onTrackChanged.append { [weak self] track in
+            guard let self else { return }
+            self.currentFeedbackId = nil
+            self.currentRating = Self.feedbackRating(for: track?.rating)
+        }
+    }
+
+    /// Maps Pandora's `songRating` (pithos' `RATE_LOVE` / `RATE_BAN`) onto
+    /// the app's rating enum.
+    private static func feedbackRating(for rating: Track.Rating?) -> FeedbackRating {
+        switch rating {
+        case .some(.loved): return .loved
+        case .some(.banned): return .banned
+        default: return .none
         }
     }
 
@@ -93,6 +125,20 @@ final class AppStore {
             player.togglePlayback()
         case .skipToNext:
             player.skipToNext()
+        case .rateCurrentTrack(let rating):
+            Task { await rateCurrentTrack(rating) }
+        case .removeCurrentRating:
+            Task { await removeCurrentRating() }
+        case .sleepCurrentTrack:
+            Task { await sleepCurrentTrack() }
+        case .bookmarkCurrentSong:
+            Task { await bookmarkCurrentSong() }
+        case .bookmarkCurrentArtist:
+            Task { await bookmarkCurrentArtist() }
+        case .refreshBookmarks:
+            Task { await refreshBookmarks() }
+        case .deleteBookmark(let bookmark):
+            Task { await deleteBookmark(bookmark) }
         case .dismissError:
             lastErrorMessage = nil
         }
@@ -245,6 +291,116 @@ final class AppStore {
                 // playing; the next skip retries.
                 lastErrorMessage = Self.userMessage(for: error)
             }
+        }
+    }
+
+    // MARK: Feedback & bookmarks
+
+    /// Rate the current track (thumbs up / down). Re-rating replaces the
+    /// old rating: the previous feedback is deleted first, exactly like
+    /// pithos' `Song.rate`.
+    private func rateCurrentTrack(_ rating: FeedbackRating) async {
+        guard let track = player.currentTrack, rating != .none else { return }
+        guard let station = currentStation else { return }
+        lastErrorMessage = nil
+        do {
+            if let feedbackId = currentFeedbackId {
+                try await session.deleteFeedback(
+                    feedbackId: feedbackId,
+                    stationToken: station.token
+                )
+                currentFeedbackId = nil
+            }
+            let receipt = try await session.addFeedback(
+                trackToken: track.trackToken,
+                stationToken: station.token,
+                rating: rating
+            )
+            currentFeedbackId = receipt.feedbackId
+            currentRating = rating
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Remove the rating on the current track (thumbs up/down → unrated).
+    private func removeCurrentRating() async {
+        guard let feedbackId = currentFeedbackId,
+              let station = currentStation else { return }
+        lastErrorMessage = nil
+        do {
+            try await session.deleteFeedback(
+                feedbackId: feedbackId,
+                stationToken: station.token
+            )
+            currentFeedbackId = nil
+            currentRating = .none
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Hide the current track for a few hours (`user.sleepSong`).
+    private func sleepCurrentTrack() async {
+        guard let track = player.currentTrack else { return }
+        lastErrorMessage = nil
+        do {
+            try await session.sleepSong(trackToken: track.trackToken)
+            player.skipToNext()
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Bookmark the current song (`bookmark.addSongBookmark`).
+    private func bookmarkCurrentSong() async {
+        guard let track = player.currentTrack else { return }
+        lastErrorMessage = nil
+        do {
+            try await session.addSongBookmark(trackToken: track.trackToken)
+            await refreshBookmarks()
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Bookmark the current artist (`bookmark.addArtistBookmark`).
+    private func bookmarkCurrentArtist() async {
+        guard let track = player.currentTrack else { return }
+        lastErrorMessage = nil
+        do {
+            try await session.addArtistBookmark(trackToken: track.trackToken)
+            await refreshBookmarks()
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Loads the user's bookmarks.
+    func refreshBookmarks() async {
+        guard !isLoadingBookmarks else { return }
+        isLoadingBookmarks = true
+        defer { isLoadingBookmarks = false }
+        do {
+            bookmarks = try await session.getBookmarks()
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Removes a bookmark (song or artist).
+    private func deleteBookmark(_ bookmark: Bookmark) async {
+        lastErrorMessage = nil
+        do {
+            switch bookmark.kind {
+            case .song:
+                try await session.deleteSongBookmark(bookmarkToken: bookmark.bookmarkToken)
+            case .artist:
+                try await session.deleteArtistBookmark(bookmarkToken: bookmark.bookmarkToken)
+            }
+            bookmarks.removeAll { $0.bookmarkToken == bookmark.bookmarkToken }
+        } catch {
+            lastErrorMessage = Self.userMessage(for: error)
         }
     }
 

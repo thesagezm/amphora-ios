@@ -28,6 +28,16 @@ struct RootView: View {
         case .signedIn:
             NavigationStack {
                 StationsView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            NavigationLink {
+                                BookmarksView()
+                            } label: {
+                                Image(systemName: "bookmark")
+                            }
+                            .accessibilityLabel("Bookmarks")
+                        }
+                    }
             }
         }
     }

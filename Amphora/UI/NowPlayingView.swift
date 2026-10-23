@@ -52,6 +52,10 @@ struct NowPlayingView: View {
 
                 transport
 
+                FeedbackBar()
+
+                bookmarkButtons
+
                 if let message = store.player.errorMessage {
                     Text(message)
                         .font(.footnote)
@@ -148,6 +152,30 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Next track")
+        }
+    }
+
+    private var bookmarkButtons: some View {
+        HStack(spacing: 28) {
+            Button {
+                store.send(.bookmarkCurrentSong)
+            } label: {
+                Label("Song", systemImage: "bookmark")
+                    .font(.subheadline)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Bookmark this song")
+
+            Button {
+                store.send(.bookmarkCurrentArtist)
+            } label: {
+                Label("Artist", systemImage: "person.crop.circle.badge.plus")
+                    .font(.subheadline)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Bookmark this artist")
         }
     }
 
