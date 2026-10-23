@@ -462,6 +462,63 @@ robustness. (M0 ✅, M1 ✅, M2 ✅ — user confirmed "everything so far works"
 red on this push, read the failure summary annotation and repair before
 any new unit.
 
+## Session handover (2026-10-23, end of session)
+
+**State:** everything pushed is green — `Core Tests` ✅ and `iOS Build` ✅
+on `c658c40` (39976680787 / 39976680878). The working tree is clean.
+Local Docker test loop: `cd PandoraCore && docker run --rm -v "$PWD":/src
+-w /src swift:6.0 swift test` → **138/138 green**.
+
+**What landed this session (all pushed):**
+
+| commit | what |
+|---|---|
+| `316b6c9` | mini-player no longer covers the tab bar (`MiniPlayerInset` per tab content) |
+| `a7dbe49` | artwork caching fixed (SHA-256 file names, HTTPS upgrade), sleep timer really fires + survives relaunch, bookmark buttons confirm |
+| `5ef40ab` | lyrics core: LRC parser, `LRCLibClient`, `GoogleTranslateClient`, 24 new tests |
+| `03e89ff` | repair the red iOS Build (`Self.imageCost`) |
+| `b2caad9`, `c658c40` | QUEUE bookkeeping |
+
+**What is NOT done yet** (see Pending Queue above for the detail):
+
+1. **Lyrics UI** — the core exists but nothing calls it. Next agent:
+   add `lyrics` state + `fetchLyrics` to `AppStore` (keyed by
+   `track.trackToken`, fetched in `player.onTrackChanged`), a
+   `LyricsPanel` view in `NowPlayingView` that scrolls `lyrics.lines`,
+   highlights `lyrics.activeLine(at: store.player.elapsed)` and seeks on
+   tap, plus the translation call (`GoogleTranslateClient.
+   englishTranslation(of:)` returns `nil` for English lyrics → show the
+   original only). `LyricLine.translation` is already the field to fill.
+2. **App icon** — no asset catalog exists yet; `project.yml` has
+   `ASSETCATALOG_COMPILER_APPICON_NAME: ""`. Create
+   `Amphora/Resources/Assets.xcassets/AppIcon.appiconset` with a
+   1024×1024 "Amphora" icon and set the setting to `AppIcon`.
+3. **Beautify pass** — theme, typography, gradients, polished stations /
+   now-playing screens. `Color.primaryBackground` (the dark colour) is
+   defined in `Amphora/App/RootView.swift`; the rest of the app uses
+   system colours and `.quaternary`/`thinMaterial` surfaces.
+4. **Session-expiry surfacing** and **ad handling** — see the protocol
+   notes at the bottom of this file.
+
+**Traps worth remembering from this session:**
+
+- A static member called from inside its own type needs an explicit
+  `Self.` — `imageCost(image)` inside `ArtworkCache` failed to compile
+  (`static member 'imageCost' cannot be used on instance of type`).
+  `swiftc -parse` does **not** catch this (it only parses); the Docker
+  test loop only covers PandoraCore, so app-target type errors surface
+  on CI only.
+- The artwork disk cache used the **base64 of the URL** as the file name.
+  Pandora's signed image URLs are long enough to exceed the file-system
+  name limit, so every write silently failed and every appearance
+  re-downloaded. Use a digest.
+- Pandora's `albumArtUrl` values can be plain `http://` (ATS blocks
+  cleartext → the image silently fails) or scheme-less. Normalize before
+  caching.
+- lrclib answers **503** when busy — retry, don't show an error.
+- The `[offset:]` LRC tag is in milliseconds and shifts lyrics
+  **earlier** for a positive value.
+
 ## Milestones
 
 - [x] **M0** — skeleton, green CI
