@@ -53,6 +53,13 @@ final class PlayerService {
 
     var isPlaying: Bool { state == .playing || state == .buffering }
 
+    /// Tracks queued behind the current one, most immediate first — the
+    /// "Up Next" list. The queue holds the current track plus everything
+    /// enqueued from playlist fetches, so this is what will actually play.
+    var upcomingTracks: [Track] {
+        slots.dropFirst().map(\.track)
+    }
+
     // MARK: Callbacks (set by the owner)
 
     /// Fired when the queue holds ≤ 1 playable track — fetch another

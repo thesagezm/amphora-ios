@@ -10,6 +10,7 @@ struct NowPlayingView: View {
     @State private var isShowingSleepTimer = false
     @State private var isShowingTuning = false
     @State private var isShowingLyrics = false
+    @State private var isShowingUpNext = false
 
     var body: some View {
         NavigationStack {
@@ -107,6 +108,8 @@ struct NowPlayingView: View {
                     FeedbackBar()
                     bookmarkButtons
                 }
+
+                upNext
 
                 confirmation
 
@@ -225,6 +228,58 @@ struct NowPlayingView: View {
                 .background(.thinMaterial, in: Capsule())
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .accessibilityAddTraits(.isStaticText)
+        }
+    }
+
+    /// Pithos-style "Up Next": the next few tracks the queue will play.
+    /// Collapsed to a one-line header (with the immediate next title);
+    /// expanding reveals up to four rows. Hidden while nothing is queued.
+    @ViewBuilder
+    private var upNext: some View {
+        let upcoming = Array(store.player.upcomingTracks.prefix(4))
+        if !upcoming.isEmpty {
+            DisclosureGroup(isExpanded: $isShowingUpNext) {
+                ForEach(upcoming) { track in
+                    HStack(spacing: 12) {
+                        CachedArtwork(
+                            urlString: track.artworkUrl,
+                            cornerRadius: 6,
+                            fallbackSystemImage: "music.note"
+                        )
+                        .frame(width: 38, height: 38)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(track.title)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Text(track.artist)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        if track.isAdvertisement {
+                            Text("AD")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.yellow)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Up Next")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(upcoming.first?.title ?? "")
+                        .font(.footnote)
+                        .lineLimit(1)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 32)
+            .accessibilityLabel(
+                "Up next: \(upcoming.map(\.title).joined(separator: ", "))"
+            )
         }
     }
 

@@ -11,7 +11,32 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
-**2026-10-24 device report (this session's driver) — "DIAGNOSE CRASH AND
+**2026-10-24 feature requests (this session's driver — user message):**
+"so your task: last fm, pithos manages to show me the next upcoming like
+4 songs can this one do the same... landing page only shows my stations
+is it possible for it to show those popular pandora created main
+stations as well... the ui agent will try to add color to make the app
+look good". Three units, owned here; **color/beautify stays with the UI
+agent**:
+
+1. **Up Next queue display** — Pithos shows the next ~4 upcoming songs;
+   landed this push (see Last Push).
+2. **Popular Pandora stations on the landing page** — the Stations tab
+   should offer Pandora's featured genre stations ("Today's Hits", …).
+   Protocol verified from four references this session (see Protocol
+   Notes "Genre stations"): `station.getGenreStations` (no params) →
+   `categories[] {categoryName, stations[] {stationId, stationName,
+   stationToken}}`; creation is the existing `station.createStation`
+   with `musicToken: <the genre station's stationToken>` (xivpiano
+   PandoraClient.cs:261 "making one uses its token as the music token";
+   pydra GenreStation "Create a real station using the token";
+   pithos/pandora.py `add_station_by_music_id` same call shape for
+   search-genre results). Core unit next, then the Browse UI.
+3. **Last.fm scrobbling** (Pithos parity, M6 stretch item) — core
+   client + tests, then settings UI + scrobble triggers. Queued after
+   item 2.
+
+**2026-10-24 device report (prior session's driver) — "DIAGNOSE CRASH AND
 FIX":** the app crashed repeatedly on the phone (signal 5). Two Apple
 crash reports + Amphora logs pasted; both signatures diagnosed:
 
@@ -90,7 +115,19 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — session-expiry surfacing + prefetch retry):**
+**(this push — Up Next queue display):** Pithos-parity "Up Next" in the
+full player. `PlayerService.upcomingTracks` exposes the tracks queued
+behind the current one (`slots.dropFirst()`, most immediate first —
+this is what will actually play, ads included and badged "AD");
+`@Observable` instruments the private `slots` storage, so the view
+invalidates on every queue change (skip, natural advance, enqueue,
+prefetch). `NowPlayingView.upNext`: a DisclosureGroup below the
+feedback controls, collapsed by default to one line ("Up Next" +
+immediate next title), expanding to the next 4 with 38 pt artwork rows;
+hidden when the queue is empty. Local checks: both files parse-clean
+in Docker. PandoraCore untouched.
+
+**(previous push — session-expiry surfacing + prefetch retry):**
 
 - `AppStore.record(_:)` — every surfaced error now flows through one
   helper (18 call sites). When the error means the session is
@@ -467,9 +504,28 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. Verify the crash-repair push green (Core Tests + iOS Build). Repair
+1. **Genre stations core (PandoraCore)** — `station.getGenreStations`
+   decode (`GenreCategory` / `GenreStationList`, tolerant) +
+   `SessionManager.getGenreStations()`; creation reuses the existing
+   `createStation(musicToken:)` with the genre station's token. Tests
+   from fixture JSON. (User request 2026-10-24, item 2.)
+2. **Genre stations UI** — a "Browse Pandora Stations" entry on the
+   Stations landing: categories → station rows (name, optional artUrl
+   if the wire sends one) → create via `station.createStation`, with
+   created stations appended locally like search-create does.
+3. **Last.fm scrobbling core (PandoraCore)** — `LastFmClient`:
+   `auth.getMobileSession` (username/password), api_sig = MD5 of sorted
+   params + secret (CryptoSwift MD5, dependency already approved),
+   `track.updateNowPlaying` at track start, `track.scrobble` at the
+   50 %-or-4-min rule (skips < 30 s never scrobble). Tests: fixed
+   signature vectors, response decoding.
+4. **Last.fm app integration** — settings (enable toggle,
+   username/password in Keychain), scrobble triggers hooked into the
+   track lifecycle, "now playing" update. (User request 2026-10-24,
+   item 3.)
+5. Verify the Up Next push green (Core Tests + iOS Build). Repair
    first if red.
-2. **User device test of the crash-fix IPA** — the critical one: play a
+6. **User device test of the crash-fix IPA** — the critical one: play a
    station >60 s **with the lock screen visible showing artwork** (crash-1
    path: the trap fired when the system rendered lock-screen art), skip a
    few tracks, background/foreground, then force-quit and relaunch a few
@@ -477,18 +533,8 @@ toolbar) → Copy → paste.
    was rewritten) and artwork in station list / history / mini player.
    If anything still crashes, Diagnostics → Copy → paste the log (the
    Apple crash report too, if it appears).
-3. **Ad handling — in flight, uncommitted in the working tree** (started
-   by a prior session): `Advertisement.swift` + `AdvertisementTests`,
-   `JSONValue.array` case, `ad.getAdMetadata`/`ad.registerAd` endpoint
-   constants, Playlist keeps ad stubs (entries with `title` instead of
-   `songName`, per pydora `AdItem`). Docker `swift test` state: **being
-   verified this session** (first run hit a stale-`.build` PCH path
-   error — `/pkg` vs `/src` mount mismatch, root-owned files; fixed by
-   wiping `.build` inside the container). If green: review, finish the
-   SessionManager/player integration, commit as its own unit. If red:
-   repair or discard.
-4. Beautify pass (theme, typography, gradients).
-5. Session-expiry surfacing (protocol notes at the bottom).
+7. Beautify pass (theme, typography, gradients) — **the UI agent owns
+   this**; do not start it here.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
 failure summary annotation and repair before any new unit.
@@ -559,6 +605,22 @@ session-expiry surfacing, ad handling.
 
 ## Protocol Notes (reference-verified)
 
+- **Genre stations (Pandora's featured/popular stations)** — legacy v5,
+  verified 2026-10-24 from four sources: `station.getGenreStations`
+  (**no parameters** — pydora `pandora/client.py:254`, pancake
+  `client.py:193`, python-pandora `connection.py:65`, Sonos Indigo
+  `connection.py:126`). Reply: `{"categories": [{"categoryName": …,
+  "stations": [{"stationId": …, "stationToken": …, "stationName": …,
+  "categoryName": …}]}], "checksum": …}` (pydora `models/station.py`
+  `GenreStation`; pancake `GenreStations.__dict_key__="categoryName"`,
+  `__list_key__="stations"`). **Create a real station with
+  `station.createStation {"musicToken": <the genre station's
+  stationToken>}`** — xivpiano `PandoraClient.cs:261` ("making one uses
+  its token as the music token"), pydra `GenreStation.get_playlist`
+  ("Create a real station using the token"); pithos's search-genre
+  results use the same `musicToken` create shape
+  (`add_station_by_music_id`). Genre stations themselves have no
+  playlist — you create a personal station from them and play that.
 - **Listening modes (station tuning)** — modern web API, plain JSON (no
   Blowfish), verified from pandoCast `PandoraRestApi.cs` and Panedora
   `pandora-api.js`:
