@@ -152,6 +152,15 @@ anything that could identify the machine is removed. Done:
   authorship — were deleted after the release was cut.
 - **The repo is PUBLIC now: nothing machine-identifying may ever be
   committed, and no credentials/tokens anywhere (files, logs, QUEUE).**
+- **Post-release incident (2026-10-25):** GitHub's web view broke minutes
+  after the release — repo home, tree views, and blob views 500
+  ("Something went wrong") for everyone, while commits/commit-diff/raw/
+  API pages all serve fine; the release page's tag list also errored.
+  Diagnosis: the web refs index wedged after force-push + tag +
+  visibility flip + 156 run deletions inside ~2 minutes. This commit is
+  a deliberate ref-reindex nudge (new HEAD on main). If the web view is
+  still 500 after this push, next step is a GitHub support ticket;
+  cloning, `git fetch`, the API, releases, and CI are unaffected.
 
 **(this push — UI unit 4: browse sheet joins the card language):**
 the one surface the card pass missed. `BrowseStationsSheet`: theme
