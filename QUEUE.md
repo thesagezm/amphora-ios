@@ -665,6 +665,38 @@ mini-player); lyrics core `5ef40ab`.
 workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 `GoogleTranslateClient`, 24 tests — **nothing calls it yet**.
 
+## Session handover (2026-10-24, feature-requests session)
+
+**State:** all three user-requested features landed and pushed, one
+unit per commit — `fabcb7d` (Up Next display), `1ed0e59` (genre
+stations core, 213/213 Docker), `096e4ca` (browse stations UI),
+`129cc01` (Last.fm core, 213/213 Docker), `76b5076` (Last.fm app
+integration). The beautify agent finished in parallel (`7b59c17` +
+earlier theming commits, all green) and is **done** — theme helpers
+live in `Amphora/UI/Theme.swift` (card rows, gradients, gold accent);
+new UI should use them. CI: everything through the Last.fm core push
+green; the integration push (`76b5076`) was in flight at handover —
+**check `gh run list` first next session**; its IPA is the one to test.
+
+**Device-test checklist additions (on top of the existing one below):**
+- **Up Next**: play a station >60 s, open the full player → "Up Next"
+  row under the feedback controls shows the immediate next title;
+  expand → up to 4 rows with artwork; skip → the list advances.
+- **Browse stations**: Stations tab → "Browse Pandora Stations" first
+  row → categories → tap a station → sheet closes and the new station
+  appears in the list (then plays like any station).
+- **Last.fm**: Settings (gear, Stations toolbar) → enter Last.fm
+  username/password → Connect → "Signed in as …" + toggle on; play a
+  track past half → check it scrobbles on last.fm; "now playing"
+  appears on the Last.fm profile while a track plays; Sign Out works.
+  (Last.fm auth uses the documented mobile flow — password is sent
+  once over HTTPS, only the session key is stored in the Keychain.)
+
+**Protocol notes added this session:** genre stations
+(`station.getGenreStations`, create with the token as `musicToken`)
+and Last.fm (signing spec example, `auth.getMobileSession` current
+form, pithos scrobble rule) — both under Protocol Notes below.
+
 ## Session handover (2026-10-24, icon+ads session)
 
 **State:** everything pushed and green — `a613a07` (app icon), `d362f29`
