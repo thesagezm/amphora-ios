@@ -367,6 +367,17 @@ public actor SessionManager {
         return MusicSearchResult.searchResults(from: result)
     }
 
+    /// Pandora's featured stations by category (`station.getGenreStations`,
+    /// sent with no parameters — pydora, pancake, python-pandora and the
+    /// Sonos Indigo plugin all call it bare). Creating a real station from
+    /// one reuses `createStation(musicToken:)` with the genre station's
+    /// token (xivpiano `PandoraClient.cs`: "making one uses its token as
+    /// the music token").
+    public func getGenreStations() async throws -> [GenreCategory] {
+        let result = try await authenticatedRequest(PandoraAPI.Method.getGenreStations)
+        return try GenreStations(result: result).categories
+    }
+
     // MARK: Playback
 
     /// Fetch a station's playlist (pithos `Station.get_playlist`).

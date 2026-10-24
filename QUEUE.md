@@ -115,7 +115,23 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Up Next queue display):** Pithos-parity "Up Next" in the
+**(this push — genre stations core, PandoraCore):** the protocol behind
+"popular Pandora stations" (user request 2026-10-24 item 2). New
+`GenreStations.swift`: `GenreStation` (token/stationId/name/
+categoryName/artUrl?, Identifiable by token) + `GenreCategory` +
+`GenreStations` decode of `station.getGenreStations`'s `categories[]` —
+tolerant (unusable entries dropped, duplicate tokens keep first, empty
+categories dropped, station `categoryName` inherits the category's,
+`stationId` number-or-string) with a malformed-error only when
+`categories` is missing/not an array; missing `artUrl` decodes nil (UI
+falls back to a glyph). `PandoraAPI.Method.getGenreStations` +
+`SessionManager.getGenreStations()` (bare request — no parameters, per
+all four references). **6 new tests — 185/185 green in Docker
+(`swift:6.0`)**. UI unit is next: Browse section on the Stations
+landing → create via the existing `createStation(musicToken:)` with the
+genre station's token.
+
+**(previous push — Up Next queue display):** Pithos-parity "Up Next" in the
 full player. `PlayerService.upcomingTracks` exposes the tracks queued
 behind the current one (`slots.dropFirst()`, most immediate first —
 this is what will actually play, ads included and badged "AD");
@@ -504,28 +520,24 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. **Genre stations core (PandoraCore)** — `station.getGenreStations`
-   decode (`GenreCategory` / `GenreStationList`, tolerant) +
-   `SessionManager.getGenreStations()`; creation reuses the existing
-   `createStation(musicToken:)` with the genre station's token. Tests
-   from fixture JSON. (User request 2026-10-24, item 2.)
-2. **Genre stations UI** — a "Browse Pandora Stations" entry on the
+1. **Genre stations UI** — a "Browse Pandora Stations" entry on the
    Stations landing: categories → station rows (name, optional artUrl
    if the wire sends one) → create via `station.createStation`, with
-   created stations appended locally like search-create does.
-3. **Last.fm scrobbling core (PandoraCore)** — `LastFmClient`:
+   created stations appended locally like search-create does. Core
+   landed this push (`SessionManager.getGenreStations()`).
+2. **Last.fm scrobbling core (PandoraCore)** — `LastFmClient`:
    `auth.getMobileSession` (username/password), api_sig = MD5 of sorted
    params + secret (CryptoSwift MD5, dependency already approved),
    `track.updateNowPlaying` at track start, `track.scrobble` at the
    50 %-or-4-min rule (skips < 30 s never scrobble). Tests: fixed
    signature vectors, response decoding.
-4. **Last.fm app integration** — settings (enable toggle,
+3. **Last.fm app integration** — settings (enable toggle,
    username/password in Keychain), scrobble triggers hooked into the
    track lifecycle, "now playing" update. (User request 2026-10-24,
    item 3.)
-5. Verify the Up Next push green (Core Tests + iOS Build). Repair
+4. Verify the genre-stations core push green (Core Tests + iOS Build). Repair
    first if red.
-6. **User device test of the crash-fix IPA** — the critical one: play a
+5. **User device test of the crash-fix IPA** — the critical one: play a
    station >60 s **with the lock screen visible showing artwork** (crash-1
    path: the trap fired when the system rendered lock-screen art), skip a
    few tracks, background/foreground, then force-quit and relaunch a few
@@ -533,7 +545,7 @@ toolbar) → Copy → paste.
    was rewritten) and artwork in station list / history / mini player.
    If anything still crashes, Diagnostics → Copy → paste the log (the
    Apple crash report too, if it appears).
-7. Beautify pass (theme, typography, gradients) — **the UI agent owns
+6. Beautify pass (theme, typography, gradients) — **the UI agent owns
    this**; do not start it here.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the

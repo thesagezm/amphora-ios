@@ -31,6 +31,7 @@ public enum PandoraAPI {
         public static let deleteStation = "station.deleteStation"
         public static let transformSharedStation = "station.transformSharedStation"
         public static let musicSearch = "music.search"
+        public static let getGenreStations = "station.getGenreStations"
         public static let getPlaylist = "station.getPlaylist"
         public static let addFeedback = "station.addFeedback"
         public static let deleteFeedback = "station.deleteFeedback"
