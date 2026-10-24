@@ -135,6 +135,7 @@ struct StationsView: View {
     private var list: some View {
         List {
             browseRow
+                .amphoraCardRow()
             ForEach(store.stations) { station in
                 Button {
                     store.send(.playStation(station))
@@ -146,7 +147,7 @@ struct StationsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(Color.primaryBackground.opacity(0.4))
+                .amphoraCardRow()
                 .contextMenu {
                     // QuickMix is an aggregator — Pandora offers it no
                     // listening modes to tune.
@@ -181,6 +182,7 @@ struct StationsView: View {
             }
         }
         .listStyle(.plain)
+        .amphoraListBackground()
         .refreshable {
             await store.refreshStations()
         }
@@ -226,7 +228,6 @@ struct StationsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowBackground(Color.primaryBackground.opacity(0.4))
         .accessibilityLabel("Browse Pandora's featured stations")
     }
 
@@ -248,7 +249,14 @@ struct StationsView: View {
             .accessibilityLabel("Dismiss error")
         }
         .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
+                .fill(Theme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
+                .strokeBorder(Theme.stroke)
+        )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .accessibilityAddTraits(.isStaticText)

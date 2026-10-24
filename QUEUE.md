@@ -115,7 +115,42 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — player restyle, the beautify pass unit 2 of 3):** the full
+**(this push — card-list + brand pass, the beautify pass unit 3 of 3):**
+every remaining surface now speaks the theme's language. CI confirmed
+units 1–2 fully green (iOS Build ✅ + Core Tests ✅ on both pushes,
+incl. the risky SwiftUI surfaces) before this one went out.
+
+- **`Theme.amphoraCardRow()` / `amphoraListBackground()`** (new shared
+  helpers): one List row = rounded surface card (radius 16) with an 8%
+  white hairline, inset 16 pt, separators hidden, scroll background
+  cleared — the list language for every screen, replacing
+  `Color.primaryBackground.opacity(0.4)` rows.
+- `StationsView`: card rows (browse row + stations, all logic and the
+  parallel session's `browseRow` untouched); error banner de-materials
+  to a surface card. Playing indicator picks up the global gold accent.
+- `HistoryView` / `BookmarksView` / `AddStationView` results: same card
+  rows; AddStation's banner de-materials too.
+- `LoginView` rebuilt: `Theme.backgroundGradient` floor, gradient-filled
+  waveform mark, heavy rounded wordmark, one surface card per field
+  (hairline strokes), solid-gold Sign In button (black glyph, accent
+  shadow) — matches the player's accent button language.
+- Sheets tinted: SleepTimer / TuneStation get `Theme.background` +
+  cleared list background; Diagnostics background token swapped;
+  last `.thinMaterial` and `Color.primaryBackground` usages are gone —
+  the extension was deleted from `RootView` (the app now has exactly one
+  color source: `Theme` + the artwork palette).
+- Local checks: all 10 touched app files `swiftc -parse` clean in
+  Docker. PandoraCore untouched (197/197 run stands; the +1 luminance
+  test from unit 2 rides CI — the parallel session's uncommitted
+  `LastFm.swift` still blocks a local full-suite run).
+- Beautify pass complete pending the user's device test. The look:
+  flat dark violet-tinted surfaces, continuous rounded corners
+  (10/16/20/24/28), violet→gold brand gradient, gold global accent, and
+  the full player bathed in the current artwork's palette (accent, glow,
+  gradient stops) — no liquid glass, no system materials anywhere, every
+  token in `Theme.swift` for the Android port to mirror.
+
+**(previous push — player restyle, the beautify pass unit 2 of 3):** the full
 player and mini player now wear the theme, driven by the artwork palette.
 Still no liquid glass — flat fills, continuous corners, one gradient.
 

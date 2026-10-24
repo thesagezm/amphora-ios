@@ -49,6 +49,8 @@ struct TuneStationSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+        .amphoraListBackground()
+        .background(Theme.background.ignoresSafeArea())
         .task { store.send(.loadStationModes(station)) }
         .onChange(of: store.stationModeChangedTick) {
             dismiss()

@@ -56,6 +56,8 @@ struct SleepTimerSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .amphoraListBackground()
+            .background(Theme.background.ignoresSafeArea())
         }
         .preferredColorScheme(.dark)
     }

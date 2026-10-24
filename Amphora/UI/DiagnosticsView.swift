@@ -49,7 +49,7 @@ struct DiagnosticsView: View {
                     }
                 }
             }
-            .background(Color.primaryBackground.ignoresSafeArea())
+            .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Diagnostics")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

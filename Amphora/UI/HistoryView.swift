@@ -23,7 +23,7 @@ struct HistoryView: View {
     private var list: some View {
         List(store.history.entries) { entry in
             HStack(spacing: 12) {
-                CachedArtwork(urlString: entry.artworkUrl, cornerRadius: 8)
+                CachedArtwork(urlString: entry.artworkUrl, cornerRadius: Theme.radiusS)
                     .frame(width: 44, height: 44)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -42,7 +42,9 @@ struct HistoryView: View {
             }
             .frame(minHeight: 44)
             .accessibilityElement(children: .combine)
+            .amphoraCardRow()
         }
         .listStyle(.plain)
+        .amphoraListBackground()
     }
 }

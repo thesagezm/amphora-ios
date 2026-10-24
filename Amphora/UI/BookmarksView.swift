@@ -39,6 +39,7 @@ struct BookmarksView: View {
                 Section("Songs") {
                     ForEach(songs) { bookmark in
                         row(bookmark)
+                            .amphoraCardRow()
                     }
                 }
             }
@@ -46,18 +47,20 @@ struct BookmarksView: View {
                 Section("Artists") {
                     ForEach(artists) { bookmark in
                         row(bookmark)
+                            .amphoraCardRow()
                     }
                 }
             }
         }
         .listStyle(.plain)
+        .amphoraListBackground()
     }
 
     private func row(_ bookmark: Bookmark) -> some View {
         HStack(spacing: 12) {
             CachedArtwork(
                 urlString: bookmark.artworkUrl,
-                cornerRadius: 8,
+                cornerRadius: Theme.radiusS,
                 fallbackSystemImage: bookmark.kind == .song ? "music.note" : "music.mic"
             )
             .frame(width: 44, height: 44)

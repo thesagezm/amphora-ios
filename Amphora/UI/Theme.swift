@@ -73,6 +73,33 @@ extension PaletteColor {
     }
 }
 
+extension View {
+    /// Clears the system List background so the theme's floor shows
+    /// through. Apply to the `List` itself.
+    func amphoraListBackground() -> some View {
+        scrollContentBackground(.hidden)
+    }
+
+    /// Draws one List row as a rounded surface card with a hairline
+    /// stroke — Amphora's list language everywhere (stations, history,
+    /// bookmarks, search results).
+    func amphoraCardRow() -> some View {
+        listRowSeparator(.hidden)
+            .listRowInsets(
+                EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
+            )
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
+                    .fill(Theme.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
+                            .strokeBorder(Theme.stroke)
+                    )
+                    .padding(.vertical, 5)
+            )
+    }
+}
+
 extension ArtworkColors {
     /// The artwork's hue as a tint for small elements (badges, knobs).
     var accentColor: Color { accent.color }

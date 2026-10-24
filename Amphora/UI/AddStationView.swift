@@ -88,10 +88,10 @@ struct AddStationView: View {
     private var results: some View {
         List(store.searchResults) { hit in
             row(hit)
-                .listRowBackground(Color.primaryBackground.opacity(0.4))
+                .amphoraCardRow()
         }
         .listStyle(.plain)
-        .scrollContentBackground(.hidden)
+        .amphoraListBackground()
     }
 
     private func row(_ hit: MusicSearchResult) -> some View {
@@ -159,7 +159,14 @@ struct AddStationView: View {
             .accessibilityLabel("Dismiss error")
         }
         .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
+                .fill(Theme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
+                .strokeBorder(Theme.stroke)
+        )
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
