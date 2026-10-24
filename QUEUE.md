@@ -131,6 +131,19 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**(this push — UI unit 4: browse sheet joins the card language):**
+the one surface the card pass missed. `BrowseStationsSheet`: theme
+floor behind both levels, category rows + station rows as matte
+`amphoraCardRow` cards, the category glyph becomes the accent-tinted
+rounded tile (matching Home's browse row), create buttons press with
+`PressableButtonStyle`. Parse-clean in Docker; PandoraCore untouched.
+
+**(repair push — `d5a6830`; the earlier `fc3139a` run is covered by
+it):** `Theme.selection` helper needed `@MainActor` too — its body
+references the controller, and the downstream `@MainActor` statics
+didn't propagate isolation through it. iOS Build green on `d5a6830`
+(units 1–3 all compile for iOS).
+
 **(repair push — `60f28e9`, unit-2 iOS Build was red):** one error in
 unit 1's AboutView — `.title2.weight(.bold).width(.rounded)`: rounded
 is a font **design**, not a `Font.Width`. Now `Font.system(.title2,

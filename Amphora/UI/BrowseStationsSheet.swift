@@ -34,6 +34,7 @@ struct BrowseStationsSheet: View {
                         .accessibilityLabel("Loading stations")
                 }
             }
+            .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Browse Stations")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -43,6 +44,7 @@ struct BrowseStationsSheet: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
         .onAppear {
             store.send(.loadGenreStations)
         }
@@ -59,10 +61,14 @@ struct BrowseStationsSheet: View {
                 CategoryStationsView(category: category)
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "radio")
-                        .font(.body)
-                        .foregroundStyle(.tint)
-                        .frame(width: 28)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.accent.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Image(systemName: "radio")
+                                .font(.body)
+                                .foregroundStyle(Theme.accent)
+                        )
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(category.name)
@@ -78,9 +84,10 @@ struct BrowseStationsSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .amphoraCardRow()
         }
         .listStyle(.plain)
-        .scrollContentBackground(.hidden)
+        .amphoraListBackground()
     }
 
     private func errorState(_ message: String) -> some View {
@@ -111,7 +118,7 @@ private struct CategoryStationsView: View {
                 HStack(spacing: 12) {
                     CachedArtwork(
                         urlString: genre.artUrl,
-                        cornerRadius: 8,
+                        cornerRadius: 12,
                         fallbackSystemImage: "radio"
                     )
                     .frame(width: 48, height: 48)
@@ -125,19 +132,21 @@ private struct CategoryStationsView: View {
                     } else {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(Theme.accent)
                             .accessibilityHidden(true)
                     }
                 }
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .disabled(store.isMutatingStations)
             .accessibilityLabel("Add \(genre.name) to your stations")
+            .amphoraCardRow()
         }
         .listStyle(.plain)
-        .scrollContentBackground(.hidden)
+        .amphoraListBackground()
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle(category.name)
         .navigationBarTitleDisplayMode(.inline)
     }
