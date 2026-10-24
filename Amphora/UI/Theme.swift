@@ -162,7 +162,9 @@ struct AccentPalette {
 // MARK: - Live tokens
 
 enum Theme {
-    private static var selection: ThemeSelection { ThemeController.shared.selection }
+    @MainActor private static var selection: ThemeSelection {
+        ThemeController.shared.selection
+    }
 
     /// The app's floor.
     @MainActor static var background: Color { selection.appearance.palette.background }
