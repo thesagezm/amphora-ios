@@ -241,29 +241,21 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 
 ## Pending Queue
 
-1. Verify this push green (Core Tests + iOS Build). Repair first if red —
-   `CrashReporter` type-checks clean on Linux; new failures would come from
-   the lyrics/NowPlaying view changes (SwiftUI surface, CI-only).
+1. Verify this push green (Core Tests + iOS Build). Repair first if red.
 2. **User device test of the latest IPA** — the critical one: play a
    station for >30 s (crash?), song artwork in mini player + full player,
-   tab switching with the mini player, lyrics panel (quote-bubble toggle
-   in the full player — synced scroll, tap-to-seek, translation under
-   non-English lines), then **open Diagnostics (stethoscope, Stations
-   toolbar) → Copy → paste the log** if anything is still wrong. If the
-   app crashed and relaunched, the "Last crash" section is already filled
+   tab switching with the mini player (full-player sheet now survives
+   tab switches), lyrics panel (quote-bubble toggle — synced scroll,
+   tap-to-seek, translation under non-English lines), **Tune Station
+   (slider icon in the full player): modes load, picking Deep Cuts
+   starts a new song from the tuned station, QuickMix shows "no tuning
+   options"**, then **open Diagnostics (stethoscope, Stations toolbar)
+   → Copy → paste the log** if anything is still wrong. If the app
+   crashed and relaunched, the "Last crash" section is already filled
    in.
-3. **Station-tuning UI (app target)** — `AppStore`: `stationModes` state
-   + `loadModes`/`setMode` intents (fetch when a station starts playing;
-   `setMode` → `sessionManager.setStationMode`, then **refetch the
-   playlist and start a fresh track** — "changing modes starts a new
-   song", per Panedora). UI: a "Tune station" entry in the player
-   toolbar (and/or station long-press menu) opening a modes sheet —
-   checkmark on the current mode, premium-only rows shown disabled with
-   "Premium", hide the whole panel when
-   `isInteractiveRadioAvailable == false` (QuickMix).
-4. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
-5. Beautify pass (theme, typography, gradients).
-6. Session-expiry surfacing + ad handling (protocol notes at the bottom).
+3. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
+4. Beautify pass (theme, typography, gradients).
+5. Session-expiry surfacing + ad handling (protocol notes at the bottom).
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
 failure summary annotation and repair before any new unit.

@@ -26,6 +26,8 @@ final class AppStore {
         case togglePlayback
         case skipToNext
         case refreshLyrics
+        case loadStationModes
+        case setStationMode(StationMode)
         case rateCurrentTrack(FeedbackRating)
         case removeCurrentRating
         case sleepCurrentTrack
@@ -84,6 +86,18 @@ final class AppStore {
     /// The in-flight translation for the current track's lyrics; cancelled
     /// when the track changes or a new lyrics fetch supersedes it.
     private var translationTask: Task<Void, Never>?
+    /// Listening modes for the current station ("Tune your station") —
+    /// nil until first fetched for this station.
+    private(set) var stationModes: StationModes?
+    private(set) var isLoadingModes = false
+    private(set) var isChangingMode = false
+    /// Bumped after a successful mode change — the tuning sheet's
+    /// dismissal signal (same pattern as `stationCreatedTick`).
+    private(set) var stationModeChangedTick = 0
+    /// Whether the signed-in account is a paid subscriber — gates the
+    /// premium-only listening mode ("Artist Only"). Free accounts can
+    /// use every other mode (Deep Cuts included).
+    private(set) var isSubscriber = false
     /// The user's bookmarks (`user.getBookmarks`).
     private(set) var bookmarks: [Bookmark] = []
     private(set) var isLoadingBookmarks = false
@@ -212,6 +226,10 @@ final class AppStore {
             player.skipToNext()
         case .refreshLyrics:
             loadLyrics(for: player.currentTrack, force: true)
+        case .loadStationModes:
+            Task { await loadStationModes() }
+        case .setStationMode(let mode):
+            Task { await setStationMode(mode) }
         case .rateCurrentTrack(let rating):
             Task { await rateCurrentTrack(rating) }
         case .removeCurrentRating:
@@ -249,6 +267,7 @@ final class AppStore {
             let restored = await session.restore()
             AppLog.info("session restore: \(restored ? "restored" : "no session")")
             if restored {
+                isSubscriber = await session.isSubscriber
                 authPhase = .signedIn
                 await refreshStations()
             } else {
@@ -270,6 +289,7 @@ final class AppStore {
         Task {
             do {
                 _ = try await session.login(username: user, password: password)
+                isSubscriber = await session.isSubscriber
                 authPhase = .signedIn
                 await refreshStations()
             } catch {
@@ -364,6 +384,8 @@ final class AppStore {
                 return
             }
             currentStation = station
+            // A different station invalidates the cached listening modes.
+            stationModes = nil
             queuedTrackTokens = Set(playable.map(\.trackToken))
             preferences.lastStationId = station.id
             preferencesStore.save(preferences)
@@ -545,6 +567,74 @@ final class AppStore {
         lyricsCache[token] = updated
         if player.currentTrack?.trackToken == token {
             lyrics = updated
+        }
+    }
+
+    // MARK: Station tuning (listening modes)
+
+    /// Fetches the current station's listening modes ("Tune your
+    /// station" — My Mix / Deep Cuts / …). The sheet refreshes on open,
+    /// so the shown current mode is never stale.
+    private func loadStationModes() async {
+        guard let station = currentStation, !isLoadingModes, !isChangingMode else { return }
+        isLoadingModes = true
+        defer { isLoadingModes = false }
+        do {
+            let modes = try await session.getStationModes(for: station)
+            stationModes = modes
+            AppLog.info(
+                "station modes: \(modes.modes.count) offered for \"\(station.name)\"",
+                .playback
+            )
+        } catch {
+            AppLog.error("station modes failed: \(String(describing: error))", .playback)
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Selects a listening mode, then starts a fresh playlist —
+    /// "changing modes starts a new song" (panedora's warning; the
+    /// already-queued tracks belong to the previous mode).
+    private func setStationMode(_ mode: StationMode) async {
+        guard let station = currentStation, !isChangingMode else { return }
+        isChangingMode = true
+        defer { isChangingMode = false }
+        do {
+            let updated = try await session.setStationMode(
+                mode,
+                for: station,
+                previousModeID: stationModes?.currentModeID
+            )
+            stationModes = updated
+            stationModeChangedTick += 1
+            showConfirmation("Tuned to \(mode.name)")
+            AppLog.info("station mode set: \(mode.name) on \"\(station.name)\"", .playback)
+            await restartWithNewPlaylist(station)
+        } catch {
+            AppLog.error("station mode \(mode.name) failed: \(String(describing: error))", .playback)
+            lastErrorMessage = Self.userMessage(for: error)
+        }
+    }
+
+    /// Fetches a fresh playlist for `station` and starts its first
+    /// track, replacing the queue (whose tracks belong to the previous
+    /// mode). `PlayerService.play` resets the queue.
+    private func restartWithNewPlaylist(_ station: Station) async {
+        guard !isLoadingPlaylist else { return }
+        isLoadingPlaylist = true
+        defer { isLoadingPlaylist = false }
+        do {
+            let playlist = try await session.getPlaylist(for: station)
+            let playable = playlist.tracks.filter { $0.streamURL != nil }
+            guard let first = playable.first else {
+                lastErrorMessage = "No playable tracks in this station right now."
+                return
+            }
+            queuedTrackTokens = Set(playable.map(\.trackToken))
+            player.play(track: first, prefetching: playable.dropFirst().first)
+        } catch {
+            AppLog.error("restart after tuning failed: \(String(describing: error))", .playback)
+            lastErrorMessage = Self.userMessage(for: error)
         }
     }
 
@@ -792,6 +882,18 @@ final class AppStore {
         }
         if error is PandoraMalformedResponseError {
             return "Pandora sent an unexpected response. Try again."
+        }
+        if let error = error as? StationModesError {
+            switch error {
+            case .unauthorized:
+                return "Your Pandora session ended. Sign in again."
+            case .notEntitled:
+                return "This mode needs Pandora Premium."
+            case .modeNotOffered:
+                return "Pandora did not enable that mode."
+            case .httpStatus(let code):
+                return "Couldn't reach Pandora (HTTP \(code)). Try again."
+            }
         }
         if let error = error as? SessionManagerError {
             switch error {

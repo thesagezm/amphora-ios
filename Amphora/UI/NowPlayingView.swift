@@ -8,6 +8,7 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isShowingSleepTimer = false
+    @State private var isShowingTuning = false
     @State private var isShowingLyrics = false
 
     var body: some View {
@@ -42,9 +43,20 @@ struct NowPlayingView: View {
                             : "Sleep timer, \(store.sleepTimerLabel)"
                     )
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isShowingTuning = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .accessibilityLabel("Tune station")
+                }
             }
             .sheet(isPresented: $isShowingSleepTimer) {
                 SleepTimerSheet()
+            }
+            .sheet(isPresented: $isShowingTuning) {
+                TuneStationSheet()
             }
         }
         .preferredColorScheme(.dark)
