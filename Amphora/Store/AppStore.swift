@@ -91,6 +91,12 @@ final class AppStore {
     /// The in-flight ad resolve+register for the current advertisement;
     /// replaced when the track changes.
     private var adTask: Task<Void, Never>?
+    /// The pending delayed retry for a failed prefetch; cancelled when a
+    /// prefetch succeeds or the station changes.
+    private var prefetchRetryTask: Task<Void, Never>?
+    /// How many prefetch retries have fired since the last success —
+    /// capped so an offline app never hammers the API.
+    private var prefetchRetryAttempts = 0
     /// Listening modes for the current station ("Tune your station") —
     /// nil until first fetched for this station.
     private(set) var stationModes: StationModes?
@@ -312,7 +318,7 @@ final class AppStore {
                 await refreshStations()
             } catch {
                 authPhase = .signedOut
-                lastErrorMessage = Self.userMessage(for: error)
+                record(error)
             }
         }
     }
@@ -335,7 +341,7 @@ final class AppStore {
             // Keep any already-loaded list; surface the error when empty
             // (error/empty-state polish lands in M5).
             if stations.isEmpty {
-                lastErrorMessage = Self.userMessage(for: error)
+                record(error)
             }
             AppLog.error("station list failed: \(String(describing: error))")
         }
@@ -358,7 +364,7 @@ final class AppStore {
             try await session.renameStation(station, to: trimmed)
             await refreshStations()
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -371,7 +377,7 @@ final class AppStore {
             try await session.deleteStation(station)
             stations.removeAll { $0.id == station.id }
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -406,12 +412,14 @@ final class AppStore {
             stationModes = nil
             modesStationId = nil
             queuedTrackTokens = Set(playable.map(\.trackToken))
+            prefetchRetryAttempts = 0
+            prefetchRetryTask?.cancel()
             preferences.lastStationId = station.id
             preferencesStore.save(preferences)
             player.play(track: first, prefetching: playable.dropFirst().first)
         } catch {
             AppLog.error("playlist for \"\(station.name)\" failed: \(String(describing: error))", .playback)
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -433,13 +441,33 @@ final class AppStore {
                 }
                 AppLog.info("prefetch playlist: queueing \(fresh.count) more tracks", .playback)
                 queuedTrackTokens.formUnion(fresh.map(\.trackToken))
+                prefetchRetryAttempts = 0
+                prefetchRetryTask?.cancel()
                 player.enqueue(fresh)
             } catch {
                 // A failed prefetch is not fatal — the current track keeps
-                // playing; the next skip retries.
+                // playing. One backed-off retry follows; a network blip
+                // near the queue's end must not dead-end playback.
                 AppLog.error("prefetch playlist failed: \(String(describing: error))", .playback)
-                lastErrorMessage = Self.userMessage(for: error)
+                record(error)
+                schedulePrefetchRetry()
             }
+        }
+    }
+
+    /// One delayed prefetch retry after a failure, backing off
+    /// 5 s / 15 s / 30 s, then giving up — the next user action
+    /// (playing the station again) fetches fresh.
+    private func schedulePrefetchRetry() {
+        prefetchRetryTask?.cancel()
+        guard prefetchRetryAttempts < 3 else { return }
+        let delay = [5.0, 15.0, 30.0][prefetchRetryAttempts]
+        prefetchRetryAttempts += 1
+        prefetchRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            AppLog.info("prefetch: retrying in-case the queue ran dry", .playback)
+            self?.fetchMoreTracks()
         }
     }
 
@@ -634,7 +662,7 @@ final class AppStore {
             )
         } catch {
             AppLog.error("station modes failed: \(String(describing: error))", .playback)
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -671,7 +699,7 @@ final class AppStore {
             }
         } catch {
             AppLog.error("station mode \(mode.name) failed: \(String(describing: error))", .playback)
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -690,10 +718,12 @@ final class AppStore {
                 return
             }
             queuedTrackTokens = Set(playable.map(\.trackToken))
+            prefetchRetryAttempts = 0
+            prefetchRetryTask?.cancel()
             player.play(track: first, prefetching: playable.dropFirst().first)
         } catch {
             AppLog.error("restart after tuning failed: \(String(describing: error))", .playback)
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -781,7 +811,7 @@ final class AppStore {
             currentFeedbackId = receipt.feedbackId
             currentRating = rating
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -798,7 +828,7 @@ final class AppStore {
             currentFeedbackId = nil
             currentRating = .none
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -810,7 +840,7 @@ final class AppStore {
             try await session.sleepSong(trackToken: track.trackToken)
             player.skipToNext()
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -823,7 +853,7 @@ final class AppStore {
             await refreshBookmarks()
             showConfirmation("Song bookmarked")
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -836,7 +866,7 @@ final class AppStore {
             await refreshBookmarks()
             showConfirmation("Artist bookmarked")
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -860,7 +890,7 @@ final class AppStore {
         do {
             bookmarks = try await session.getBookmarks()
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -876,7 +906,7 @@ final class AppStore {
             }
             bookmarks.removeAll { $0.bookmarkToken == bookmark.bookmarkToken }
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -906,7 +936,7 @@ final class AppStore {
                 guard !Task.isCancelled else { return }
                 searchResults = []
                 isSearching = false
-                lastErrorMessage = Self.userMessage(for: error)
+                record(error)
             }
         }
     }
@@ -927,7 +957,7 @@ final class AppStore {
             }
             stationCreatedTick += 1
         } catch {
-            lastErrorMessage = Self.userMessage(for: error)
+            record(error)
         }
     }
 
@@ -964,5 +994,32 @@ final class AppStore {
             }
         }
         return "Something went wrong. Try again."
+    }
+
+    /// Records a surfaced error. When the error means the session is
+    /// unrecoverable — 1001 after `SessionManager`'s transparent re-login
+    /// retry (a freshly-issued token was already rejected), the modes API
+    /// rejecting after its own re-login, or no session at all — the app
+    /// returns to the sign-in screen with a clear message (LoginView
+    /// shows `lastErrorMessage`). Playback itself is unaffected (the
+    /// player owns its queue); the next prefetch would fail until
+    /// re-auth anyway.
+    private func record(_ error: Error) {
+        lastErrorMessage = Self.userMessage(for: error)
+        let sessionDead: Bool
+        switch error {
+        case let apiError as PandoraAPIError:
+            sessionDead = apiError.isSessionExpired
+        case SessionManagerError.notAuthenticated:
+            sessionDead = true
+        case StationModesError.unauthorized:
+            sessionDead = true
+        default:
+            sessionDead = false
+        }
+        guard sessionDead, authPhase == .signedIn else { return }
+        AppLog.error("session unrecoverable — returning to sign-in")
+        lastErrorMessage = "Your Pandora session ended. Sign in again."
+        authPhase = .signedOut
     }
 }

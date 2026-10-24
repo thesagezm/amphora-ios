@@ -90,6 +90,31 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**(this push — session-expiry surfacing + prefetch retry):**
+
+- `AppStore.record(_:)` — every surfaced error now flows through one
+  helper (18 call sites). When the error means the session is
+  unrecoverable — 1001 after `SessionManager`'s transparent re-login
+  retry (a freshly-issued token was already rejected),
+  `StationModesError.unauthorized` after its own re-login, or
+  `notAuthenticated` — the app returns to the sign-in screen
+  (`authPhase = .signedOut`) with "Your Pandora session ended. Sign in
+  again." (LoginView displays `lastErrorMessage`). Previously the
+  modes error even *said* "Sign in again" with no way to get there.
+  Note the self-heal contract is unchanged: a normal expiry re-logins
+  transparently inside `authenticatedRequest` and the user never sees
+  anything; only genuinely dead credentials surface. Audio keeps
+  playing through the transition (the player owns its queue).
+- Prefetch dead-end fix: a failed `fetchMoreTracks` (network blip near
+  the queue's end) now schedules one backed-off retry (5 s / 15 s / 30 s,
+  then stop — never hammer the API). Retry state resets on prefetch
+  success and on station change / mode-change restart.
+- Local checks: `AppStore.swift` parse-clean in Docker. PandoraCore
+  untouched (179/179 from the ad-core run stands).
+
+**(previous push — ad app wiring):** the player now behaves correctly
+when an advertisement plays (free accounts hit them in every playlist):
+
 **(this push — ad core, PandoraCore):** free-account ads now decode
 instead of being silently dropped. Protocol derived from pydora this
 session (pithos has NO ad handling — grep of `pandora.py` via blob API
@@ -128,7 +153,7 @@ when an advertisement plays (free accounts hit them in every playlist):
   (resolve + best-effort impression registration, pydora
   `AdItem.prepare_playback`); failures only log — the ad keeps playing.
 - Skip is refused during an ad (pydora's player: "Cannot skip
-  advertisements") with a user-visible message; rating, sleep-tire and
+  advertisements") with a user-visible message; rating, sleep-timer and
   both bookmarks are no-ops for ads (their trackToken is synthetic).
   Lyrics already guarded (`loadLyrics` returns nil for ads).
 - `NowPlayingView`: yellow ADVERTISEMENT badge above the transport;
