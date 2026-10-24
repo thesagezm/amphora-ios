@@ -115,7 +115,23 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — genre stations core, PandoraCore):** the protocol behind
+**(this push — genre stations UI, the landing-page ask):** "Browse
+Pandora Stations" is now the first row of the Stations list (radio
+glyph, "Popular stations made by Pandora" caption, 44 pt+ target) —
+opening a new `BrowseStationsSheet`: NavigationStack with the category
+list (`genreCategories`, cached per session — reloads only on relaunch;
+error + Retry and empty states included) pushing to a category's
+station rows (art via `CachedArtwork` when the wire sent artUrl, radio
+glyph otherwise); tapping a row creates a personal station via the
+shared create path. `AppStore`: `genreCategories`/`isLoadingGenres` +
+intents `loadGenreStations` (fetch-once guard) and
+`createGenreStation`; `createStation(from:)` refactored onto a shared
+`createStation(musicToken:)` (identical append-if-new + tick-bump
+behavior — search-create and genre-create now share it, and the sheet
+dismisses on the same `stationCreatedTick` signal as AddStationView).
+PandoraCore untouched. All three app files parse-clean in Docker.
+
+**(previous push — genre stations core, PandoraCore):** the protocol behind
 "popular Pandora stations" (user request 2026-10-24 item 2). New
 `GenreStations.swift`: `GenreStation` (token/stationId/name/
 categoryName/artUrl?, Identifiable by token) + `GenreCategory` +
@@ -520,24 +536,19 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. **Genre stations UI** — a "Browse Pandora Stations" entry on the
-   Stations landing: categories → station rows (name, optional artUrl
-   if the wire sends one) → create via `station.createStation`, with
-   created stations appended locally like search-create does. Core
-   landed this push (`SessionManager.getGenreStations()`).
-2. **Last.fm scrobbling core (PandoraCore)** — `LastFmClient`:
+1. **Last.fm scrobbling core (PandoraCore)** — `LastFmClient`:
    `auth.getMobileSession` (username/password), api_sig = MD5 of sorted
    params + secret (CryptoSwift MD5, dependency already approved),
    `track.updateNowPlaying` at track start, `track.scrobble` at the
    50 %-or-4-min rule (skips < 30 s never scrobble). Tests: fixed
    signature vectors, response decoding.
-3. **Last.fm app integration** — settings (enable toggle,
+2. **Last.fm app integration** — settings (enable toggle,
    username/password in Keychain), scrobble triggers hooked into the
    track lifecycle, "now playing" update. (User request 2026-10-24,
    item 3.)
-4. Verify the genre-stations core push green (Core Tests + iOS Build). Repair
+3. Verify the genre-stations UI push green (Core Tests + iOS Build). Repair
    first if red.
-5. **User device test of the crash-fix IPA** — the critical one: play a
+4. **User device test of the crash-fix IPA** — the critical one: play a
    station >60 s **with the lock screen visible showing artwork** (crash-1
    path: the trap fired when the system rendered lock-screen art), skip a
    few tracks, background/foreground, then force-quit and relaunch a few
@@ -545,7 +556,7 @@ toolbar) → Copy → paste.
    was rewritten) and artwork in station list / history / mini player.
    If anything still crashes, Diagnostics → Copy → paste the log (the
    Apple crash report too, if it appears).
-6. Beautify pass (theme, typography, gradients) — **the UI agent owns
+5. Beautify pass (theme, typography, gradients) — **the UI agent owns
    this**; do not start it here.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the

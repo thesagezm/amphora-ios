@@ -13,6 +13,7 @@ struct StationsView: View {
     @State private var deleteTarget: Station?
     @State private var tuningStation: Station?
     @State private var isAddingStation = false
+    @State private var isBrowsingStations = false
     @State private var isEditingOrder = false
     @State private var isShowingDiagnostics = false
 
@@ -60,6 +61,9 @@ struct StationsView: View {
         .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
         .sheet(isPresented: $isAddingStation) {
             AddStationView()
+        }
+        .sheet(isPresented: $isBrowsingStations) {
+            BrowseStationsSheet()
         }
         .sheet(isPresented: $isShowingDiagnostics) {
             DiagnosticsView()
@@ -130,6 +134,7 @@ struct StationsView: View {
 
     private var list: some View {
         List {
+            browseRow
             ForEach(store.stations) { station in
                 Button {
                     store.send(.playStation(station))
@@ -186,6 +191,43 @@ struct StationsView: View {
                 errorBanner(message)
             }
         }
+    }
+
+    /// Landing-page entry to Pandora's featured stations (user request:
+    /// "landing page only shows my stations … popular pandora created
+    /// main stations as well"). Opens `BrowseStationsSheet`.
+    private var browseRow: some View {
+        Button {
+            isBrowsingStations = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "radio.fill")
+                    .font(.body)
+                    .foregroundStyle(.tint)
+                    .frame(width: 52)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Browse Pandora Stations")
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                    Text("Popular stations made by Pandora")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, 4)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.primaryBackground.opacity(0.4))
+        .accessibilityLabel("Browse Pandora's featured stations")
     }
 
     private func errorBanner(_ message: String) -> some View {

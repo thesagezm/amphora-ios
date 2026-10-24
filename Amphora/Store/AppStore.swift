@@ -20,6 +20,8 @@ final class AppStore {
         case refreshStations
         case searchStations(query: String)
         case createStation(MusicSearchResult)
+        case createGenreStation(GenreStation)
+        case loadGenreStations
         case renameStation(Station, to: String)
         case deleteStation(Station)
         case playStation(Station)
@@ -72,6 +74,12 @@ final class AppStore {
     /// Increments on each successful create — the add-station sheet's
     /// dismissal signal (fire-and-forget intents can't return a value).
     private(set) var stationCreatedTick = 0
+    /// Pandora's featured stations by browse category (`station.
+    /// getGenreStations`) — nil until first fetched this session; the
+    /// browse sheet shows every category under it.
+    private(set) var genreCategories: [GenreCategory]?
+    /// True while the featured-station catalog is being fetched.
+    private(set) var isLoadingGenres = false
     /// The station whose playlist is playing (nil before the first play).
     private(set) var currentStation: Station?
     /// True while a playlist request for a station is in flight.
@@ -232,6 +240,10 @@ final class AppStore {
             search(query)
         case .createStation(let result):
             Task { await createStation(from: result) }
+        case .createGenreStation(let genre):
+            Task { await createStation(musicToken: genre.token) }
+        case .loadGenreStations:
+            Task { await loadGenreStations() }
         case .renameStation(let station, let newName):
             Task { await renameStation(station, to: newName) }
         case .deleteStation(let station):
@@ -946,17 +958,41 @@ final class AppStore {
     /// (`stations.append`) — no refetch round trip; deduped by id.
     /// Bumps `stationCreatedTick` so the sheet dismisses on success.
     private func createStation(from result: MusicSearchResult) async {
+        await createStation(musicToken: result.musicToken)
+    }
+
+    /// Creates a personal station from Pandora's featured catalog — a
+    /// `GenreStation`'s own token is passed as `musicToken` (xivpiano:
+    /// "making one uses its token as the music token").
+    private func createStation(musicToken: String) async {
         guard !isMutatingStations else { return }
         lastErrorMessage = nil
         isMutatingStations = true
         defer { isMutatingStations = false }
         do {
-            let station = try await session.createStation(musicToken: result.musicToken)
+            let station = try await session.createStation(musicToken: musicToken)
             if !stations.contains(where: { $0.id == station.id }) {
                 stations.append(station)
             }
             stationCreatedTick += 1
         } catch {
+            record(error)
+        }
+    }
+
+    /// Fetches Pandora's featured stations once per session (`station.
+    /// getGenreStations`, no parameters). The browse sheet opens instantly
+    /// on repeat visits; a relaunch refetches.
+    private func loadGenreStations() async {
+        guard genreCategories == nil, !isLoadingGenres else { return }
+        isLoadingGenres = true
+        defer { isLoadingGenres = false }
+        do {
+            let categories = try await session.getGenreStations()
+            genreCategories = categories
+            AppLog.info("genre stations: \(categories.count) categories")
+        } catch {
+            AppLog.error("genre stations failed: \(String(describing: error))")
             record(error)
         }
     }
