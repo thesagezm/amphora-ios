@@ -925,23 +925,18 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. Verify the import-Foundation repair green (Core Tests + iOS
-   Build). Repair first if red — anything left after the Date fix
-   would be SettingsSheet's SwiftUI surface (the other CI-only risk
-   in the Last.fm unit).
-3. **User device test of the crash-fix IPA** — the critical one: play a
-   station >60 s **with the lock screen visible showing artwork** (crash-1
-   path: the trap fired when the system rendered lock-screen art), skip a
-   few tracks, background/foreground, then force-quit and relaunch a few
-   times (crash-2 path); also re-check search-add (AddStation debounce
-   was rewritten) and artwork in station list / history / mini player.
-   If anything still crashes, Diagnostics → Copy → paste the log (the
-   Apple crash report too, if it appears).
-4. Beautify pass (theme, typography, gradients) — **the UI agent owns
-   this**; do not start it here.
+1. **User device test of this round's IPA** — the gating item; the
+   checklist is in this session's handover section above (tabs,
+   appearance themes, hero, player menu/quality chip, sign out,
+   bookmarks-on-device investigation).
+2. **Bookmarks on device** — user reports they don't work; protocol
+   verified against pydora this session (endpoints/params/decode all
+   match). If the device test still fails, the Diagnostics log decides
+   the next step.
+3. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
-failure summary annotation and repair before any new unit.
+**FIRST ACTION next session:** `gh run list --limit 5`. If red, read
+the failure summary annotation and repair before any new unit.
 
 ## Session handover (2026-10-23, second session)
 
