@@ -118,9 +118,24 @@ impression with `ad.registerAd` (`stationId` + the reply's
   pydora propagates register errors; Amphora must never block playback
   on a failed impression registration).
 - Tests: 18 new (decode 8, JSONValue 2, facade 8) — **179/179 green**
-  in Docker (`swift:6.0`). PandoraCore only — app wiring is the next
-  unit (player reaches an ad → `prepareAd`, play resolved audio or
-  step over, "Advertisement" slot in the UI, skip disabled for ads).
+  in Docker (`swift:6.0`).
+
+**(follow-up push — ad app wiring):** the player now behaves correctly
+when an advertisement plays (free accounts hit them in every playlist):
+
+- `AppStore.onTrackChanged`: ads are excluded from the local play
+  history, and `prepareAdIfNeeded` fires `SessionManager.prepareAd`
+  (resolve + best-effort impression registration, pydora
+  `AdItem.prepare_playback`); failures only log — the ad keeps playing.
+- Skip is refused during an ad (pydora's player: "Cannot skip
+  advertisements") with a user-visible message; rating, sleep-tire and
+  both bookmarks are no-ops for ads (their trackToken is synthetic).
+  Lyrics already guarded (`loadLyrics` returns nil for ads).
+- `NowPlayingView`: yellow ADVERTISEMENT badge above the transport;
+  FeedbackBar + bookmark buttons hidden during ads. Scrubber was
+  already safe (duration 0 → disabled slider).
+- Local checks: both touched app files parse-clean in Docker;
+  PandoraCore untouched in this push.
 - App-target crash repairs from the 2026-10-24 device report (below)
   are the parallel session's work and are NOT part of this commit.
 

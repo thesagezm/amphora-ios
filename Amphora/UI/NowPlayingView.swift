@@ -92,11 +92,21 @@ struct NowPlayingView: View {
                     scrubber
                 }
 
+                if let track = store.player.currentTrack, track.isAdvertisement {
+                    // pydora's player prints "Advertisement" — the slot is
+                    // labeled, unratable and unskippable by protocol.
+                    Text("ADVERTISEMENT")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.yellow)
+                        .tracking(3)
+                }
+
                 transport
 
-                FeedbackBar()
-
-                bookmarkButtons
+                if let track = store.player.currentTrack, !track.isAdvertisement {
+                    FeedbackBar()
+                    bookmarkButtons
+                }
 
                 confirmation
 

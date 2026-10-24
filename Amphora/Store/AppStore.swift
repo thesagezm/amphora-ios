@@ -88,6 +88,9 @@ final class AppStore {
     /// The in-flight translation for the current track's lyrics; cancelled
     /// when the track changes or a new lyrics fetch supersedes it.
     private var translationTask: Task<Void, Never>?
+    /// The in-flight ad resolve+register for the current advertisement;
+    /// replaced when the track changes.
+    private var adTask: Task<Void, Never>?
     /// Listening modes for the current station ("Tune your station") —
     /// nil until first fetched for this station.
     private(set) var stationModes: StationModes?
@@ -181,11 +184,15 @@ final class AppStore {
             }
             self.currentFeedbackId = nil
             self.currentRating = Self.feedbackRating(for: track?.rating)
-            // Record the play in the local history.
-            if let track {
+            // Record the play in the local history (ads are not songs).
+            if let track, !track.isAdvertisement {
                 self.history.record(track)
                 self.historyStore.save(self.history)
             }
+            // An advertisement that plays must be resolved + registered
+            // (pydora `AdItem.prepare_playback`) — best-effort, never
+            // blocks playback.
+            self.prepareAdIfNeeded(track)
             // An "end of track" sleep timer stops playback here.
             if self.sleepTimer.mode == .endOfTrack, track != nil {
                 self.fireSleepTimer()
@@ -228,6 +235,12 @@ final class AppStore {
         case .togglePlayback:
             player.togglePlayback()
         case .skipToNext:
+            // pydora: "Cannot skip advertisements" — the impression plays out.
+            if player.currentTrack?.isAdvertisement == true {
+                AppLog.info("skip requested during an ad — refused", .playback)
+                lastErrorMessage = "Advertisements can't be skipped."
+                return
+            }
             player.skipToNext()
         case .refreshLyrics:
             loadLyrics(for: player.currentTrack, force: true)
@@ -426,6 +439,32 @@ final class AppStore {
                 // playing; the next skip retries.
                 AppLog.error("prefetch playlist failed: \(String(describing: error))", .playback)
                 lastErrorMessage = Self.userMessage(for: error)
+            }
+        }
+    }
+
+    /// Resolves + registers the impression for an advertisement that just
+    /// started (pydora `AdItem.prepare_playback`). Only ads carrying
+    /// inline audio reach the queue (`streamURL` filter in `play` /
+    /// `fetchMoreTracks`), so by the time this runs the ad is audible.
+    /// Best-effort: `prepareAd` swallows registration failures; a
+    /// metadata failure here only logs — playback continues.
+    private func prepareAdIfNeeded(_ track: Track?) {
+        adTask?.cancel()
+        guard let track, track.isAdvertisement, track.adToken != nil else { return }
+        AppLog.info("advertisement started: \"\(track.title)\" — registering impression", .playback)
+        adTask = Task { [session] in
+            do {
+                let ad = try await session.prepareAd(track)
+                AppLog.info(
+                    "ad impression registered (\(ad.trackingTokens.count) tracking tokens)",
+                    .playback
+                )
+            } catch {
+                AppLog.error(
+                    "ad prepare failed (playback continues): \(String(describing: error))",
+                    .playback
+                )
             }
         }
     }
@@ -722,7 +761,8 @@ final class AppStore {
     /// old rating: the previous feedback is deleted first, exactly like
     /// pithos' `Song.rate`.
     private func rateCurrentTrack(_ rating: FeedbackRating) async {
-        guard let track = player.currentTrack, rating != .none else { return }
+        guard let track = player.currentTrack, rating != .none,
+              !track.isAdvertisement else { return }
         guard let station = currentStation else { return }
         lastErrorMessage = nil
         do {
@@ -764,7 +804,7 @@ final class AppStore {
 
     /// Hide the current track for a few hours (`user.sleepSong`).
     private func sleepCurrentTrack() async {
-        guard let track = player.currentTrack else { return }
+        guard let track = player.currentTrack, !track.isAdvertisement else { return }
         lastErrorMessage = nil
         do {
             try await session.sleepSong(trackToken: track.trackToken)
@@ -776,7 +816,7 @@ final class AppStore {
 
     /// Bookmark the current song (`bookmark.addSongBookmark`).
     private func bookmarkCurrentSong() async {
-        guard let track = player.currentTrack else { return }
+        guard let track = player.currentTrack, !track.isAdvertisement else { return }
         lastErrorMessage = nil
         do {
             try await session.addSongBookmark(trackToken: track.trackToken)
@@ -789,7 +829,7 @@ final class AppStore {
 
     /// Bookmark the current artist (`bookmark.addArtistBookmark`).
     private func bookmarkCurrentArtist() async {
-        guard let track = player.currentTrack else { return }
+        guard let track = player.currentTrack, !track.isAdvertisement else { return }
         lastErrorMessage = nil
         do {
             try await session.addArtistBookmark(trackToken: track.trackToken)
