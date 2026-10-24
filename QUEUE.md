@@ -115,7 +115,27 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — card-list + brand pass, the beautify pass unit 3 of 3):**
+**(this push — Last.fm core, PandoraCore):** scrobbling protocol for
+user request 2026-10-24 item 3. New `LastFm.swift`:
+`LastFmSigning.signature` (params sorted by name, `<name><value>`
+concatenated, secret appended, MD5 lowercase hex; `format`/`callback`
+excluded — verified against the API spec's own worked example),
+`LastFmClient.authenticate` (`auth.getMobileSession`, username +
+plain-text password per the current docs — the `authToken` md5 variant
+is the deprecated one; web-auth needs a URL-scheme callback a
+LiveContainer app cannot register, hence the documented mobile flow),
+`updateNowPlaying` and `scrobble` (single, un-indexed params; timestamp
+= UNIX seconds when the track *started*), typed `LastFmError` map
+(4/9/10/13/29 + rejected/http/malformed/transport), strict
+percent-encoded form bodies, and `ScrobblePolicy` — pithos's exact rule
+(`plugins/lastfm.py`: `!isAd && duration > 30 && (position > 240 ||
+position > duration/2)`). API key/secret pair is Pithos's public pair
+(`plugins/lastfm.py:25`). **28 new tests — 213/213 green in Docker**
+(`swift:6.0`), including the spec's signature example and both
+scrobble-rule boundaries. App wiring (settings, Keychain session key,
+track-lifecycle triggers) is the next unit.
+
+**(previous push — card-list + brand pass, the beautify pass unit 3 of 3):**
 every remaining surface now speaks the theme's language. CI confirmed
 units 1–2 fully green (iOS Build ✅ + Core Tests ✅ on both pushes,
 incl. the risky SwiftUI surfaces) before this one went out.
@@ -670,19 +690,15 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. **Last.fm scrobbling core (PandoraCore)** — `LastFmClient`:
-   `auth.getMobileSession` (username/password), api_sig = MD5 of sorted
-   params + secret (CryptoSwift MD5, dependency already approved),
-   `track.updateNowPlaying` at track start, `track.scrobble` at the
-   50 %-or-4-min rule (skips < 30 s never scrobble). Tests: fixed
-   signature vectors, response decoding.
-2. **Last.fm app integration** — settings (enable toggle,
-   username/password in Keychain), scrobble triggers hooked into the
-   track lifecycle, "now playing" update. (User request 2026-10-24,
-   item 3.)
-3. Verify the genre-stations UI push green (Core Tests + iOS Build). Repair
-   first if red.
-4. **User device test of the crash-fix IPA** — the critical one: play a
+1. **Last.fm app integration** — settings (enable toggle,
+   username/password in Keychain, sign-out), scrobble triggers hooked
+   into the track lifecycle (now-playing at track start; scrobble at
+   track end/skip per `ScrobblePolicy` — needs the ending track's
+   reached-position from `PlayerService`), auth-error surfacing
+   (error 9 → re-authenticate). Core landed this push (213/213).
+2. Verify the Last.fm core push green (Core Tests + iOS Build).
+   Repair first if red.
+3. **User device test of the crash-fix IPA** — the critical one: play a
    station >60 s **with the lock screen visible showing artwork** (crash-1
    path: the trap fired when the system rendered lock-screen art), skip a
    few tracks, background/foreground, then force-quit and relaunch a few
@@ -690,7 +706,7 @@ toolbar) → Copy → paste.
    was rewritten) and artwork in station list / history / mini player.
    If anything still crashes, Diagnostics → Copy → paste the log (the
    Apple crash report too, if it appears).
-5. Beautify pass (theme, typography, gradients) — **the UI agent owns
+4. Beautify pass (theme, typography, gradients) — **the UI agent owns
    this**; do not start it here.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
