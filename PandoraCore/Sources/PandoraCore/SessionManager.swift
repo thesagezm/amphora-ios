@@ -384,6 +384,60 @@ public actor SessionManager {
         return Playlist(tracks: Track.tracks(from: result), fetchedAt: now())
     }
 
+    // MARK: Advertisements
+
+    /// Resolves an advertisement entry (pydora `get_ad_item`):
+    /// `ad.getAdMetadata` with `returnAdTrackingTokens=true` and
+    /// `supportAudioAds=true` under the current session.
+    public func getAdMetadata(adToken: String) async throws -> Advertisement {
+        let result = try await authenticatedRequest(
+            PandoraAPI.Method.getAdMetadata,
+            parameters: [
+                "adToken": .string(adToken),
+                "returnAdTrackingTokens": .bool(true),
+                "supportAudioAds": .bool(true)
+            ]
+        )
+        return Advertisement(adToken: adToken, result: result)
+    }
+
+    /// Registers an ad impression (pydora `register_ad`): `ad.registerAd`
+    /// with the station id and the tracking tokens from the metadata
+    /// reply. Refuses empty token lists before any network (pydora
+    /// `ParameterMissing`).
+    public func registerAd(stationId: String, trackingTokens: [String]) async throws {
+        guard !trackingTokens.isEmpty else {
+            throw AdvertisementError.missingTrackingTokens
+        }
+        _ = try await authenticatedRequest(
+            PandoraAPI.Method.registerAd,
+            parameters: [
+                "stationId": .string(stationId),
+                "adTrackingTokens": .array(trackingTokens.map(JSONValue.string))
+            ]
+        )
+    }
+
+    /// Resolve + register in one step (pydora `AdItem.prepare_playback`):
+    /// metadata is required, registration is best-effort. Deviation from
+    /// pydora documented: pydora propagates register errors out of
+    /// `prepare_playback`, Amphora swallows them — a failed impression
+    /// registration must never block playback (Priority 1). Call
+    /// `registerAd` directly for the strict contract. With no tracking
+    /// tokens in the reply, registration is skipped entirely (pydora
+    /// catches its own `ParameterMissing` in the same situation).
+    public func prepareAd(_ ad: Track, stationId: String? = nil) async throws -> Advertisement {
+        guard ad.isAdvertisement, let adToken = ad.adToken else {
+            throw AdvertisementError.notAnAdvertisement
+        }
+        let metadata = try await getAdMetadata(adToken: adToken)
+        let targetStation = stationId ?? ad.stationId
+        if !metadata.trackingTokens.isEmpty, !targetStation.isEmpty {
+            try? await registerAd(stationId: targetStation, trackingTokens: metadata.trackingTokens)
+        }
+        return metadata
+    }
+
     // MARK: Station tuning (listening modes)
 
     /// The station's listening modes ("My Mix", "Deep Cuts", …) from the

@@ -40,6 +40,8 @@ public enum PandoraAPI {
         public static let deleteSongBookmark = "bookmark.deleteSongBookmark"
         public static let deleteArtistBookmark = "bookmark.deleteArtistBookmark"
         public static let sleepSong = "user.sleepSong"
+        public static let getAdMetadata = "ad.getAdMetadata"
+        public static let registerAd = "ad.registerAd"
     }
 
     /// Extra stream formats requested alongside a playlist, in the order

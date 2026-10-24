@@ -13,6 +13,8 @@ public enum JSONValue: Sendable, Equatable {
     case string(String)
     case int(Int)
     case bool(Bool)
+    /// Arrays of scalars (e.g. `ad.registerAd`'s `adTrackingTokens`).
+    case array([JSONValue])
 
     /// Encodes a parameter dictionary as JSON with lexicographically sorted
     /// keys. Deterministic across platforms.
@@ -29,6 +31,8 @@ public enum JSONValue: Sendable, Equatable {
         case .string(let value): return Self.escape(value)
         case .int(let value): return String(value)
         case .bool(let value): return value ? "true" : "false"
+        case .array(let values):
+            return "[" + values.map { $0.literal }.joined(separator: ",") + "]"
         }
     }
 

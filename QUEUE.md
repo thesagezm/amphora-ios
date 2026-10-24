@@ -90,7 +90,41 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — crash repair from the 2026-10-24 device report):**
+**(this push — ad core, PandoraCore):** free-account ads now decode
+instead of being silently dropped. Protocol derived from pydora this
+session (pithos has NO ad handling — grep of `pandora.py` via blob API
+returned nothing; the old silent drop came from pithos' `songName`
+filter): playlist ad entries are stubs (`adToken` + `title`/
+`companyName`, usually no audio — pydora `AudioField`: "No audio url
+available (e.g. ad tokens)"); resolve with `ad.getAdMetadata`
+(`returnAdTrackingTokens=true`, `supportAudioAds=true`); register the
+impression with `ad.registerAd` (`stationId` + the reply's
+`adTrackingTokens` array) — pydora `AdItem.prepare_playback`.
+
+- `Track`: ad entries kept + flagged (`songName`→`title`,
+  `artistName`→`companyName` fallbacks; synthetic id `ad.<adToken>`
+  when the entry has no `trackToken`; new `adToken: String?` field;
+  bare `audioUrl` still yields a 64-aacplus variant via the existing
+  fallback).
+- `Advertisement` (new): metadata struct (tolerant decode) +
+  `asTrack(stationId:)` player-slot builder.
+- `JSONValue`: new `.array([JSONValue])` case — `adTrackingTokens` is
+  the first array parameter the API surface needs (sorted-key encoding
+  unchanged; exact-byte tests still green).
+- `SessionManager`: `getAdMetadata(adToken:)` /
+  `registerAd(stationId:trackingTokens:)` (refuses empty token lists
+  before any network — pydora `ParameterMissing`) / `prepareAd(_:)` —
+  metadata required, registration best-effort (documented deviation:
+  pydora propagates register errors; Amphora must never block playback
+  on a failed impression registration).
+- Tests: 18 new (decode 8, JSONValue 2, facade 8) — **179/179 green**
+  in Docker (`swift:6.0`). PandoraCore only — app wiring is the next
+  unit (player reaches an ad → `prepareAd`, play resolved audio or
+  step over, "Advertisement" slot in the UI, skip disabled for ads).
+- App-target crash repairs from the 2026-10-24 device report (below)
+  are the parallel session's work and are NOT part of this commit.
+
+**(parallel push — crash repair from the 2026-10-24 device report):**
 
 - `NowPlayingService`: artwork handler now built in `nonisolated static
   lockScreenArtwork(for:)` with a `@Sendable` closure (scales to the

@@ -14,8 +14,10 @@
 //    bare `audioUrl` and no `audioUrlMap` still yields a playable
 //    high-quality (aacplus/64) stream.
 //
-//  Entries without `songName` are skipped (pithos filters them), ads are
-//  kept but flagged (pydora's `is_ad`) so the player can step over them.
+//  Entries without `songName` are skipped (pithos filters them) — except
+//  advertisement entries, which carry `title` instead (pydora's `AdItem`);
+//  those are kept and flagged (`is_ad`) so playback can resolve them via
+//  `ad.getAdMetadata` and register the impression (`ad.registerAd`).
 //
 //  No UI, no AVFoundation — PandoraCore stays portable.
 //
@@ -82,7 +84,12 @@ public struct Track: Codable, Sendable, Equatable, Identifiable {
     /// Pandora's playback gain hint (`trackGain`) — informational only.
     public let gain: Double
     /// Ads carry an `adToken`; they are not music (pydora `is_ad`).
+    /// Playlist ad entries are usually stubs without audio — resolve them
+    /// with `SessionManager.getAdMetadata` before playing.
     public let isAdvertisement: Bool
+    /// The ad token of an advertisement entry, nil for music tracks
+    /// (pydora `AdItem.ad_token`; keys the resolve/register calls).
+    public let adToken: String?
     /// Available streams, best first (highest quality bucket, then
     /// bitrate). Empty when the server sent no playable URL.
     public let variants: [AudioVariant]
@@ -107,6 +114,7 @@ public struct Track: Codable, Sendable, Equatable, Identifiable {
         rating: Rating = .none,
         gain: Double = 0,
         isAdvertisement: Bool = false,
+        adToken: String? = nil,
         variants: [AudioVariant] = []
     ) {
         self.trackToken = trackToken
@@ -119,12 +127,14 @@ public struct Track: Codable, Sendable, Equatable, Identifiable {
         self.rating = rating
         self.gain = gain
         self.isAdvertisement = isAdvertisement
+        self.adToken = adToken
         self.variants = variants
     }
 
     /// Parses the `items` array of a `station.getPlaylist` result.
-    /// Entries without `songName` are dropped (pithos' filter); a malformed
-    /// entry is skipped, never fatal.
+    /// Music entries without `songName` are dropped (pithos' filter);
+    /// advertisements are kept (see `track(from:)`); a malformed entry is
+    /// skipped, never fatal.
     public static func tracks(from result: [String: AnyJSON]) -> [Track] {
         (result["items"]?.arrayValue ?? []).compactMap { entry in
             entry.objectValue.flatMap { track(from: $0) }
@@ -132,18 +142,28 @@ public struct Track: Codable, Sendable, Equatable, Identifiable {
     }
 
     /// One playlist entry → one track.
+    ///
+    /// Music entries carry `songName` + `trackToken` (pithos' filter).
+    /// Advertisement entries carry `adToken` and use `title`/`companyName`
+    /// instead (pydora `AdItem`) and usually have no audio — they are kept,
+    /// flagged, and get a synthetic id (`ad.<adToken>`) when the entry has
+    /// no `trackToken`, so playback can resolve them (`ad.getAdMetadata`)
+    /// and register the impression (`ad.registerAd`) instead of silently
+    /// dropping them (a silent drop consumes the impression while never
+    /// playing anything).
     public static func track(from entry: [String: AnyJSON]) -> Track? {
-        // pithos: `[Song(...) for i in playlist if 'songName' in i]`
-        guard let title = entry["songName"]?.stringValue,
-              let trackToken = entry["trackToken"]?.stringValue else { return nil }
-        let artist = entry["artistName"]?.stringValue ?? ""
+        let adToken = entry["adToken"]?.stringValue
+        let title = entry["songName"]?.stringValue ?? entry["title"]?.stringValue
+        let trackToken = entry["trackToken"]?.stringValue ?? adToken.map { "ad." + $0 }
+        guard let title, let trackToken else { return nil }
+        let artist = entry["artistName"]?.stringValue
+            ?? entry["companyName"]?.stringValue ?? ""
         let album = entry["albumName"]?.stringValue ?? ""
-        let artwork = entry["albumArtUrl"]?.stringValue
+        let artwork = entry["albumArtUrl"]?.stringValue ?? entry["imageUrl"]?.stringValue
         let duration = entry.intLike("trackLength") ?? 0
         let stationId = entry.stringLike("stationId") ?? ""
         let rating = Rating(rawValue: entry.intLike("songRating") ?? 0) ?? .none
         let gain = entry.doubleLike("trackGain") ?? 0
-        let isAd = entry["adToken"]?.stringValue != nil
 
         return Track(
             trackToken: trackToken,
@@ -155,7 +175,8 @@ public struct Track: Codable, Sendable, Equatable, Identifiable {
             stationId: stationId,
             rating: rating,
             gain: gain,
-            isAdvertisement: isAd,
+            isAdvertisement: adToken != nil,
+            adToken: adToken,
             variants: variants(from: entry)
         )
     }
