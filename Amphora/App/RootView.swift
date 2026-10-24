@@ -5,11 +5,13 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            Color.primaryBackground.ignoresSafeArea()
+            Theme.background.ignoresSafeArea()
             content
         }
         .preferredColorScheme(.dark)
         .task {
+            // Artwork-driven theming hooks the player's track changes.
+            ArtworkThemeController.shared.attach(to: store.player)
             // Warm-launch restore — idempotent, so re-entering after a
             // background relaunch is a no-op.
             store.send(.restoreSession)

@@ -115,7 +115,51 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — genre stations UI, the landing-page ask):** "Browse
+**(this push — theming foundation, the beautify pass unit 1 of 3):**
+Amphora now has a design system and artwork-driven color. The look is
+deliberately self-contained (flat dark surfaces, generous continuous
+corner radii, one violet→gold brand gradient, **no liquid glass / no
+system materials as the look**) so the Android port can reproduce every
+value one-for-one.
+
+- `PandoraCore/ArtworkColors.swift` (new, pure logic): dominant-color
+  extraction from RGBA8 pixels — HSV conversion, 12 hue buckets,
+  weight `s·(0.2+0.8v)` (saturation-led; a first version with
+  `s·(1−|2v−1|)` wrongly gave pure #FF0000 zero weight), near-black/gray
+  gated, chromatic threshold 8 (~2% of a 32×32 sample) so a tiny colored
+  logo can't theme the player; grayscale covers return nil (caller keeps
+  the previous/brand palette). Derives `accent` (fixed clamps: s ≥ 0.45,
+  v in 0.55...0.80) and two deep gradient stops from the winner.
+  **Platform-free by design — the Android port feeds Bitmap bytes into
+  the identical algorithm, so both apps theme identically.** 12 tests;
+  **197/197 green** in Docker (was 185).
+- `Amphora/UI/Theme.swift` (new): tokens — background `#0C0A14`,
+  surface `#1B1828`, surfaceHighlight `#28243A`, accent gold `#F2B233`,
+  violet `#6C4AB6`, stroke white 8%; radii 10/16/24/28 (continuous);
+  `brandGradient`, `backgroundGradient`, `playerBackground(artworkColors)`.
+- `Amphora/UI/ArtworkPaletteService.swift` (new): the one UIKit-touching
+  step — draws a cached artwork into a 32×32 RGBA8 buffer (CGContext,
+  ~1 ms) and runs the shared extractor. Loads through `ArtworkCache`
+  (no second download).
+- `Amphora/Store/ArtworkThemeController.swift` (new): `@Observable`
+  singleton owning `colors: ArtworkColors`; attaches to
+  `player.onTrackChanged` (idempotent, from `RootView.task`) — kept out
+  of `AppStore` on purpose so the theming layer is additive and the
+  parallel session's AppStore/StationsView work never collides.
+  Memoized per artwork URL (cap 24), request counter drops out-of-order
+  completions.
+- Global accent: `AccentColor.colorset` (gold) +
+  `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME` in `project.yml` —
+  system controls (sliders, alerts, menus, tab tint) now pick up brand
+  gold everywhere without per-view tints.
+- `RootView`: floor color → `Theme.background`; attaches the theme
+  controller. Next units (mine): 2) full player + mini player restyle on
+  the artwork palette (ambient gradient, custom scrubber, haptics), 3)
+  station list / login / history / bookmarks card treatment.
+- Local checks: all four new/edited app files `swiftc -parse` clean in
+  Docker; PandoraCore 197/197.
+
+**(previous push — genre stations UI, the landing-page ask):** "Browse
 Pandora Stations" is now the first row of the Stations list (radio
 glyph, "Popular stations made by Pandora" caption, 44 pt+ target) —
 opening a new `BrowseStationsSheet`: NavigationStack with the category
