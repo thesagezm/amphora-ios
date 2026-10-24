@@ -34,6 +34,7 @@ enum Theme {
 
     static let radiusS: CGFloat = 10   // small thumbnails
     static let radiusM: CGFloat = 16   // cards, buttons, text fields
+    static let radiusCard: CGFloat = 20 // the floating mini player card
     static let radiusL: CGFloat = 24   // large cards
     static let radiusArtwork: CGFloat = 28 // full-player artwork
 

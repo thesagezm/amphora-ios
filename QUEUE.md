@@ -115,7 +115,62 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — theming foundation, the beautify pass unit 1 of 3):**
+**(this push — player restyle, the beautify pass unit 2 of 3):** the full
+player and mini player now wear the theme, driven by the artwork palette.
+Still no liquid glass — flat fills, continuous corners, one gradient.
+
+- `NowPlayingView` rebuilt: ambient background =
+  `Theme.playerBackground(artworkColors)` + a static blurred accent
+  ellipse behind the artwork ("light in the room"; no per-tick state, so
+  the blur renders once); nav bar background hidden so the gradient
+  shows; artwork at radius 28 with a white hairline + black depth shadow
+  + accent ambient shadow; artist line tinted with the artwork accent;
+  title in rounded bold. Artwork mode scrolls (`.scrollBounceBehavior(
+  .basedOnSize)`) with the transport pinned via `safeAreaInset`; lyrics
+  mode keeps the panel self-scrolling with fixed controls below (no
+  nested scroll views).
+- **Custom scrubber** (`PlayerScrubber`, new): capsule track + accent
+  fill + white drag knob (visible while dragging), `DragGesture(
+  minimumDistance: 0)` with `@GestureState` preview and seek-on-end,
+  disabled (35% opacity, no hit-testing) while duration is 0 (ads),
+  VoiceOver-adjustable (±10 s). Chosen over `Slider` so the Android port
+  can mirror the exact shape.
+- Play button: 74 pt circle filled with the **artwork accent**; glyph
+  contrast from the new `PaletteColor.relativeLuminance`/`isLight`
+  (Rec. 709, +2 tests — dark glyph on light accents like gold, white on
+  dark ones). Back-15 is a surface circle; skip-forward is a surface
+  circle with the accent glyph.
+- `FeedbackBar`: three 52 pt surface circles (up/down/sleep); the active
+  rating fills with the artwork accent, icon contrast via `isLight`;
+  takes a `PaletteColor` now (only call site updated).
+- Bookmarks: surface capsules with hairline strokes instead of
+  `.bordered`. ADVERTISEMENT badge: capsule on 14% yellow. Confirmation
+  toast: surfaceHighlight capsule (was `.thinMaterial` — materials are
+  not portable). Up Next header label tinted accent.
+- `MiniPlayer` rebuilt: floating card (radius 20, surface fill, 8% white
+  hairline, shadow) with **progress hairline along its top edge** in the
+  accent→violet brand gradient; the hairline is its own view so the
+  per-tick `elapsed` read re-renders only that 2.5 pt strip, never the
+  card (per-property `@Observable` tracking). Gold 34 pt play circle,
+  haptics on play/skip, artwork radius 12, card horizontal margin 12.
+- `Haptics` (new, Support): light/medium impact feedback on
+  play/pause, skip, back-15, ratings, bookmarks — the design spec's
+  "haptics on rating/skip", previously absent.
+- `AmphoraTimeFormat` (new, Support): the `m:ss` / `h:mm:ss` helper
+  extracted from NowPlayingView (scrubber labels + time rows share it).
+- `Theme.radiusCard = 20` added.
+- Local checks: all 7 touched app files `swiftc -parse` clean in Docker;
+  `ArtworkColors.swift` type-checks standalone (its new computed props).
+  **The full `swift test` run is temporarily blocked by the parallel
+  session's in-flight `LastFm.swift` (uncommitted, missing `return`) —
+  CI builds only committed files, so this push is unaffected; the delta
+  since the 197/197 run is 8 lines of pure computed properties + 1
+  test.**
+- Unit 3 (next): station list / login / history / bookmarks card
+  treatment + sheet tints. StationsView is the parallel session's hot
+  file — recheck `git status` first.
+
+**(previous push — theming foundation, the beautify pass unit 1 of 3):**
 Amphora now has a design system and artwork-driven color. The look is
 deliberately self-contained (flat dark surfaces, generous continuous
 corner radii, one violet→gold brand gradient, **no liquid glass / no

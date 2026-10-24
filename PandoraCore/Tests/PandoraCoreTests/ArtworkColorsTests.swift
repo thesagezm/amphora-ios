@@ -135,6 +135,14 @@ final class ArtworkColorsTests: XCTestCase {
         )
     }
 
+    func testLuminanceDrivesOnAccentContrast() {
+        // Brand gold is light → dark glyphs; a deep red accent is not.
+        let gold = PaletteColor(red: 0.949, green: 0.698, blue: 0.200)
+        let deepRed = PaletteColor(red: 0.70, green: 0.12, blue: 0.12)
+        XCTAssertTrue(gold.isLight)
+        XCTAssertFalse(deepRed.isLight)
+    }
+
     func testHSVRoundTrip() {
         // hsv→rgb→hsv must be the identity away from the gray axis.
         for step in 0..<12 {

@@ -36,6 +36,17 @@ public struct PaletteColor: Equatable, Sendable {
         self.green = green
         self.blue = blue
     }
+
+    /// Rec. 709 relative luminance (0...1).
+    public var relativeLuminance: Double {
+        0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+
+    /// True when the color is light enough that dark content (icons,
+    /// glyphs) reads on it — drives on-accent button contrast.
+    public var isLight: Bool {
+        relativeLuminance >= 0.5
+    }
 }
 
 /// The artwork-derived theme for one cover: a vivid accent for controls

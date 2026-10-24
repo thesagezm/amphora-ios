@@ -1,11 +1,18 @@
 import PandoraCore
 import SwiftUI
 
-/// Full-screen player: artwork, title/artist, scrubber, transport
-/// controls and the station name. Presented from the mini-player.
+/// Full-screen player: ambient artwork-derived gradient, large rounded
+/// artwork, custom scrubber, transport and feedback. Every color comes
+/// from `Theme` + the artwork palette (`ArtworkThemeController`) — flat
+/// fills only, no system materials, so the Android port matches exactly.
+/// Presented from the mini-player.
 struct NowPlayingView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+
+    /// The shared ambient theme. Reading the singleton's `@Observable`
+    /// state from body is tracked like any environment dependency.
+    private var theme: ArtworkThemeController { ArtworkThemeController.shared }
 
     @State private var isShowingSleepTimer = false
     @State private var isShowingTuning = false
@@ -15,11 +22,15 @@ struct NowPlayingView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.primaryBackground.ignoresSafeArea()
+                Theme.playerBackground(theme.colors).ignoresSafeArea()
+                AmbientGlow(color: theme.colors.accent.color)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
                 content
             }
             .navigationTitle(store.currentStation?.name ?? "Now Playing")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -66,61 +77,27 @@ struct NowPlayingView: View {
     @ViewBuilder
     private var content: some View {
         if let track = store.player.currentTrack {
-            VStack(spacing: 24) {
-                if isShowingLyrics {
+            if isShowingLyrics {
+                // The lyrics panel scrolls itself; the transport stays fixed.
+                VStack(spacing: 20) {
                     LyricsPanel()
-                } else {
-                    artwork(for: track)
-                        .padding(.horizontal, 32)
-
-                    VStack(spacing: 6) {
-                        Text(track.title)
-                            .font(.title2.weight(.semibold))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                        Text(track.artist)
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        if !track.album.isEmpty {
-                            Text(track.album)
-                                .font(.subheadline)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                        }
+                    fixedControls(for: track)
+                }
+                .padding(.bottom, 24)
+            } else {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        artwork(for: track)
+                        trackHeader(track)
+                        scrubber
                     }
-
-                    scrubber
+                    .padding(.top, 8)
                 }
-
-                if let track = store.player.currentTrack, track.isAdvertisement {
-                    // pydora's player prints "Advertisement" — the slot is
-                    // labeled, unratable and unskippable by protocol.
-                    Text("ADVERTISEMENT")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.yellow)
-                        .tracking(3)
-                }
-
-                transport
-
-                if let track = store.player.currentTrack, !track.isAdvertisement {
-                    FeedbackBar()
-                    bookmarkButtons
-                }
-
-                upNext
-
-                confirmation
-
-                if let message = store.player.errorMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.yellow)
-                        .padding(.horizontal, 24)
+                .scrollBounceBehavior(.basedOnSize)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    fixedControls(for: track)
                 }
             }
-            .padding(.bottom, 24)
         } else {
             ContentUnavailableView(
                 "Nothing playing",
@@ -130,62 +107,142 @@ struct NowPlayingView: View {
         }
     }
 
-    private func artwork(for track: Track) -> some View {
-        CachedArtwork(urlString: track.artworkUrl, cornerRadius: 20, fallbackSystemImage: "music.note")
-            .aspectRatio(1, contentMode: .fit)
-            .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+    /// Everything below the artwork/lyrics region: ad badge, transport,
+    /// feedback, up next, confirmations, errors.
+    private func fixedControls(for track: Track) -> some View {
+        VStack(spacing: 18) {
+            adBadge(track)
+            transport
+            if !track.isAdvertisement {
+                FeedbackBar(accent: theme.colors.accent)
+                bookmarkButtons
+            }
+            upNext
+            confirmation
+            if let message = store.player.errorMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.yellow)
+                    .padding(.horizontal, 24)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
     }
 
-    private var scrubber: some View {
-        VStack(spacing: 4) {
-            Slider(
-                value: Binding(
-                    get: { store.player.elapsed },
-                    set: { store.player.seek(to: $0) }
-                ),
-                in: 0...max(store.player.duration, 1)
-            )
-            .disabled(store.player.duration <= 0)
-            .accessibilityLabel("Playback position")
-            HStack {
-                Text(Self.timeString(store.player.elapsed))
-                Spacer()
-                Text(Self.timeString(store.player.duration))
+    private func artwork(for track: Track) -> some View {
+        CachedArtwork(
+            urlString: track.artworkUrl,
+            cornerRadius: Theme.radiusArtwork,
+            fallbackSystemImage: "music.note"
+        )
+        .aspectRatio(1, contentMode: .fit)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusArtwork, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
+        .shadow(color: theme.colors.accent.color.opacity(0.18), radius: 40, y: 8)
+        .padding(.horizontal, 28)
+    }
+
+    private func trackHeader(_ track: Track) -> some View {
+        VStack(spacing: 6) {
+            Text(track.title)
+                .font(Font.system(.title2, design: .rounded).weight(.bold))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            Text(track.artist)
+                .font(.headline)
+                .foregroundStyle(theme.colors.accent.color.opacity(0.9))
+                .lineLimit(1)
+            if !track.album.isEmpty {
+                Text(track.album)
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 24)
     }
 
+    private var scrubber: some View {
+        VStack(spacing: 6) {
+            PlayerScrubber(
+                elapsed: store.player.elapsed,
+                duration: store.player.duration,
+                accent: theme.colors.accent.color,
+                onSeek: { store.player.seek(to: $0) }
+            )
+            HStack {
+                Text(AmphoraTimeFormat.string(store.player.elapsed))
+                Spacer()
+                Text(AmphoraTimeFormat.string(store.player.duration))
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    @ViewBuilder
+    private func adBadge(_ track: Track) -> some View {
+        if track.isAdvertisement {
+            // pydora's player prints "Advertisement" — the slot is
+            // labeled, unratable and unskippable by protocol.
+            Text("ADVERTISEMENT")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.yellow)
+                .tracking(3)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.yellow.opacity(0.14), in: Capsule())
+        }
+    }
+
     private var transport: some View {
-        HStack(spacing: 36) {
+        HStack(spacing: 32) {
             Button {
+                Haptics.light()
                 store.player.skipBackward(by: 15)
             } label: {
                 Image(systemName: "gobackward.15")
-                    .font(.title)
-                    .frame(width: 44, height: 44)
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 48, height: 48)
+                    .background(Theme.surface, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Back 15 seconds")
 
             Button {
+                Haptics.light()
                 store.send(.togglePlayback)
             } label: {
-                Image(systemName: store.player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 64))
-                    .frame(width: 76, height: 76)
+                Image(systemName: store.player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(theme.colors.accent.isLight
+                                     ? Color.black.opacity(0.85)
+                                     : Color.white)
+                    .frame(width: 74, height: 74)
+                    .background(theme.colors.accent.color, in: Circle())
+                    .shadow(
+                        color: theme.colors.accent.color.opacity(0.35),
+                        radius: 14, y: 5
+                    )
             }
             .buttonStyle(.plain)
             .accessibilityLabel(store.player.isPlaying ? "Pause" : "Play")
 
             Button {
+                Haptics.medium()
                 store.send(.skipToNext)
             } label: {
                 Image(systemName: "forward.fill")
-                    .font(.title)
-                    .frame(width: 44, height: 44)
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(theme.colors.accent.color)
+                    .frame(width: 48, height: 48)
+                    .background(Theme.surface, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Next track")
@@ -193,27 +250,40 @@ struct NowPlayingView: View {
     }
 
     private var bookmarkButtons: some View {
-        HStack(spacing: 28) {
-            Button {
-                store.send(.bookmarkCurrentSong)
-            } label: {
-                Label("Song", systemImage: "bookmark")
-                    .font(.subheadline)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Bookmark this song")
-
-            Button {
-                store.send(.bookmarkCurrentArtist)
-            } label: {
-                Label("Artist", systemImage: "person.crop.circle.badge.plus")
-                    .font(.subheadline)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Bookmark this artist")
+        HStack(spacing: 16) {
+            capsuleBookmark(
+                "Song",
+                icon: "bookmark",
+                action: .bookmarkCurrentSong,
+                accessibilityLabel: "Bookmark this song"
+            )
+            capsuleBookmark(
+                "Artist",
+                icon: "person.crop.circle.badge.plus",
+                action: .bookmarkCurrentArtist,
+                accessibilityLabel: "Bookmark this artist"
+            )
         }
+    }
+
+    private func capsuleBookmark(
+        _ title: String,
+        icon: String,
+        action: AppStore.Intent,
+        accessibilityLabel: String
+    ) -> some View {
+        Button {
+            Haptics.light()
+            store.send(action)
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.footnote.weight(.medium))
+                .frame(minWidth: 104, minHeight: 40)
+        }
+        .foregroundStyle(.primary)
+        .background(Theme.surface, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.stroke))
+        .accessibilityLabel(accessibilityLabel)
     }
 
     /// A short, self-dismissing confirmation ("Song bookmarked") — the
@@ -225,7 +295,8 @@ struct NowPlayingView: View {
                 .font(.footnote.weight(.medium))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(.thinMaterial, in: Capsule())
+                .background(Theme.surfaceHighlight, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.stroke))
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .accessibilityAddTraits(.isStaticText)
         }
@@ -269,30 +340,33 @@ struct NowPlayingView: View {
                 HStack(spacing: 8) {
                     Text("Up Next")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.colors.accent.color)
                     Text(upcoming.first?.title ?? "")
                         .font(.footnote)
                         .lineLimit(1)
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.horizontal, 32)
             .accessibilityLabel(
                 "Up next: \(upcoming.map(\.title).joined(separator: ", "))"
             )
         }
     }
+}
 
-    /// `m:ss` (or `h:mm:ss` for long tracks).
-    private static func timeString(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let total = Int(seconds.rounded())
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let secs = total % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+/// A soft ellipse of the artwork accent above the player's gradient —
+/// the "light in the room" effect. Static per track (no per-tick state),
+/// so the blur renders once.
+private struct AmbientGlow: View {
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            Ellipse()
+                .fill(color.opacity(0.20))
+                .frame(width: geo.size.width * 1.1, height: geo.size.width * 0.9)
+                .blur(radius: 80)
+                .offset(y: -geo.size.height * 0.18)
         }
-        return String(format: "%d:%02d", minutes, secs)
     }
 }
