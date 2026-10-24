@@ -131,7 +131,15 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — UI unit 3 of 3: Apple-Music-style player):** feedback
+**(repair push — `60f28e9`, unit-2 iOS Build was red):** one error in
+unit 1's AboutView — `.title2.weight(.bold).width(.rounded)`: rounded
+is a font **design**, not a `Font.Width`. Now `Font.system(.title2,
+design: .rounded).weight(.bold)` (the shape NowPlayingView already
+uses). Trap class: SwiftUI type errors are CI-only — `-parse` can't
+see them.
+
+**(this push — UI unit 3, `a871b76`: Apple-Music-style player):**
+feedback
 item 4 + the follow-up ("make the player look Apple Music-like — matte
 black/grey shades, not liquid glass — even put the music quality").
 
@@ -781,6 +789,40 @@ mini-player); lyrics core `5ef40ab`.
 **(previous push, `03648ae`/`c658c40`):** handover bookkeeping; both
 workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 `GoogleTranslateClient`, 24 tests — **nothing calls it yet**.
+
+## Session handover (2026-10-24, beautify round session)
+
+**State:** the full 2026-10-24 UI feedback round is landed in three
+units + one repair — `259491f` (theme system, Home/Recents/Settings
+tabs, full Settings with About/Acknowledgements/Sign Out),
+`641f93e` (Home hero + matte station cards), `a871b76`
+(Apple-Music-style player), `60f28e9` (AboutView font repair; the
+unit-2 build caught it). Core Tests green through unit 2; unit 3 +
+repair builds were queued at handover — **check `gh run list` first**.
+
+**Device-test checklist for this round (on top of the accumulated one
+below):**
+
+- **Tabs**: Home / Recents / Settings. Bookmarks live behind Recents'
+  segmented pill; gear + stethoscope are gone from the Home toolbar
+  (they're Settings rows now).
+- **Appearance**: Settings → Appearance → Background (Amphora Dark /
+  Pandora Night / True Black) and Accent (Gold / Pandora Blue /
+  Violet / Aqua / Rose) — every screen should re-theme instantly; the
+  choice survives a relaunch.
+- **Home hero**: after playing any station, Home leads with its large
+  centered artwork + play circle ("Last played"/"Now playing"); the
+  playing station's row card is accent-tinted.
+- **Player**: ONE moon icon total (ellipsis menu → Sleep Timer);
+  menu also holds Tune Station, both bookmarks, Hide This Song.
+  Transport = plain glyphs that dip on touch; play/pause glyph
+  animates its swap; quality chip ("128 kbps · MP3" or similar) by
+  the title. No hard borders on artwork/toast.
+- **Sign Out**: Settings → Sign Out of Pandora (confirm) → back at
+  login; sign in again works.
+- **Bookmarks on device (user said not working)**: bookmark from the
+  player's ellipsis menu, then Recents → Bookmarks. The protocol is
+  verified against pydora; if it fails, Diagnostics → Copy → paste.
 
 ## Session handover (2026-10-24, feature-requests session)
 
