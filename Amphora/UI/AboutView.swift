@@ -26,7 +26,7 @@ struct AboutView: View {
                     .foregroundStyle(Theme.brandGradient)
                     .accessibilityHidden(true)
                 Text("Amphora")
-                    .font(.title2.weight(.bold).width(.rounded))
+                    .font(Font.system(.title2, design: .rounded).weight(.bold))
                 Text(
                     "A personal, unofficial Pandora client. "
                         + "Not affiliated with, endorsed by, or connected to "
