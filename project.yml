@@ -34,7 +34,7 @@ targets:
         PRODUCT_NAME: Amphora
         PRODUCT_BUNDLE_IDENTIFIER: dev.personal.amphora
         INFOPLIST_KEY_CFBundleDisplayName: Amphora
-        INFOPLIST_KEY_CFBundleShortVersionString: "0.0.1"
+        INFOPLIST_KEY_CFBundleShortVersionString: "0.1.0"
         INFOPLIST_KEY_CFBundleVersion: "1"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait

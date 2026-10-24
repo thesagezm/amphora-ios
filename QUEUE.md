@@ -131,6 +131,28 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**(this push — public release v0.1.0):** user directed: repo goes public,
+prerelease `v0.1.0` is cut, all authorship moves to thesagezm, and
+anything that could identify the machine is removed. Done:
+
+- **History rewritten** — every commit's author/committer is now
+  `thesagezm <192189590+thesagezm@users.noreply.github.com>` (was
+  `ZCode <zcode@localhost>`); `main` force-pushed. Repo-local git
+  identity switched to thesagezm for all future commits. **User
+  explicitly authorized the v0.1.0 prerelease** — the one-time
+  exception to the no-version-bump rule.
+- `CFBundleShortVersionString` 0.0.1 → **0.1.0** (`CFBundleVersion`
+  stays 1).
+- Identity scrub: `.gitignore` comment no longer names the agent tool.
+  Full-tree and full-history scans found nothing else machine-
+  identifying (no local paths, no IPs; test fixtures use
+  `me@example.com`; the `LyricsProvider` user-agent naming
+  `thesagezm/amphora-ios` is intended public attribution and stays).
+- Pre-rewrite workflow runs — their pages displayed the old ZCode
+  authorship — were deleted after the release was cut.
+- **The repo is PUBLIC now: nothing machine-identifying may ever be
+  committed, and no credentials/tokens anywhere (files, logs, QUEUE).**
+
 **(this push — UI unit 4: browse sheet joins the card language):**
 the one surface the card pass missed. `BrowseStationsSheet`: theme
 floor behind both levels, category rows + station rows as matte
@@ -803,6 +825,23 @@ mini-player); lyrics core `5ef40ab`.
 workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 `GoogleTranslateClient`, 24 tests — **nothing calls it yet**.
 
+## Session handover (2026-10-25, public release session)
+
+**State:** release cut at the user's direction — repo public, prerelease
+`v0.1.0` tagged with an unsigned-IPA release asset, authorship under
+thesagezm, identity scrub done (details in In Flight / Last Push).
+
+**FIRST ACTION next session:** `gh run list --limit 5`. The release push
+must be green on the rewritten HEAD (Core Tests + iOS Build). Then:
+
+- **Release asset check:** if the attached IPA is not from the 0.1.0
+  build (check the release page / run numbers), download the green
+  run's `amphora-ipa-<run_number>` artifact and
+  `gh release upload v0.1.0 <dir>/Amphora-unsigned.ipa#Amphora-v0.1.0-unsigned.ipa --clobber`.
+- The M6 device-test checklist in the 2026-10-24 handover below is
+  still the gating item; user feedback still jumps the queue.
+- Public-repo hygiene is now permanent (see In Flight entry).
+
 ## Session handover (2026-10-24, beautify round session)
 
 **State:** the full 2026-10-24 UI feedback round is landed in three
@@ -925,15 +964,18 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. **User device test of this round's IPA** — the gating item; the
-   checklist is in this session's handover section above (tabs,
+1. **Release follow-up** — v0.1.0 runs green on the rewritten HEAD;
+   release asset is the 0.1.0 build (swap command in the 2026-10-25
+   handover if not).
+2. **User device test of this round's IPA** — the gating item; the
+   checklist is in the 2026-10-24 handover section above (tabs,
    appearance themes, hero, player menu/quality chip, sign out,
    bookmarks-on-device investigation).
-2. **Bookmarks on device** — user reports they don't work; protocol
+3. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora this session (endpoints/params/decode all
    match). If the device test still fails, the Diagnostics log decides
    the next step.
-3. Anything red on the next `gh run list` — repair first.
+4. Anything red on the next `gh run list` — repair first.
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read
 the failure summary annotation and repair before any new unit.

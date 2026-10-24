@@ -20,5 +20,5 @@ Package.resolved
 *.p12
 *.mobileprovision
 
-# ZCode session artifacts
+# Local agent/session artifacts
 .zcode/
