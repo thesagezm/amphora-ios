@@ -11,30 +11,46 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
-**2026-10-24 feature requests (this session's driver — user message):**
-"so your task: last fm, pithos manages to show me the next upcoming like
-4 songs can this one do the same... landing page only shows my stations
-is it possible for it to show those popular pandora created main
-stations as well... the ui agent will try to add color to make the app
-look good". Three units, owned here; **color/beautify stays with the UI
-agent**:
+**2026-10-24 UI feedback round (this session's driver — beautify):**
+seven numbered points + a follow-up. Mapping to units:
 
-1. **Up Next queue display** — Pithos shows the next ~4 upcoming songs;
-   landed this push (see Last Push).
-2. **Popular Pandora stations on the landing page** — the Stations tab
-   should offer Pandora's featured genre stations ("Today's Hits", …).
-   Protocol verified from four references this session (see Protocol
-   Notes "Genre stations"): `station.getGenreStations` (no params) →
-   `categories[] {categoryName, stations[] {stationId, stationName,
-   stationToken}}`; creation is the existing `station.createStation`
-   with `musicToken: <the genre station's stationToken>` (xivpiano
-   PandoraClient.cs:261 "making one uses its token as the music token";
-   pydra GenreStation "Create a real station using the token";
-   pithos/pandora.py `add_station_by_music_id` same call shape for
-   search-genre results). Core unit next, then the Browse UI.
-3. **Last.fm scrobbling** (Pithos parity, M6 stretch item) — core
-   client + tests, then settings UI + scrobble triggers. Queued after
-   item 2.
+1. **Settings expansion** — theme color customization, Last.fm as a
+   setting, more settings (about page, acknowledgements, logs). →
+   **Unit 1 landed**: full Settings tab (Appearance: background ×
+   accent; Last.fm; Diagnostics & Logs; About + Acknowledgements;
+   Sign Out).
+2. **Home landing redesign** — large icon of the last-played station
+   centered, list below. → **Unit 2**.
+3. **Pandora colors + dark/true-black themes + gradients** → Unit 1's
+   appearance themes (Amphora Dark / **Pandora Night** [brand blues
+   #224099/#00A0EE] / True Black) × 5 accent gradients (Gold /
+   Pandora Blue / Violet / Aqua / Rose).
+4. **Player complaints** — two sleep timers (toolbar moon.zzz vs the
+   FeedbackBar hide-song button's identical moon.zzz icon), borders
+   too strong, static-feeling controls. Follow-up message: **"make
+   the player look Apple Music-like … shades of matte black/grey
+   (solid tones, not liquid glass) … even put the music quality"** →
+   **Unit 3**: AM-style player (plain glyph transport, matte shades,
+   press animations, one sleep control, quality chip from
+   `Track.preferredVariant` bitrate/encoding).
+5. **Bookmarks not working on device + remove as tab** — bookmarks
+   verified protocol-correct against pydora this session (endpoints,
+   params, decode); if it still fails on device, the Diagnostics log
+   decides. Tab removed in Unit 1 — bookmarks now live behind the
+   Recents tab's segmented control.
+6. **Station list borders too hard** — use gentle opacity/matte shades
+   instead of hard borders. → shared `amphoraCardRow` is now
+   stroke-less (Unit 1); station-row states in Unit 2.
+7. **Tab bar restructure** — Bookmarks out, Recents where Bookmarks
+   was, Settings tab holds logs/Last.fm/appearance/about. → **Unit 1
+   landed**: Home / Recents / Settings.
+8. General beautify — continuous across all units.
+
+**2026-10-24 feature requests (prior session's driver — all three landed):**
+"last fm, pithos manages to show me the next upcoming like 4 songs…",
+"landing page … popular pandora created main stations…", last.fm
+scrobbling. All landed (see Completed Units / Last Push history and
+the device-test checklist in the 2026-10-24 handover below).
 
 **2026-10-24 device report (prior session's driver) — "DIAGNOSE CRASH AND
 FIX":** the app crashed repeatedly on the phone (signal 5). Two Apple
@@ -115,7 +131,51 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Last.fm app integration, the unit that makes it real):**
+**(this push — UI unit 1 of 3: theme system + tab restructure + full
+Settings):** the Settings/appearance foundation of the 2026-10-24
+beautify round.
+
+- **`Theme.swift` rewritten around user-selectable palettes.**
+  `ThemeAppearance` (`.dark` = current violet cast, `.pandora` = brand
+  navy #224099/#00A0EE cast, `.trueBlack` = OLED black + neutral
+  surfaces) × `ThemeAccent` (gold / Pandora blue / violet / aqua /
+  rose, each with primary + gradient partner + a legible glyph color).
+  The static tokens (`Theme.background`, `Theme.accent`,
+  `brandGradient`, …) became **@MainActor computed vars reading
+  `ThemeController.shared`** — observation tracking works through the
+  indirection, so a theme change in Settings re-renders every view
+  that touches a token (verified pattern: access-time tracking).
+  `amphoraCardRow` dropped its hairline stroke — matte surface fill
+  only (feedback item 6).
+- **`ThemeController` (new, Store)** — @Observable singleton owning
+  `ThemeSelection {appearance, accent}`, persisted to its own
+  `theme.json` — deliberately NOT in `Preferences`, because AppStore
+  round-trips the whole Preferences struct on every save and a second
+  writer there would clobber whichever saved last.
+- **Tab restructure (`MainTabView`)** — Home (`music.note.house`) /
+  Recents / Settings; `.tint(Theme.accent)`. **`RecentsView` (new)**
+  absorbs History + Bookmarks behind a themed segmented pill
+  (feedback items 5+7). BookmarksView/HistoryView deleted.
+- **`SettingsView` (new tab)** — Appearance (menu picker + gradient
+  accent swatches), Last.fm (moved verbatim from SettingsSheet, which
+  is deleted), Diagnostics & Logs (NavigationLink — DiagnosticsView
+  lost its inner NavigationStack/Done for push), About → **`AboutView`
+  (new)**: unofficial-client notice + acknowledgements (Pithos, pydora/
+  libpiano/pianobar, CryptoSwift, Last.fm, LRCLIB, Google Translate) +
+  version row. **Sign Out** with confirmation → new intent
+  `.signOutPandora`: `player.stop()`, session-scoped state cleared,
+  back to LoginView (local history survives).
+- **Core:** `SessionManager.signOut()` — drops credentials/tokens +
+  clears the stored record, offline + idempotent. 1 new test —
+  **214/214 green in Docker** (213 prior + signOut).
+- Local checks: 11 touched/new app files parse-clean in Docker;
+  PandoraCore 214/214. ThemeController typechecks standalone (its
+  ThemeAppearance types live in Theme.swift, UI-module-only concern).
+- Known follow-ups queued: Unit 2 (home hero + station-row states),
+  Unit 3 (Apple-Music-style player, one sleep control, matte shades,
+  quality chip).
+
+**(previous push — Last.fm app integration, the unit that made it real):**
 
 - **`Amphora/Player/Scrobbler.swift` (new)** — @Observable @MainActor
   engine owned by `AppStore`. Holds the session state

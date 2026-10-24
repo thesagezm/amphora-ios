@@ -247,6 +247,17 @@ public actor SessionManager {
         return true
     }
 
+    /// Signs out: drops the in-memory credentials/tokens and clears the
+    /// stored session record. Idempotent and offline (no network call) —
+    /// stopping playback and clearing app-level caches is the caller's job.
+    public func signOut() {
+        credentials = nil
+        tokens = nil
+        subscriber = false
+        client.context = URLBuilder.Context()
+        try? store?.clear()
+    }
+
     // MARK: Authenticated requests
 
     /// Encrypted request under the current session. On fault 1001 (session

@@ -62,13 +62,13 @@ struct LoginView: View {
                     ZStack {
                         if isSigningIn {
                             ProgressView()
-                                .tint(Color.black.opacity(0.85))
+                                .tint(Theme.accentGlyph.opacity(0.85))
                         } else {
                             Text("Sign In")
                                 .font(.headline)
                         }
                     }
-                    .foregroundStyle(Color.black.opacity(0.85))
+                    .foregroundStyle(Theme.accentGlyph.opacity(0.85))
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 50)
                     .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous))

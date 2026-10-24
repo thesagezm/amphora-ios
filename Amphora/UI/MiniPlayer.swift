@@ -109,7 +109,7 @@ private struct MiniPlayerProgress: View {
                 Capsule().fill(Color.white.opacity(0.10))
                 Capsule()
                     .fill(LinearGradient(
-                        colors: [Theme.accent, Theme.violet],
+                        colors: [Theme.accent, Theme.accentSecondary],
                         startPoint: .leading,
                         endPoint: .trailing
                     ))

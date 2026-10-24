@@ -15,8 +15,6 @@ struct StationsView: View {
     @State private var isAddingStation = false
     @State private var isBrowsingStations = false
     @State private var isEditingOrder = false
-    @State private var isShowingDiagnostics = false
-    @State private var isShowingSettings = false
 
     var body: some View {
         Group {
@@ -32,24 +30,8 @@ struct StationsView: View {
                 list
             }
         }
-        .navigationTitle("Stations")
+        .navigationTitle("Home")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    isShowingDiagnostics = true
-                } label: {
-                    Image(systemName: "stethoscope")
-                }
-                .accessibilityLabel("Diagnostics and logs")
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    isShowingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .accessibilityLabel("Settings")
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     isAddingStation = true
@@ -73,12 +55,6 @@ struct StationsView: View {
         }
         .sheet(isPresented: $isBrowsingStations) {
             BrowseStationsSheet()
-        }
-        .sheet(isPresented: $isShowingDiagnostics) {
-            DiagnosticsView()
-        }
-        .sheet(isPresented: $isShowingSettings) {
-            SettingsSheet()
         }
         .sheet(item: $tuningStation) { station in
             TuneStationSheet(station: station)

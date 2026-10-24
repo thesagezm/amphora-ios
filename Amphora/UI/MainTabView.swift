@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// The signed-in shell: a tab bar with Stations, Bookmarks and Recently
-/// Played, plus the persistent mini-player.
+/// The signed-in shell: Home (stations), Recents (history + bookmarks
+/// behind one segmented control) and Settings — bookmarks no longer
+/// earn a tab of their own (user request 2026-10-24) — plus the
+/// persistent mini-player.
 ///
 /// The mini-player rides **each tab's content** as a bottom
 /// `safeAreaInset`, while the full-player sheet is owned **here** — one
@@ -25,27 +27,27 @@ struct MainTabView: View {
                 StationsView()
             }
             .tabItem {
-                Label("Stations", systemImage: "music.note.list")
+                Label("Home", systemImage: "music.note.house")
             }
             .miniPlayer { isShowingNowPlaying = true }
 
             NavigationStack {
-                BookmarksView()
+                RecentsView()
             }
             .tabItem {
-                Label("Bookmarks", systemImage: "bookmark")
+                Label("Recents", systemImage: "clock")
             }
             .miniPlayer { isShowingNowPlaying = true }
 
             NavigationStack {
-                HistoryView()
+                SettingsView()
             }
             .tabItem {
-                Label("History", systemImage: "clock")
+                Label("Settings", systemImage: "gearshape")
             }
             .miniPlayer { isShowingNowPlaying = true }
         }
-        .tint(.accentColor)
+        .tint(Theme.accent)
         .sheet(isPresented: $isShowingNowPlaying) {
             NowPlayingView()
         }

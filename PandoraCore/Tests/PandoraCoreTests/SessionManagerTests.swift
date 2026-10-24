@@ -197,6 +197,32 @@ final class SessionManagerTests: XCTestCase {
         }
     }
 
+    // MARK: - Sign out
+
+    func testSignOutClearsSessionStoreAndRefusesFurtherRequests() async throws {
+        let transport = MockTransport(responses: [partnerOK(), userOK()])
+        let store = InMemorySessionStore()
+        let subject = makeManager(transport: transport, store: store)
+        _ = try await subject.login(username: "me@example.com", password: "hunter2")
+
+        await subject.signOut()
+
+        let hasSession = await subject.hasSession
+        XCTAssertFalse(hasSession, "sign-out must drop the in-memory session")
+        XCTAssertNil(store.load(), "sign-out must clear the stored record")
+
+        // The next authenticated call refuses before any network request.
+        do {
+            _ = try await subject.getStationList()
+            XCTFail("expected notAuthenticated")
+        } catch let error as SessionManagerError {
+            XCTAssertEqual(error, .notAuthenticated)
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
+        XCTAssertEqual(transport.requests.count, 2, "sign-out adds no requests")
+    }
+
     // MARK: - Restore
 
     func testRestoreRehydratesContextWithoutNetwork() async {

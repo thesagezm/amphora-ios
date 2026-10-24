@@ -5,76 +5,69 @@ import UIKit
 /// crash report, with one-tap Copy/Share so a crash can be pasted into a
 /// bug report. The app ships without a debugger (LiveContainer), so this
 /// screen is the only window into what happened on the device.
+/// Presented from Settings → Diagnostics & Logs.
 struct DiagnosticsView: View {
-    @Environment(\.dismiss) private var dismiss
-
     @State private var logText = ""
     @State private var crashText: String?
     @State private var didCopy = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if logText.isEmpty && crashText == nil {
-                    ContentUnavailableView(
-                        "Nothing recorded yet",
-                        systemImage: "doc.text.magnifyingglass",
-                        description: Text("Reproduce the problem, then reopen this screen.")
-                    )
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 20) {
-                            if let crashText {
-                                section("Last crash") {
-                                    Text(crashText)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundStyle(.red.opacity(0.9))
-                                        .textSelection(.enabled)
-                                }
-                            }
-                            section("Device") {
-                                Text(deviceSummary)
+        Group {
+            if logText.isEmpty && crashText == nil {
+                ContentUnavailableView(
+                    "Nothing recorded yet",
+                    systemImage: "doc.text.magnifyingglass",
+                    description: Text("Reproduce the problem, then reopen this screen.")
+                )
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        if let crashText {
+                            section("Last crash") {
+                                Text(crashText)
                                     .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            }
-                            section("Log (most recent \(logLines.count) lines)") {
-                                Text(logText)
-                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.red.opacity(0.9))
                                     .textSelection(.enabled)
                             }
                         }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        section("Device") {
+                            Text(deviceSummary)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        section("Log (most recent \(logLines.count) lines)") {
+                            Text(logText)
+                                .font(.system(.caption2, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
                     }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .background(Theme.background.ignoresSafeArea())
-            .navigationTitle("Diagnostics")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        copyAll()
-                    } label: {
-                        Label("Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
-                    }
-                    .disabled(reportText.isEmpty)
-                    .accessibilityLabel("Copy diagnostics to the clipboard")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: reportText) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(reportText.isEmpty)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .task { refresh() }
         }
-        .preferredColorScheme(.dark)
+        .background(Theme.background.ignoresSafeArea())
+        .navigationTitle("Diagnostics")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    copyAll()
+                } label: {
+                    Label("Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+                }
+                .disabled(reportText.isEmpty)
+                .accessibilityLabel("Copy diagnostics to the clipboard")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: reportText) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .disabled(reportText.isEmpty)
+            }
+        }
+        .task { refresh() }
     }
 
     // MARK: - Data

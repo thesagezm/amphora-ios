@@ -46,6 +46,7 @@ final class AppStore {
         case authenticateLastFm(username: String, password: String)
         case signOutLastFm
         case setScrobblingEnabled(Bool)
+        case signOutPandora
         case dismissError
     }
 
@@ -327,9 +328,34 @@ final class AppStore {
             scrobbler.isEnabled = enabled
             preferences.scrobblingEnabled = enabled
             preferencesStore.save(preferences)
+        case .signOutPandora:
+            signOut()
         case .dismissError:
             lastErrorMessage = nil
         }
+    }
+
+    // MARK: Sign out
+
+    /// Ends the Pandora session: playback stops, the stored session and
+    /// all session-scoped state clear, and the app returns to sign-in.
+    /// Local history stays (it is device data, not session data).
+    private func signOut() {
+        AppLog.info("signing out of Pandora")
+        player.stop()
+        Task { await session.signOut() }
+        authPhase = .signedOut
+        stations = []
+        bookmarks = []
+        genreCategories = nil
+        currentStation = nil
+        stationModes = nil
+        modesStationId = nil
+        lyrics = nil
+        lyricsCache = [:]
+        queuedTrackTokens = []
+        lastErrorMessage = nil
+        confirmationMessage = nil
     }
 
     // MARK: Auth
