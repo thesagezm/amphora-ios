@@ -51,7 +51,53 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — station-tuning core + AppLog repair):**
+**(this push — station-tuning UI, app target):**
+
+- `AppStore`: `stationModes` / `isLoadingModes` / `isChangingMode` /
+  `stationModeChangedTick` state; `isSubscriber` now set from
+  `SessionManager` on restore + login; intents `loadStationModes`
+  (sheet's `.task`, always refetches so the current mode is never
+  stale) and `setStationMode(StationMode)`. On success: modes updated,
+  tick bumped (sheet dismisses), "Tuned to X" confirmation, then
+  `restartWithNewPlaylist` — a fresh `getPlaylist` + `player.play`
+  ("changing modes starts a new song"; the queued tracks belonged to
+  the old mode). Switching stations clears the cached modes.
+  `StationModesError` mapped to short user copy.
+- `TuneStationSheet` (new `Amphora/UI/`): modes list with the current
+  mode checked, premium-only rows disabled with a "Premium" badge
+  (free accounts can use everything else — Deep Cuts included),
+  loading / unavailable (`interactiveRadioAvailable == false`, e.g.
+  QuickMix) / error+Retry states, "Changing modes starts a new song."
+  footer that becomes "Changing mode…" while in flight.
+- `NowPlayingView`: slider-icon toolbar button opens the sheet next to
+  the sleep timer.
+- Local checks: all six touched app files parse-clean in Docker;
+  PandoraCore untouched since the 161/161 run.
+
+**(previous push — iOS Build repair, units B/C leftovers):** the iOS Build
+had been red since the lyrics-UI push — two errors below the ones the
+prior session was repairing when it ran out:
+
+- `LyricsPanel.swift:87` — `activeIndex` was a `let` **inside** the
+  LazyVStack's ViewBuilder but referenced by the ScrollView's
+  `.onChange` (out of scope; the `(_, _)` Equatable errors were
+  cascades). Hoisted the computation to the top of `syncedLyrics` with
+  an explicit `return` — reading `elapsed` at that level is also what
+  re-renders the panel as playback advances.
+- `MainTabView.swift:40` — **`tabViewBottomAccessory` is an iOS 26 API**
+  (Liquid-Glass floating tab bar, WWDC25), not iOS 18; CI is Xcode 16.4
+  (iOS 18.4 SDK) → "has no member". Verified via GitHub code search
+  (800+ users, all post-WWDC25) + superwall's backport. Rewritten:
+  mini-player rides each tab's content as a bottom `safeAreaInset`
+  (the proven 316b6c9 layout — `MiniPlayerInset`), while the
+  **full-player sheet moved to `MainTabView`** (`MiniPlayer` now takes
+  an `onOpen` closure instead of owning `@State` + `.sheet`). One sheet
+  instance for the shell ⇒ tab switches no longer tear it down — the
+  actual complaint behind "mini player is very buggy as I switch tabs",
+  fixed without the unavailable API. Do not re-add
+  `tabViewBottomAccessory` until the CI toolchain passes iOS 18.
+
+**(previous push — station-tuning core + AppLog repair):**
 
 - **Repair first (`4b60252`)**: iOS Build was red on the lyrics-unit-C
   push — `AppLog.startedAt` was `private` while `LogBuffer.store` (same

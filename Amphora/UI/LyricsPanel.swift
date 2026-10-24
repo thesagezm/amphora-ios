@@ -55,10 +55,13 @@ struct LyricsPanel: View {
     /// Synchronised lines: the active line is highlighted and kept
     /// centred; tapping a line seeks to its start.
     private func syncedLyrics(_ lyrics: Lyrics) -> some View {
-        ScrollViewReader { proxy in
+        // Computed here — inside the LazyVStack's builder it would be out
+        // of scope for the `.onChange` below, and reading `elapsed` at
+        // this level is what re-renders the panel as playback advances.
+        let activeIndex = lyrics.activeLineIndex(at: store.player.elapsed)
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    let activeIndex = lyrics.activeLineIndex(at: store.player.elapsed)
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         let isActive = index == activeIndex
                         VStack(alignment: .leading, spacing: 4) {
