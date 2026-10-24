@@ -20,6 +20,9 @@ struct Preferences: Codable, Equatable {
     var lastStationId: String?
     /// The sleep timer preference (off by default).
     var sleepTimer = SleepTimer.off
+    /// Whether scrobbling to Last.fm is enabled (only meaningful while a
+    /// Last.fm session key exists in the Keychain).
+    var scrobblingEnabled = false
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.

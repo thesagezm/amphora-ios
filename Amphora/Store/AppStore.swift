@@ -42,6 +42,9 @@ final class AppStore {
         case setSleepTimer(SleepTimer)
         case cancelSleepTimer
         case moveStation(from: Int, to: Int)
+        case authenticateLastFm(username: String, password: String)
+        case signOutLastFm
+        case setScrobblingEnabled(Bool)
         case dismissError
     }
 
@@ -58,6 +61,10 @@ final class AppStore {
     /// Lock-screen / Control Center integration (now playing info +
     /// remote transport commands).
     private let nowPlaying: NowPlayingService
+    /// Last.fm scrobbler: now-playing updates at track start, one
+    /// scrobble per played track (pithos rule), session key in the
+    /// Keychain. Failures never disturb playback.
+    let scrobbler: Scrobbler
     /// Lyrics provider (lrclib.net). Protocol lives in PandoraCore so a
     /// stub can be injected instead.
     private let lyricsProvider: any LyricsProviding
@@ -145,6 +152,9 @@ final class AppStore {
     private var confirmationTask: Task<Void, Never>?
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
+    /// When the current track started playing — Last.fm scrobbles want
+    /// the start time, not the scrobble time.
+    private var trackStartedAt = Date()
 
     /// Disk persistence for the history (Codable-to-disk, per AGENTS.md).
     private let historyStore: HistoryStore
@@ -169,6 +179,9 @@ final class AppStore {
         let player = PlayerService()
         self.player = player
         self.nowPlaying = NowPlayingService(player: player)
+        let scrobbler = Scrobbler()
+        self.scrobbler = scrobbler
+        scrobbler.isEnabled = preferences.scrobblingEnabled
         self.history = historyStore.load()
         // A sleep timer survives a relaunch: restore it and resume the
         // countdown if its deadline is still ahead.
@@ -214,6 +227,23 @@ final class AppStore {
             // Lyrics follow the current track; the per-track cache makes
             // repeat listens free.
             self.loadLyrics(for: track)
+            // Last.fm: profile "now playing" at track start. The scrobble
+            // itself fires from `onTrackFinished` (the pithos rule needs
+            // the reached position of the outgoing track).
+            if let track {
+                self.trackStartedAt = Date()
+                self.scrobbler.nowPlaying(track)
+            }
+        }
+        // A track stopping (end, skip, station switch) is the scrobble
+        // moment — pithos evaluates its rule at song-ended.
+        player.onTrackFinished.append { [weak self] track, reachedPosition in
+            guard let self else { return }
+            self.scrobbler.scrobbleIfEarned(
+                track: track,
+                reachedPosition: reachedPosition,
+                startedAt: self.trackStartedAt
+            )
         }
     }
 
@@ -286,6 +316,16 @@ final class AppStore {
             setSleepTimer(.off)
         case .moveStation(let source, let destination):
             moveStation(from: source, to: destination)
+        case .authenticateLastFm(let username, let password):
+            Task { await scrobbler.authenticate(username: username, password: password) }
+        case .signOutLastFm:
+            scrobbler.signOut()
+            preferences.scrobblingEnabled = false
+            preferencesStore.save(preferences)
+        case .setScrobblingEnabled(let enabled):
+            scrobbler.isEnabled = enabled
+            preferences.scrobblingEnabled = enabled
+            preferencesStore.save(preferences)
         case .dismissError:
             lastErrorMessage = nil
         }

@@ -75,6 +75,12 @@ final class PlayerService {
     var onTrackChanged: [(Track?) -> Void] = []
     /// Fired when the playback state changed (play/pause/buffering/failed).
     var onPlaybackStateChanged: [() -> Void] = []
+    /// Fired when a track stops being the current one — natural end,
+    /// user skip, station switch or stop — with how far into it playback
+    /// reached. The scrobbler's policy input (pithos evaluates its rule
+    /// at song-ended). Fires *before* `onTrackChanged` for the
+    /// replacement track, so "started at" timestamps stay aligned.
+    var onTrackFinished: [(Track, TimeInterval) -> Void] = []
 
     // MARK: Private state
 
@@ -104,6 +110,7 @@ final class PlayerService {
 
     /// Starts a track, queueing the next one for a gapless hand-over.
     func play(track: Track, prefetching next: Track?) {
+        finishOutgoingTrack()
         resetQueue()
         guard let item = makeItem(for: track) else {
             fail("That track isn't playable right now.")
@@ -155,6 +162,7 @@ final class PlayerService {
     /// Skip to the next track (user action).
     func skipToNext() {
         guard !slots.isEmpty else { return }
+        finishOutgoingTrack()
         player.advanceToNextItem()
         slots.removeFirst()
         if let next = slots.first {
@@ -228,6 +236,7 @@ final class PlayerService {
 
     /// Stops playback and clears the queue (sign-out, station switch).
     func stop() {
+        finishOutgoingTrack()
         resetQueue()
         currentTrack = nil
         elapsed = 0
@@ -245,6 +254,17 @@ final class PlayerService {
     private func resetQueue() {
         player.removeAllItems()
         slots.removeAll()
+    }
+
+    /// Reports the outgoing track and the reached position to the
+    /// `onTrackFinished` observers (scrobbling), before any queue or
+    /// current-track change. The 0.5 s time-observer granularity of
+    /// `elapsed` is close enough for the policy's thresholds.
+    private func finishOutgoingTrack() {
+        guard let outgoing = currentTrack else { return }
+        for observer in onTrackFinished {
+            observer(outgoing, elapsed)
+        }
     }
 
     /// Builds a player item for a track, with buffer tuning for a fast,
@@ -409,6 +429,7 @@ final class PlayerService {
         guard let endedID, let first = slots.first,
               ObjectIdentifier(first.item) == endedID else { return }
         // The queue advanced on its own — adopt the next slot.
+        finishOutgoingTrack()
         slots.removeFirst()
         onTrackEnded?()
         if let next = slots.first {

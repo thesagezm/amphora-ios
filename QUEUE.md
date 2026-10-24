@@ -115,7 +115,38 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Last.fm core, PandoraCore):** scrobbling protocol for
+**(this push — Last.fm app integration, the unit that makes it real):**
+
+- **`Amphora/Player/Scrobbler.swift` (new)** — @Observable @MainActor
+  engine owned by `AppStore`. Holds the session state
+  (`.signedOut` / `.signedIn(name)` / `.needsAuth` — the Last.fm-9
+  dead-key state), the Keychain-backed session (`LastFmSession` JSON,
+  account `lastfm.session`; the password is never stored), the enable
+  flag (persisted via `Preferences.scrobblingEnabled`), and the pithos
+  hooks: `nowPlaying(track)` at track start, `scrobbleIfEarned(track:
+  reachedPosition: startedAt:)` at track stop. All Last.fm failures
+  only log — scrobbling never disturbs playback (Priority 1); error 9
+  additionally disables and asks for re-auth from Settings.
+- **`PlayerService.onTrackFinished` (new)** — fires at the four points
+  where a track stops being current (natural end, skip, station
+  switch, stop) with the reached position, *before* the replacement
+  track's `onTrackChanged`, so `trackStartedAt` stays the outgoing
+  track's start (Last.fm wants the start timestamp).
+- **`AppStore`** — owns the scrobbler, sets `trackStartedAt` in
+  `onTrackChanged`, routes `onTrackFinished` → `scrobbleIfEarned`;
+  intents `authenticateLastFm` / `signOutLastFm` /
+  `setScrobblingEnabled` (the last two persist the preference).
+- **`SettingsSheet` (new, Stations toolbar gear)** — theme-styled
+  (card rows, dark floor): connect form (username + SecureField
+  password, spinner, typed error copy), "Scrobble to Last.fm" toggle,
+  "Signed in as X" row, Sign Out; needsAuth shows the re-auth prompt.
+  Footer explains the scrobble rule in user terms.
+- Local checks: `Scrobbler.swift` **-typecheck**s clean under
+  `swift -swift-version 6` on Linux (against the built PandoraCore
+  module, with KeychainStore/AppLog stubs); all six touched app files
+  parse-clean. PandoraCore untouched in this push.
+
+**(previous push — Last.fm core, PandoraCore):** scrobbling protocol for
 user request 2026-10-24 item 3. New `LastFm.swift`:
 `LastFmSigning.signature` (params sorted by name, `<name><value>`
 concatenated, secret appended, MD5 lowercase hex; `format`/`callback`
@@ -690,14 +721,9 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. **Last.fm app integration** — settings (enable toggle,
-   username/password in Keychain, sign-out), scrobble triggers hooked
-   into the track lifecycle (now-playing at track start; scrobble at
-   track end/skip per `ScrobblePolicy` — needs the ending track's
-   reached-position from `PlayerService`), auth-error surfacing
-   (error 9 → re-authenticate). Core landed this push (213/213).
-2. Verify the Last.fm core push green (Core Tests + iOS Build).
-   Repair first if red.
+1. Verify the Last.fm integration push green (Core Tests + iOS
+   Build). Repair first if red — SettingsSheet's SwiftUI surface is
+   the CI-only risk in this unit.
 3. **User device test of the crash-fix IPA** — the critical one: play a
    station >60 s **with the lock screen visible showing artwork** (crash-1
    path: the trap fired when the system rendered lock-screen art), skip a
