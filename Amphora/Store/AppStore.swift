@@ -402,6 +402,14 @@ final class AppStore {
         }
     }
 
+    /// The station to feature on Home: the one playing now, else the
+    /// last played on this install, nil before the first play.
+    var featuredStation: Station? {
+        if let currentStation { return currentStation }
+        guard let id = preferences.lastStationId else { return nil }
+        return stations.first { $0.id == id }
+    }
+
     // MARK: Stations
 
     /// Fetches `user.getStationList` (M2). Fire-and-forget via the intent;

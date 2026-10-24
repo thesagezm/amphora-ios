@@ -234,15 +234,21 @@ extension View {
     /// Draws one List row as a soft rounded surface card — Amphora's
     /// list language everywhere (stations, history, bookmarks, search
     /// results). Fill only, no stroke: structure comes from the surface
-    /// tone against the floor, never from a hard border.
-    func amphoraCardRow() -> some View {
+    /// tone against the floor, never from a hard border. `tinted` marks
+    /// an active row (e.g. the playing station) with a matte accent
+    /// wash.
+    func amphoraCardRow(tinted: Bool = false) -> some View {
         listRowSeparator(.hidden)
             .listRowInsets(
                 EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
             )
             .listRowBackground(
                 RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
-                    .fill(Theme.surface)
+                    .fill(
+                        tinted
+                            ? AnyShapeStyle(Theme.accent.opacity(0.14))
+                            : AnyShapeStyle(Theme.surface)
+                    )
                     .padding(.vertical, 5)
             )
     }

@@ -131,7 +131,28 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — UI unit 1 of 3: theme system + tab restructure + full
+**(this push — UI unit 2 of 3: Home hero + gentle station cards):**
+feedback items 2 + 6.
+
+- **`StationsView` hero** — the last-played (or playing) station as
+  the landing centerpiece: large centered artwork (max 240 pt, radius
+  L, black depth + accent glow shadows), name + "Now playing"/"Last
+  played" caption, and a big accent play/pause circle (`Theme.
+  accentGlyph` icon). Tap plays/toggles the station. Hidden before
+  the first-ever play (browse row leads until then). New AppStore
+  accessor `featuredStation` (current station, else
+  `preferences.lastStationId`, nil before first play).
+- **Gentle station cards** — `amphoraCardRow(tinted:)`: the playing
+  station's card washes in a matte accent tint (accent at 14% over the
+  floor — a shade, not a border) and its name renders in the accent;
+  every other card stays a plain matte surface. Browse row got an
+  accent-tinted rounded icon tile instead of a bare glyph; the error
+  banner lost its stroke.
+- Local checks: all three touched files parse-clean in Docker;
+  PandoraCore untouched (214/214 stands).
+- Next: Unit 3 — the Apple-Music-style player (see feedback item 4).
+
+**(previous push — UI unit 1, `259491f`: theme system + tabs + full
 Settings):** the Settings/appearance foundation of the 2026-10-24
 beautify round.
 

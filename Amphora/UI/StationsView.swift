@@ -1,10 +1,12 @@
 import PandoraCore
 import SwiftUI
 
-/// M2 station list: the signed-in screen. Rows show artwork, name, and
-/// badges (QuickMix / thumbprint / shared). Sorting: QuickMix pinned first,
-/// then case-insensitive name with id as a tiebreak for stable order.
-/// No networking here — intents only (`refreshStations`).
+/// The Home tab: the last-played station as a large centered hero
+/// (user request 2026-10-24), then the browse row and the station list.
+/// Rows show artwork, name, and badges (QuickMix / thumbprint /
+/// shared); the playing station's card washes in the accent. Sorting:
+/// QuickMix pinned first, then the stored order, then A–Z. No
+/// networking here — intents only (`refreshStations`).
 struct StationsView: View {
     @Environment(AppStore.self) private var store
 
@@ -122,20 +124,22 @@ struct StationsView: View {
 
     private var list: some View {
         List {
+            hero
             browseRow
                 .amphoraCardRow()
             ForEach(store.stations) { station in
+                let isCurrent = store.currentStation?.id == station.id
                 Button {
                     store.send(.playStation(station))
                 } label: {
                     StationRow(
                         station: station,
-                        isCurrent: store.currentStation?.id == station.id,
-                        isPlaying: store.currentStation?.id == station.id && store.player.isPlaying
+                        isCurrent: isCurrent,
+                        isPlaying: isCurrent && store.player.isPlaying
                     )
                 }
                 .buttonStyle(.plain)
-                .amphoraCardRow()
+                .amphoraCardRow(tinted: isCurrent)
                 .contextMenu {
                     // QuickMix is an aggregator — Pandora offers it no
                     // listening modes to tune.
@@ -183,6 +187,60 @@ struct StationsView: View {
         }
     }
 
+    /// The last-played (or playing) station, large and centered — the
+    /// landing page's centerpiece. Hidden until something has played.
+    @ViewBuilder
+    private var hero: some View {
+        if let station = store.featuredStation {
+            let isPlaying = store.currentStation?.id == station.id && store.player.isPlaying
+            VStack(spacing: 16) {
+                CachedArtwork(
+                    urlString: station.artUrl,
+                    cornerRadius: Theme.radiusL,
+                    fallbackSystemImage: station.isQuickMix ? "shuffle" : "music.note.list"
+                )
+                .aspectRatio(1, contentMode: .fit)
+                .frame(maxWidth: 240)
+                .frame(maxWidth: .infinity)
+                .shadow(color: .black.opacity(0.40), radius: 22, y: 10)
+                .shadow(color: Theme.accent.opacity(0.16), radius: 36, y: 10)
+
+                VStack(spacing: 4) {
+                    Text(station.name)
+                        .font(.title3.weight(.bold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                    Text(isPlaying ? "Now playing" : "Last played")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 24)
+
+                Button {
+                    Haptics.light()
+                    store.send(.playStation(station))
+                } label: {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Theme.accentGlyph)
+                        .frame(width: 58, height: 58)
+                        .background(Theme.accent, in: Circle())
+                        .shadow(color: Theme.accent.opacity(0.35), radius: 14, y: 5)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    isPlaying ? "Pause \(station.name)" : "Play \(station.name)"
+                )
+            }
+            .padding(.top, 6)
+            .padding(.bottom, 14)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowBackground(Color.clear)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
     /// Landing-page entry to Pandora's featured stations (user request:
     /// "landing page only shows my stations … popular pandora created
     /// main stations as well"). Opens `BrowseStationsSheet`.
@@ -191,10 +249,14 @@ struct StationsView: View {
             isBrowsingStations = true
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: "radio.fill")
-                    .font(.body)
-                    .foregroundStyle(.tint)
-                    .frame(width: 52)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.accent.opacity(0.15))
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: "radio.fill")
+                            .font(.body)
+                            .foregroundStyle(Theme.accent)
+                    )
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Browse Pandora Stations")
@@ -241,10 +303,6 @@ struct StationsView: View {
             RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
                 .fill(Theme.surface)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous)
-                .strokeBorder(Theme.stroke)
-        )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .accessibilityAddTraits(.isStaticText)
@@ -287,11 +345,12 @@ private struct StationRow: View {
                     if station.isQuickMix {
                         Image(systemName: "shuffle")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(Theme.accent)
                             .accessibilityHidden(true)
                     }
                     Text(station.name)
                         .font(.body.weight(.medium))
+                        .foregroundStyle(isCurrent ? Theme.accent : Color.primary)
                         .lineLimit(1)
                 }
                 if let caption = badgeCaption {
