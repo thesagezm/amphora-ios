@@ -78,10 +78,30 @@ final class NowPlayingService {
             return
         }
         AppLog.info("lock screen artwork applied (\(Int(image.size.width))×\(Int(image.size.height)))", .playback)
-        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        let artwork = Self.lockScreenArtwork(for: image)
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyArtwork] = artwork
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// MediaPlayer invokes an artwork request handler on its own internal
+    /// dispatch queue (never the main actor) whenever the system renders
+    /// the lock screen. A closure formed inside a @MainActor method
+    /// inherits that isolation, and Swift 6's dynamic isolation check
+    /// (`dispatch_assert_queue`) then traps at runtime when MediaPlayer
+    /// calls it off-main — SIGTRAP seconds after playback starts. Built
+    /// here, in a nonisolated context, the handler carries no isolation;
+    /// `UIGraphicsImageRenderer` is thread-safe so scaling off-main is
+    /// fine.
+    private nonisolated static func lockScreenArtwork(for image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { @Sendable requestedSize in
+            guard requestedSize.width > 0, requestedSize.width < image.size.width else {
+                return image
+            }
+            return UIGraphicsImageRenderer(size: requestedSize).image { _ in
+                image.draw(in: CGRect(origin: .zero, size: requestedSize))
+            }
+        }
     }
 
     private func updatePlaybackState() {

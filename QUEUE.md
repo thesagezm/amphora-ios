@@ -11,7 +11,46 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
-**2026-10-23 station-tuning request (this session's driver):**
+**2026-10-24 device report (this session's driver) — "DIAGNOSE CRASH AND
+FIX":** the app crashed repeatedly on the phone (signal 5). Two Apple
+crash reports + Amphora logs pasted; both signatures diagnosed:
+
+1. **Playback crash — deterministic, ours, fixed this push.** Faulting
+   thread (thread 9, `*/accessQueue`): `-[MPMediaItemArtwork
+   jpegDataWithSize:]` → our requestHandler → `_swift_task_
+   checkIsolatedSwift` → `dispatch_assert_queue` → brk #1. The artwork
+   handler closure was formed inside a @MainActor method
+   (`NowPlayingService.applyArtwork`), so Swift 6 attached a MainActor
+   isolation check to it; MediaPlayer invokes artwork handlers on its
+   own internal queue whenever the system renders the lock screen →
+   the check fails → SIGTRAP. Matches the logs perfectly: crash hits
+   right after "lock screen artwork applied", seconds into playback.
+   Fix: the handler is now built in a `nonisolated static` helper
+   (`lockScreenArtwork(for:)`), explicitly `@Sendable`, and scales the
+   image to the requested size via `UIGraphicsImageRenderer`
+   (thread-safe). Audited every other framework callback we register —
+   remote commands (invoked on main), AVPlayer periodic time observer
+   (`queue: .main`), all NotificationCenter observers (`queue: .main`),
+   KVO (extract-value-then-`Task { @MainActor }`) — the artwork handler
+   was the only one invoked off-main.
+2. **Launch crash — one occurrence, ~13 s after launch, main thread,
+   iOS 27.0 (24A437).** `_TaskValueModifier.Child.value.getter` →
+   `InnerModifier.taskState.init` → `type metadata accessor for State`
+   → data abort inside SwiftUI/AttributeGraph — no Amphora frames.
+   `_TaskValueModifier` is the backing modifier of `.task(id:)`; the
+   app had two sites, `CachedArtwork` (the launch path — every station
+   row / history row / mini player) and `AddStationView`'s debounce.
+   Both are now `.onAppear`/`.onChange` + an owned `@State` task
+   (identical restart/cancel semantics), so the app contains **no
+   `_TaskValueModifier` at all**. If this crash recurs after this push
+   it is OS-side (iOS 27.0 SwiftUI metadata bug) and we say so.
+3. Non-crash from the same logs: one artwork URL failed TLS
+   (-1200) on `mediaserver-cont-dc6-1-v4v6.pandora.com` — the
+   candidate-fallback worked (a sibling CDN URL loaded fine); lyrics
+   lookup/translation behaved as designed; station modes worked on
+   device (8 modes offered, "Crowd Faves" set).
+
+**2026-10-23 station-tuning request (prior session's driver):**
 
 > "there is an app called panedora… which has the ability to customise
 > the station i.e deep cuts etc… is there anyway to allow the tuning of
@@ -51,7 +90,24 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app icon):** Amphora now has an app icon. Generated, not
+**(this push — crash repair from the 2026-10-24 device report):**
+
+- `NowPlayingService`: artwork handler now built in `nonisolated static
+  lockScreenArtwork(for:)` with a `@Sendable` closure (scales to the
+  requested size via `UIGraphicsImageRenderer`) — no MainActor
+  isolation attached, so MediaPlayer calling it on its own queue no
+  longer trips Swift 6's dynamic isolation check. **This was the
+  deterministic "crashes seconds into playback" bug.**
+- `CachedArtwork` + `AddStationView`: all `.task(id:)` removed
+  (`.onAppear`/`.onChange` + owned `@State` task, identical restart +
+  cancel-on-disappear semantics) — the app now contains no
+  `_TaskValueModifier`, the modifier that trapped in SwiftUI metadata
+  instantiation at launch on iOS 27.0.
+- All three changed files parse-clean in Docker (`swiftc -parse`);
+  PandoraCore **untouched** by this commit — the in-flight ad work
+  (see Pending Queue item 3) stays uncommitted in the working tree.
+
+**(previous push — app icon):** Amphora now has an app icon. Generated, not
 hand-drawn: `Tools/gen_appicon.py` (pure Pillow, committed for
 regeneration) draws at 4096² and downsamples to the required 1024²
 opaque RGB PNG at
@@ -283,24 +339,26 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 
 ## Pending Queue
 
-1. Verify this push green (Core Tests + iOS Build). Repair first if red.
-2. **User device test of the latest IPA** — the critical one: play a
-   station for >30 s (crash?), song artwork in mini player + full player,
-   tab switching with the mini player (full-player sheet now survives
-   tab switches), lyrics panel (quote-bubble toggle — synced scroll,
-   tap-to-seek, translation under non-English lines), **Tune Station
-   (slider icon in the full player): modes load, picking Deep Cuts
-   starts a new song from the tuned station, QuickMix shows "no tuning
-   options"**, Tune Station from the **station list** (long-press →
-   "Tune Station…" — background tune, no song restart), **check the new
-   app icon installs on the home screen**, then **open Diagnostics
-   (stethoscope, Stations toolbar) → Copy → paste the log** if anything
-   is still wrong. If the app crashed and relaunched, the "Last crash"
-   section is already filled in.
-3. Ad-entry handling (free accounts hit ads in every playlist; check
-   what happens when an `adToken` entry reaches playback — resolve via
-   `ad.getAdMetadata`/`ad.registerAd` per pydora, or skip cleanly) —
-   functionality, so it outranks the beautify pass.
+1. Verify the crash-repair push green (Core Tests + iOS Build). Repair
+   first if red.
+2. **User device test of the crash-fix IPA** — the critical one: play a
+   station >60 s **with the lock screen visible showing artwork** (crash-1
+   path: the trap fired when the system rendered lock-screen art), skip a
+   few tracks, background/foreground, then force-quit and relaunch a few
+   times (crash-2 path); also re-check search-add (AddStation debounce
+   was rewritten) and artwork in station list / history / mini player.
+   If anything still crashes, Diagnostics → Copy → paste the log (the
+   Apple crash report too, if it appears).
+3. **Ad handling — in flight, uncommitted in the working tree** (started
+   by a prior session): `Advertisement.swift` + `AdvertisementTests`,
+   `JSONValue.array` case, `ad.getAdMetadata`/`ad.registerAd` endpoint
+   constants, Playlist keeps ad stubs (entries with `title` instead of
+   `songName`, per pydora `AdItem`). Docker `swift test` state: **being
+   verified this session** (first run hit a stale-`.build` PCH path
+   error — `/pkg` vs `/src` mount mismatch, root-owned files; fixed by
+   wiping `.build` inside the container). If green: review, finish the
+   SessionManager/player integration, commit as its own unit. If red:
+   repair or discard.
 4. Beautify pass (theme, typography, gradients).
 5. Session-expiry surfacing (protocol notes at the bottom).
 

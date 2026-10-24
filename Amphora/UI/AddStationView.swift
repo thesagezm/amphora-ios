@@ -3,13 +3,14 @@ import SwiftUI
 
 /// Add-station sheet (M2): search field → results → tap a row to create a
 /// station from its `musicToken` (pithos SearchDialog + add_station flow).
-/// Debounce lives in `.task(id:)`; policy (min query length, scoring) lives
-/// in `AppStore`/`PandoraCore` — this view only dispatches intents.
+/// Debounce lives in `scheduleSearch()`; policy (min query length, scoring)
+/// lives in `AppStore`/`PandoraCore` — this view only dispatches intents.
 struct AddStationView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
+    @State private var searchTask: Task<Void, Never>?
 
     /// Recent keystrokes clear stale results before the debounce fires.
     private var trimmedQuery: String {
@@ -29,20 +30,38 @@ struct AddStationView: View {
                 }
         }
         .searchable(text: $query, prompt: "Artists, songs, genres")
-        .task(id: query) {
-            // Restart the debounce on every keystroke (task id = query).
-            guard trimmedQuery.count >= 2 else {
-                store.send(.searchStations(query: trimmedQuery))
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else { return }
-            store.send(.searchStations(query: trimmedQuery))
+        .onAppear {
+            scheduleSearch()
+        }
+        .onChange(of: query) {
+            scheduleSearch()
+        }
+        .onDisappear {
+            searchTask?.cancel()
         }
         .onChange(of: store.stationCreatedTick) {
             // The station landed — close the sheet (fire-and-forget intent
             // can't return success, so the tick is the signal).
             dismiss()
+        }
+    }
+
+    /// Debounce: restart the 350 ms timer on every keystroke. (Was
+    /// `.task(id: query)` — the app avoids `.task(id:)` because its
+    /// backing modifier, `_TaskValueModifier`, trapped inside SwiftUI's
+    /// type-metadata instantiation during launch on iOS 27.0; see
+    /// `CachedArtwork`.)
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        let searchQuery = trimmedQuery
+        guard searchQuery.count >= 2 else {
+            store.send(.searchStations(query: searchQuery))
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            store.send(.searchStations(query: searchQuery))
         }
     }
 
