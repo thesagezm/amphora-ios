@@ -161,6 +161,13 @@ anything that could identify the machine is removed. Done:
   a deliberate ref-reindex nudge (new HEAD on main). If the web view is
   still 500 after this push, next step is a GitHub support ticket;
   cloning, `git fetch`, the API, releases, and CI are unaffected.
+  **Outcome: fixed —** the web view (home/tree/blob) came back within a
+  minute of this push; the release asset widget serves
+  `Amphora-v0.1.0-unsigned.ipa` from `/releases/expanded_assets/v0.1.0`
+  and the direct download link returns 200. Lesson: after a mass
+  history rewrite + visibility flip, pace the follow-up operations; if
+  web views 500 while the API serves, a fresh commit re-seeds the refs
+  index.
 
 **(this push — UI unit 4: browse sheet joins the card language):**
 the one surface the card pass missed. `BrowseStationsSheet`: theme
