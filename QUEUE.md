@@ -411,6 +411,60 @@ mini-player); lyrics core `5ef40ab`.
 workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
 `GoogleTranslateClient`, 24 tests — **nothing calls it yet**.
 
+## Session handover (2026-10-24, icon+ads session)
+
+**State:** everything pushed and green — `a613a07` (app icon), `d362f29`
+(ad core, 179/179 Docker), `690ce9a` (ad app wiring), `ef94166`
+(session-expiry surfacing + prefetch retry). iOS Build ✅ on every push;
+Core Tests ✅ (or in-progress-on-green-path at handover). Working tree
+clean at handover.
+
+**ASSIGNED ELSEWHERE: the beautify pass (theme/typography/gradients) is
+another agent's unit — do NOT start it here.** Survey finding that may
+help that agent: theming is nearly nonexistent by design so far — one
+`Color.primaryBackground` in `RootView.swift:39-41`, everything else is
+semantic system styles (`.secondary`/`.tertiary`, materials); a
+`Theme.swift` consolidation + violet→gold accent echoing the app icon is
+the obvious first slice.
+
+**Pending Queue at handover:**
+1. Device test of the latest IPA (the gating item; list below).
+2. Beautify pass — OTHER AGENT owns it.
+3. Ad handling follow-ups (only if the device test shows ads behaving
+   oddly): audio ad length is unknown to the UI (duration 0 → disabled
+   scrubber by design); `Advertisement.clickThroughURL` is decoded but
+   unused (no external-open in a LiveContainer app anyway).
+
+**Device-test checklist (accumulated):** play >30 s (lock-screen
+artwork SIGTRAP + `.task(id:)` launch traps were fixed in `0c7bd99`),
+song artwork everywhere, tab switching, lyrics panel, Tune Station
+(player + station list), new app icon on the home screen, ads: expect
+a yellow ADVERTISEMENT badge, no skip, no feedback controls, history
+excludes ads. If anything breaks: Diagnostics (stethoscope, Stations
+toolbar) → Copy → paste.
+
+**Traps learned this session (still apply):**
+- Docker `swift test`: if `.build` was written by a container at a
+  different mount path, PCH errors (`/src` vs `/pkg`) — wipe via a
+  container (`docker run … rm -rf .build`), the dir is root-owned so
+  host `rm` fails.
+- Same-scope shadowing (`let x = try XCTUnwrap(x)`) is a redeclaration
+  error in tests — write it correctly the first time.
+- Icon generator (`Tools/gen_appicon.py`): never build gradients via
+  `rotate()`/`paste()` of gradient tiles (border seams); analytic
+  per-pixel maps at 512² upscaled are seamless.
+- `JSONValue` now has `.array([JSONValue])` — first array param was
+  `ad.registerAd`'s `adTrackingTokens`; exact-byte encoder tests must
+  stay green.
+- A parallel session may be active in this repo: check `git status`
+  before every commit and commit only your own files (this session
+  found the crash-fix trio mid-tree and left it alone).
+- pydora ad protocol (source-verified this session): playlist ad
+  entries are stubs; `ad.getAdMetadata`
+  (`returnAdTrackingTokens=true`, `supportAudioAds=true`) → register
+  via `ad.registerAd` with the reply's tracking tokens; pithos has no
+  ad handling at all.
+
 ## Pending Queue
 
 1. Verify the crash-repair push green (Core Tests + iOS Build). Repair
