@@ -51,7 +51,28 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — repair of the list-tuning push):** iOS Build on `3f8389b`
+**(this push — app icon):** Amphora now has an app icon. Generated, not
+hand-drawn: `Tools/gen_appicon.py` (pure Pillow, committed for
+regeneration) draws at 4096² and downsamples to the required 1024²
+opaque RGB PNG at
+`Amphora/Assets.xcassets/AppIcon.appiconset/AppIcon.png`. Design (user
+direction: "add something musical… polish/shine it a bit more…
+curved/rounded look nice"): dark violet→near-black diagonal background,
+soft amber glow, gold amphora (Catmull-Rom lathe profile +
+stamped-spline handles) **with a beamed eighth-note pair + single
+eighth note floating out of the mouth, sound-ripple arcs, sparkles**;
+polish = specular spot, lip rim-light, warm ground bounce, corner
+vignette, final Sharpness/Contrast/Color pass. Every element is
+round-capped (no sharp corners); PNG stays full-bleed square because
+iOS applies its own rounded-squircle mask. `project.yml`:
+`ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon` (was `""`); Contents.json
+uses the Xcode 14+ single-size (universal/1024) format — fine on the
+Xcode 16.4 CI. Traps fixed during render: never build gradients with
+`rotate()`/`paste()` of gradient tiles (border seams); notes need fat
+stems/beams (r≈0.034 local units) to survive downscale. PandoraCore
+untouched.
+
+**(previous push — repair of the list-tuning push):** iOS Build on `3f8389b`
 was red with one error — `TuneStationSheet.swift:80` still sent the old
 `.setStationMode(mode)` shape after the intent grew the `for:` station
 parameter (the row button's call site was missed; the retry/task sites
@@ -271,13 +292,17 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
    (slider icon in the full player): modes load, picking Deep Cuts
    starts a new song from the tuned station, QuickMix shows "no tuning
    options"**, Tune Station from the **station list** (long-press →
-   "Tune Station…" — background tune, no song restart), then **open
-   Diagnostics (stethoscope, Stations toolbar) → Copy → paste the log**
-   if anything is still wrong. If the app crashed and relaunched, the
-   "Last crash" section is already filled in.
-3. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
+   "Tune Station…" — background tune, no song restart), **check the new
+   app icon installs on the home screen**, then **open Diagnostics
+   (stethoscope, Stations toolbar) → Copy → paste the log** if anything
+   is still wrong. If the app crashed and relaunched, the "Last crash"
+   section is already filled in.
+3. Ad-entry handling (free accounts hit ads in every playlist; check
+   what happens when an `adToken` entry reaches playback — resolve via
+   `ad.getAdMetadata`/`ad.registerAd` per pydora, or skip cleanly) —
+   functionality, so it outranks the beautify pass.
 4. Beautify pass (theme, typography, gradients).
-5. Session-expiry surfacing + ad handling (protocol notes at the bottom).
+5. Session-expiry surfacing (protocol notes at the bottom).
 
 **FIRST ACTION next session:** `gh run list --limit 5`. If red, read the
 failure summary annotation and repair before any new unit.
