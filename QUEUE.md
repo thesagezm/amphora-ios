@@ -146,6 +146,16 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
   module, with KeychainStore/AppLog stubs); all six touched app files
   parse-clean. PandoraCore untouched in this push.
 
+**(repair push — `12b682b`, iOS Build was red on the integration push):**
+`AppStore.swift:157` — `private var trackStartedAt = Date()` with no
+`import Foundation`. On Linux, PandoraCore's built module re-exports
+Foundation, so both the Docker typecheck and `swift test` passed; the
+macOS CI toolchain does not re-export it. AppStore now imports
+Foundation explicitly (every other touched file already did).
+**Trap for the memory:** app-target files that gain direct Foundation
+symbol uses need their own `import Foundation` even though local
+Linux checks pass — the core package's re-export hides it.
+
 **(previous push — Last.fm core, PandoraCore):** scrobbling protocol for
 user request 2026-10-24 item 3. New `LastFm.swift`:
 `LastFmSigning.signature` (params sorted by name, `<name><value>`
@@ -753,9 +763,10 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. Verify the Last.fm integration push green (Core Tests + iOS
-   Build). Repair first if red — SettingsSheet's SwiftUI surface is
-   the CI-only risk in this unit.
+1. Verify the import-Foundation repair green (Core Tests + iOS
+   Build). Repair first if red — anything left after the Date fix
+   would be SettingsSheet's SwiftUI surface (the other CI-only risk
+   in the Last.fm unit).
 3. **User device test of the crash-fix IPA** — the critical one: play a
    station >60 s **with the lock screen visible showing artwork** (crash-1
    path: the trap fired when the system rendered lock-screen art), skip a
