@@ -26,8 +26,10 @@ final class AppStore {
         case togglePlayback
         case skipToNext
         case refreshLyrics
-        case loadStationModes
-        case setStationMode(StationMode)
+        /// nil = the currently playing station (player path); a station
+        /// value tunes from the list without touching playback.
+        case loadStationModes(Station?)
+        case setStationMode(StationMode, for: Station?)
         case rateCurrentTrack(FeedbackRating)
         case removeCurrentRating
         case sleepCurrentTrack
@@ -89,6 +91,9 @@ final class AppStore {
     /// Listening modes for the current station ("Tune your station") —
     /// nil until first fetched for this station.
     private(set) var stationModes: StationModes?
+    /// Which station `stationModes` describes (the sheet may tune a
+    /// station other than the playing one).
+    private var modesStationId: String?
     private(set) var isLoadingModes = false
     private(set) var isChangingMode = false
     /// Bumped after a successful mode change — the tuning sheet's
@@ -226,10 +231,10 @@ final class AppStore {
             player.skipToNext()
         case .refreshLyrics:
             loadLyrics(for: player.currentTrack, force: true)
-        case .loadStationModes:
-            Task { await loadStationModes() }
-        case .setStationMode(let mode):
-            Task { await setStationMode(mode) }
+        case .loadStationModes(let station):
+            Task { await loadStationModes(station) }
+        case .setStationMode(let mode, let station):
+            Task { await setStationMode(mode, for: station) }
         case .rateCurrentTrack(let rating):
             Task { await rateCurrentTrack(rating) }
         case .removeCurrentRating:
@@ -386,6 +391,7 @@ final class AppStore {
             currentStation = station
             // A different station invalidates the cached listening modes.
             stationModes = nil
+            modesStationId = nil
             queuedTrackTokens = Set(playable.map(\.trackToken))
             preferences.lastStationId = station.id
             preferencesStore.save(preferences)
@@ -572,18 +578,19 @@ final class AppStore {
 
     // MARK: Station tuning (listening modes)
 
-    /// Fetches the current station's listening modes ("Tune your
-    /// station" — My Mix / Deep Cuts / …). The sheet refreshes on open,
-    /// so the shown current mode is never stale.
-    private func loadStationModes() async {
-        guard let station = currentStation, !isLoadingModes, !isChangingMode else { return }
+    /// Fetches a station's listening modes ("Tune your station" — My
+    /// Mix / Deep Cuts / …). The sheet refreshes on open, so the shown
+    /// current mode is never stale. nil = the currently playing station.
+    private func loadStationModes(_ station: Station?) async {
+        guard let target = station ?? currentStation, !isLoadingModes, !isChangingMode else { return }
         isLoadingModes = true
         defer { isLoadingModes = false }
         do {
-            let modes = try await session.getStationModes(for: station)
+            let modes = try await session.getStationModes(for: target)
             stationModes = modes
+            modesStationId = target.id
             AppLog.info(
-                "station modes: \(modes.modes.count) offered for \"\(station.name)\"",
+                "station modes: \(modes.modes.count) offered for \"\(target.name)\"",
                 .playback
             )
         } catch {
@@ -592,24 +599,37 @@ final class AppStore {
         }
     }
 
-    /// Selects a listening mode, then starts a fresh playlist —
-    /// "changing modes starts a new song" (panedora's warning; the
-    /// already-queued tracks belong to the previous mode).
-    private func setStationMode(_ mode: StationMode) async {
-        guard let station = currentStation, !isChangingMode else { return }
+    /// Selects a listening mode. When the tuned station is the one
+    /// playing, starts a fresh playlist — "changing modes starts a new
+    /// song" (panedora's warning; the already-queued tracks belong to
+    /// the previous mode). Tuning a background station takes effect the
+    /// next time it plays.
+    private func setStationMode(_ mode: StationMode, for station: Station?) async {
+        guard let target = station ?? currentStation, !isChangingMode else { return }
         isChangingMode = true
         defer { isChangingMode = false }
         do {
+            // previousModeId only counts when the cached modes describe
+            // this same station.
+            let previous = modesStationId == target.id ? stationModes?.currentModeID : nil
             let updated = try await session.setStationMode(
                 mode,
-                for: station,
-                previousModeID: stationModes?.currentModeID
+                for: target,
+                previousModeID: previous
             )
             stationModes = updated
+            modesStationId = target.id
             stationModeChangedTick += 1
-            showConfirmation("Tuned to \(mode.name)")
-            AppLog.info("station mode set: \(mode.name) on \"\(station.name)\"", .playback)
-            await restartWithNewPlaylist(station)
+            if currentStation?.id == target.id, player.currentTrack != nil {
+                showConfirmation("Tuned to \(mode.name)")
+                AppLog.info("station mode set: \(mode.name) on \"\(target.name)\"", .playback)
+                await restartWithNewPlaylist(target)
+            } else {
+                AppLog.info(
+                    "station mode set for next play: \(mode.name) on \"\(target.name)\"",
+                    .playback
+                )
+            }
         } catch {
             AppLog.error("station mode \(mode.name) failed: \(String(describing: error))", .playback)
             lastErrorMessage = Self.userMessage(for: error)

@@ -4,9 +4,12 @@ import SwiftUI
 /// "Tune your station": Pandora's listening modes (My Mix / Deep Cuts /
 /// Crowd Faves / Discovery …). Free accounts can select every mode
 /// Pandora marks available; the premium-only mode is shown disabled.
-/// A successful change starts a new song (the store refetches the
-/// playlist), so the sheet dismisses itself on the change tick.
+/// Opened from the full player (`station: nil` → the playing station —
+/// a successful change starts a new song) and from the station list's
+/// context menu (tunes that station for its next play). Either way the
+/// sheet dismisses itself on the change tick.
 struct TuneStationSheet: View {
+    let station: Station?
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -31,7 +34,7 @@ struct TuneStationSheet: View {
                     } description: {
                         Text(message)
                     } actions: {
-                        Button("Retry") { store.send(.loadStationModes) }
+                        Button("Retry") { store.send(.loadStationModes(station)) }
                     }
                 } else {
                     ProgressView()
@@ -46,7 +49,7 @@ struct TuneStationSheet: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { store.send(.loadStationModes) }
+        .task { store.send(.loadStationModes(station)) }
         .onChange(of: store.stationModeChangedTick) {
             dismiss()
         }

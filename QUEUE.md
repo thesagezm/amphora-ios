@@ -51,7 +51,21 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — station-tuning UI, app target):**
+**(this push — Tune Station from the station list):** the intents now
+carry the station (`loadStationModes(Station?)` /
+`setStationMode(_:for:)`, nil = the playing one), so the sheet also
+opens from a **"Tune Station…" context-menu row on the station list**
+(hidden for QuickMix — an aggregator has no modes). Tuning a
+non-playing station updates Pandora's per-station mode for its next
+play and does **not** touch the current playlist; the
+`previousModeId` is only sent when the cached modes describe the same
+station (`modesStationId`). The prior push (`55ad967`) went fully
+green — **Core Tests ✅ / iOS Build ✅ (40057734767 / 40057734776)** —
+after the units-B/C repair; a fresh IPA is uploaded. Files touched:
+`AppStore`, `TuneStationSheet` (`station:` param), `NowPlayingView`,
+`StationsView`; parse-clean in Docker.
+
+**(previous push — station-tuning UI, app target):**
 
 - `AppStore`: `stationModes` / `isLoadingModes` / `isChangingMode` /
   `stationModeChangedTick` state; `isSubscriber` now set from
@@ -249,10 +263,11 @@ workflows green. Lyrics core (`5ef40ab`) — LRC parser, `LRCLibClient`,
    tap-to-seek, translation under non-English lines), **Tune Station
    (slider icon in the full player): modes load, picking Deep Cuts
    starts a new song from the tuned station, QuickMix shows "no tuning
-   options"**, then **open Diagnostics (stethoscope, Stations toolbar)
-   → Copy → paste the log** if anything is still wrong. If the app
-   crashed and relaunched, the "Last crash" section is already filled
-   in.
+   options"**, Tune Station from the **station list** (long-press →
+   "Tune Station…" — background tune, no song restart), then **open
+   Diagnostics (stethoscope, Stations toolbar) → Copy → paste the log**
+   if anything is still wrong. If the app crashed and relaunched, the
+   "Last crash" section is already filled in.
 3. App icon (no asset catalog; `ASSETCATALOG_COMPILER_APPICON_NAME: ""`).
 4. Beautify pass (theme, typography, gradients).
 5. Session-expiry surfacing + ad handling (protocol notes at the bottom).

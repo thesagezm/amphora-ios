@@ -56,7 +56,7 @@ struct NowPlayingView: View {
                 SleepTimerSheet()
             }
             .sheet(isPresented: $isShowingTuning) {
-                TuneStationSheet()
+                TuneStationSheet(station: nil)
             }
         }
         .preferredColorScheme(.dark)

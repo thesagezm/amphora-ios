@@ -11,6 +11,7 @@ struct StationsView: View {
     @State private var renameTarget: Station?
     @State private var renameText = ""
     @State private var deleteTarget: Station?
+    @State private var tuningStation: Station?
     @State private var isAddingStation = false
     @State private var isEditingOrder = false
     @State private var isShowingDiagnostics = false
@@ -62,6 +63,9 @@ struct StationsView: View {
         }
         .sheet(isPresented: $isShowingDiagnostics) {
             DiagnosticsView()
+        }
+        .sheet(item: $tuningStation) { station in
+            TuneStationSheet(station: station)
         }
         .alert("Rename Station", isPresented: renameBinding) {
             TextField("Station name", text: $renameText)
@@ -139,6 +143,15 @@ struct StationsView: View {
                 .buttonStyle(.plain)
                 .listRowBackground(Color.primaryBackground.opacity(0.4))
                 .contextMenu {
+                    // QuickMix is an aggregator — Pandora offers it no
+                    // listening modes to tune.
+                    if !station.isQuickMix {
+                        Button {
+                            tuningStation = station
+                        } label: {
+                            Label("Tune Station…", systemImage: "slider.horizontal.3")
+                        }
+                    }
                     // pithos' edit dialog filters quickmix + thumbprint out
                     // of rename/delete — mirror that here.
                     if !station.isQuickMix && !station.isThumbprint {
