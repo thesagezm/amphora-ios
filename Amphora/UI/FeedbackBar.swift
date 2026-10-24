@@ -1,19 +1,20 @@
 import PandoraCore
 import SwiftUI
 
-/// Feedback row on the Now Playing screen: circular surface buttons —
-/// thumbs up, thumbs down and "hide this song" (sleep). Tapping the
-/// active rating removes it again (pithos' `Song.rate` toggles love/ban
-/// off). The active rating fills with the artwork accent.
+/// The rating row on the Now Playing screen — Apple-Music-plain: two
+/// large glyphs, no filled circles. The active rating turns the accent;
+/// tapping it removes it again (pithos' `Song.rate` toggles love/ban
+/// off). The former third button (hide-song, moon icon — the cause of
+/// the "two sleep timers" confusion) now lives in the player's
+/// ellipsis menu with a distinct ear.slash glyph.
 struct FeedbackBar: View {
     @Environment(AppStore.self) private var store
     let accent: PaletteColor
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 64) {
             ratingButton(.loved, systemImage: "hand.thumbsup", label: "Thumbs up")
             ratingButton(.banned, systemImage: "hand.thumbsdown", label: "Thumbs down")
-            sleepButton
         }
         .frame(maxWidth: .infinity)
     }
@@ -29,34 +30,13 @@ struct FeedbackBar: View {
             store.send(isActive ? .removeCurrentRating : .rateCurrentTrack(rating))
         } label: {
             Image(systemName: isActive ? "\(systemImage).fill" : systemImage)
-                .font(.title3.weight(.medium))
-                .foregroundStyle(
-                    isActive
-                        ? (accent.isLight ? Color.black.opacity(0.85) : Color.white)
-                        : Color.primary
-                )
+                .font(.title2.weight(.medium))
+                .foregroundStyle(isActive ? accent.color : Color.primary)
                 .frame(width: 52, height: 52)
-                .background(isActive ? accent.color : Theme.surface, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.stroke))
+                .contentTransition(.symbolEffect(.replace))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(label)
         .accessibilityValue(isActive ? "On" : "Off")
-    }
-
-    private var sleepButton: some View {
-        Button {
-            Haptics.light()
-            store.send(.sleepCurrentTrack)
-        } label: {
-            Image(systemName: "moon.zzz")
-                .font(.title3.weight(.medium))
-                .foregroundStyle(.primary)
-                .frame(width: 52, height: 52)
-                .background(Theme.surface, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.stroke))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Hide this song for a few hours")
     }
 }

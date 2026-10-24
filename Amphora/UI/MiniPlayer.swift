@@ -49,11 +49,12 @@ struct MiniPlayer: View {
             } label: {
                 Image(systemName: store.player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color.black.opacity(0.85))
+                    .foregroundStyle(Theme.accentGlyph.opacity(0.85))
                     .frame(width: 34, height: 34)
                     .background(Theme.accent, in: Circle())
+                    .contentTransition(.symbolEffect(.replace))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .frame(width: 44, height: 44)
             .accessibilityLabel(store.player.isPlaying ? "Pause" : "Play")
 
@@ -65,7 +66,7 @@ struct MiniPlayer: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .frame(width: 44, height: 44)
             .accessibilityLabel("Next track")
         }

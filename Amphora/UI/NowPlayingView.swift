@@ -1,11 +1,14 @@
 import PandoraCore
 import SwiftUI
 
-/// Full-screen player: ambient artwork-derived gradient, large rounded
-/// artwork, custom scrubber, transport and feedback. Every color comes
-/// from `Theme` + the artwork palette (`ArtworkThemeController`) — flat
-/// fills only, no system materials, so the Android port matches exactly.
-/// Presented from the mini-player.
+/// Full-screen player, Apple-Music-shaped: large rounded artwork, a
+/// left-aligned title block with the stream quality beside it, a thin
+/// scrubber, and a plain-glyph transport that answers every touch with
+/// a soft spring. Secondary actions (sleep timer, tuning, bookmarks,
+/// hide-song) live behind the toolbar's ellipsis menu — one sleep
+/// control, no duplicate moons. The ambient backdrop still comes from
+/// the artwork palette (`ArtworkThemeController`); every static
+/// surface is a matte palette shade, never glass.
 struct NowPlayingView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -32,6 +35,9 @@ struct NowPlayingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    actionsMenu
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isShowingLyrics.toggle()
@@ -43,26 +49,6 @@ struct NowPlayingView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        isShowingSleepTimer = true
-                    } label: {
-                        Image(systemName: store.sleepTimer.isOff ? "moon.zzz" : "moon.zzz.fill")
-                    }
-                    .accessibilityLabel(
-                        store.sleepTimer.isOff
-                            ? "Sleep timer"
-                            : "Sleep timer, \(store.sleepTimerLabel)"
-                    )
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        isShowingTuning = true
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    .accessibilityLabel("Tune station")
-                }
             }
             .sheet(isPresented: $isShowingSleepTimer) {
                 SleepTimerSheet()
@@ -72,6 +58,52 @@ struct NowPlayingView: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Every secondary action in one Apple-Music-style place. This is
+    /// also the app's only sleep-timer surface entry — the duplicate
+    /// moon icon on the main surface is gone.
+    private var actionsMenu: some View {
+        Menu {
+            Button {
+                isShowingSleepTimer = true
+            } label: {
+                Label(
+                    store.sleepTimer.isOff
+                        ? "Sleep Timer…"
+                        : "Sleep Timer (\(store.sleepTimerLabel))…",
+                    systemImage: "moon.zzz"
+                )
+            }
+            Button {
+                isShowingTuning = true
+            } label: {
+                Label("Tune Station…", systemImage: "slider.horizontal.3")
+            }
+            Divider()
+            Button {
+                Haptics.light()
+                store.send(.bookmarkCurrentSong)
+            } label: {
+                Label("Bookmark Song", systemImage: "bookmark")
+            }
+            Button {
+                Haptics.light()
+                store.send(.bookmarkCurrentArtist)
+            } label: {
+                Label("Bookmark Artist", systemImage: "person.crop.circle.badge.plus")
+            }
+            Divider()
+            Button {
+                Haptics.light()
+                store.send(.sleepCurrentTrack)
+            } label: {
+                Label("Hide This Song", systemImage: "ear.slash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .accessibilityLabel("More actions")
     }
 
     @ViewBuilder
@@ -115,7 +147,6 @@ struct NowPlayingView: View {
             transport
             if !track.isAdvertisement {
                 FeedbackBar(accent: theme.colors.accent)
-                bookmarkButtons
             }
             upNext
             confirmation
@@ -137,33 +168,59 @@ struct NowPlayingView: View {
             fallbackSystemImage: "music.note"
         )
         .aspectRatio(1, contentMode: .fit)
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radiusArtwork, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-        )
         .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
         .shadow(color: theme.colors.accent.color.opacity(0.18), radius: 40, y: 8)
         .padding(.horizontal, 28)
     }
 
+    /// Apple-Music-style block: left-aligned title, artist in the
+    /// artwork accent, album beneath, and the stream quality as a matte
+    /// chip on the trailing edge.
     private func trackHeader(_ track: Track) -> some View {
-        VStack(spacing: 6) {
-            Text(track.title)
-                .font(Font.system(.title2, design: .rounded).weight(.bold))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-            Text(track.artist)
-                .font(.headline)
-                .foregroundStyle(theme.colors.accent.color.opacity(0.9))
-                .lineLimit(1)
-            if !track.album.isEmpty {
-                Text(track.album)
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(track.title)
+                    .font(Font.system(.title3, design: .rounded).weight(.bold))
+                    .lineLimit(2)
+                Text(track.artist)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(theme.colors.accent.color.opacity(0.9))
                     .lineLimit(1)
+                if !track.album.isEmpty {
+                    Text(track.album)
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if let quality = qualityDescription(for: track) {
+                Text(quality)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(theme.colors.accent.color)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule().fill(Theme.surfaceHighlight.opacity(0.8))
+                    )
+                    .accessibilityLabel("Audio quality \(quality)")
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 28)
+    }
+
+    /// e.g. "128 kbps · MP3" — the variant the player actually streams
+    /// (`Track.preferredVariant`, always the best the account offers).
+    private func qualityDescription(for track: Track) -> String? {
+        guard let variant = track.preferredVariant else { return nil }
+        let encoding: String
+        switch variant.encoding.lowercased() {
+        case "mp3": encoding = "MP3"
+        case "aacplus": encoding = "AAC+"
+        case "aac": encoding = "AAC"
+        default: encoding = variant.encoding.uppercased()
+        }
+        return "\(variant.bitrate) kbps · \(encoding)"
     }
 
     private var scrubber: some View {
@@ -196,23 +253,25 @@ struct NowPlayingView: View {
                 .tracking(3)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(Color.yellow.opacity(0.14), in: Capsule())
+                .background(Color.yellow.opacity(0.12), in: Capsule())
         }
     }
 
+    /// Plain bold glyphs, no filled circles — the transport Apple Music
+    /// uses, with the artwork accent reserved for the scrubber and
+    /// ratings.
     private var transport: some View {
-        HStack(spacing: 32) {
+        HStack(spacing: 44) {
             Button {
                 Haptics.light()
                 store.player.skipBackward(by: 15)
             } label: {
                 Image(systemName: "gobackward.15")
-                    .font(.title3.weight(.medium))
+                    .font(.title2.weight(.medium))
                     .foregroundStyle(.primary)
-                    .frame(width: 48, height: 48)
-                    .background(Theme.surface, in: Circle())
+                    .frame(width: 52, height: 52)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .accessibilityLabel("Back 15 seconds")
 
             Button {
@@ -220,18 +279,13 @@ struct NowPlayingView: View {
                 store.send(.togglePlayback)
             } label: {
                 Image(systemName: store.player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(theme.colors.accent.isLight
-                                     ? Color.black.opacity(0.85)
-                                     : Color.white)
-                    .frame(width: 74, height: 74)
-                    .background(theme.colors.accent.color, in: Circle())
-                    .shadow(
-                        color: theme.colors.accent.color.opacity(0.35),
-                        radius: 14, y: 5
-                    )
+                    .font(.system(size: 52, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 84, height: 64)
+                    .contentTransition(.symbolEffect(.replace))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
+            .animation(.snappy(duration: 0.25), value: store.player.isPlaying)
             .accessibilityLabel(store.player.isPlaying ? "Pause" : "Play")
 
             Button {
@@ -239,51 +293,13 @@ struct NowPlayingView: View {
                 store.send(.skipToNext)
             } label: {
                 Image(systemName: "forward.fill")
-                    .font(.title3.weight(.medium))
-                    .foregroundStyle(theme.colors.accent.color)
-                    .frame(width: 48, height: 48)
-                    .background(Theme.surface, in: Circle())
+                    .font(.title2.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 52, height: 52)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .accessibilityLabel("Next track")
         }
-    }
-
-    private var bookmarkButtons: some View {
-        HStack(spacing: 16) {
-            capsuleBookmark(
-                "Song",
-                icon: "bookmark",
-                action: .bookmarkCurrentSong,
-                accessibilityLabel: "Bookmark this song"
-            )
-            capsuleBookmark(
-                "Artist",
-                icon: "person.crop.circle.badge.plus",
-                action: .bookmarkCurrentArtist,
-                accessibilityLabel: "Bookmark this artist"
-            )
-        }
-    }
-
-    private func capsuleBookmark(
-        _ title: String,
-        icon: String,
-        action: AppStore.Intent,
-        accessibilityLabel: String
-    ) -> some View {
-        Button {
-            Haptics.light()
-            store.send(action)
-        } label: {
-            Label(title, systemImage: icon)
-                .font(.footnote.weight(.medium))
-                .frame(minWidth: 104, minHeight: 40)
-        }
-        .foregroundStyle(.primary)
-        .background(Theme.surface, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.stroke))
-        .accessibilityLabel(accessibilityLabel)
     }
 
     /// A short, self-dismissing confirmation ("Song bookmarked") — the
@@ -296,7 +312,6 @@ struct NowPlayingView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(Theme.surfaceHighlight, in: Capsule())
-                .overlay(Capsule().strokeBorder(Theme.stroke))
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .accessibilityAddTraits(.isStaticText)
         }

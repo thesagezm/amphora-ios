@@ -258,3 +258,19 @@ extension ArtworkColors {
     /// The artwork's hue as a tint for small elements (badges, knobs).
     var accentColor: Color { accent.color }
 }
+
+/// Apple-Music-style press feedback: the control dips and dims under a
+/// finger with a soft spring — so the transport never feels static
+/// while the artwork and progress move (user report 2026-10-24).
+/// Labels carry their own styling; this only animates.
+struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(
+                .spring(duration: 0.28, bounce: 0.35),
+                value: configuration.isPressed
+            )
+    }
+}

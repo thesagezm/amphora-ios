@@ -131,7 +131,33 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — UI unit 2 of 3: Home hero + gentle station cards):**
+**(this push — UI unit 3 of 3: Apple-Music-style player):** feedback
+item 4 + the follow-up ("make the player look Apple Music-like — matte
+black/grey shades, not liquid glass — even put the music quality").
+
+- **One sleep control** — the FeedbackBar's third button (hide-song)
+  wore the same `moon.zzz` glyph as the sleep timer: that was the
+  "two sleep timers". Secondary actions now live in one
+  Apple-Music-style toolbar ellipsis menu: Sleep Timer…, Tune
+  Station…, Bookmark Song, Bookmark Artist, Hide This Song
+  (`ear.slash`). FeedbackBar is thumbs up/down only, as plain glyphs.
+- **Transport** — plain bold glyphs (back-15 / 52 pt play-pause /
+  next), no filled circles; `PressableButtonStyle` (new, Theme.swift:
+  scale 0.92 + 0.6 opacity, spring) on every control so nothing feels
+  static while artwork/progress move; play-pause glyph swaps via
+  `.contentTransition(.symbolEffect(.replace))` (mini player + hero
+  play button too).
+- **Matte, borderless** — artwork lost its hairline stroke (shadows
+  carry the depth), confirmation toast + ad badge are matte capsules,
+  scrubber bar is a hair thicker at white 14%.
+- **Quality chip** — left-aligned AM-style title block (title, artist
+  in artwork accent, album) with a matte capsule chip on the trailing
+  edge from `Track.preferredVariant`: "128 kbps · MP3" /
+  "64 kbps · AAC+" (the stream actually playing; hidden for ads).
+- Local checks: 6 touched files parse-clean in Docker; PandoraCore
+  untouched (214/214 stands).
+
+**(previous push — UI unit 2, `641f93e`: Home hero + gentle cards):**
 feedback items 2 + 6.
 
 - **`StationsView` hero** — the last-played (or playing) station as

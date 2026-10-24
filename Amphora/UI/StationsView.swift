@@ -226,8 +226,9 @@ struct StationsView: View {
                         .frame(width: 58, height: 58)
                         .background(Theme.accent, in: Circle())
                         .shadow(color: Theme.accent.opacity(0.35), radius: 14, y: 5)
+                        .contentTransition(.symbolEffect(.replace))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle())
                 .accessibilityLabel(
                     isPlaying ? "Pause \(station.name)" : "Play \(station.name)"
                 )
