@@ -77,7 +77,7 @@ struct TuneStationSheet: View {
         let selectable = mode.isSelectable(isSubscriber: store.isSubscriber)
         let isCurrent = store.stationModes?.currentModeID == mode.id
         Button {
-            store.send(.setStationMode(mode))
+            store.send(.setStationMode(mode, for: station))
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {

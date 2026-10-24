@@ -51,7 +51,14 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Tune Station from the station list):** the intents now
+**(this push — repair of the list-tuning push):** iOS Build on `3f8389b`
+was red with one error — `TuneStationSheet.swift:80` still sent the old
+`.setStationMode(mode)` shape after the intent grew the `for:` station
+parameter (the row button's call site was missed; the retry/task sites
+were updated). Now `.setStationMode(mode, for: station)`. Grep-audited
+every `.setStationMode(` / `.loadStationModes(` call site.
+
+**(previous push — Tune Station from the station list):** the intents now
 carry the station (`loadStationModes(Station?)` /
 `setStationMode(_:for:)`, nil = the playing one), so the sheet also
 opens from a **"Tune Station…" context-menu row on the station list**
