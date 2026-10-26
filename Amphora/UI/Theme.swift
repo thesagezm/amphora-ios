@@ -25,11 +25,15 @@ import SwiftUI
 
 /// The background family. Pandora Night uses Pandora's brand blues
 /// (#224099 deep / #00A0EE bright) cast over near-black; True Black is
-/// OLED-pure with neutral surfaces.
+/// OLED-pure with neutral surfaces; Daylight and Paper are the light
+/// families; System follows the device's light/dark setting.
 enum ThemeAppearance: String, CaseIterable, Codable, Sendable, Identifiable {
     case dark
     case pandora
     case trueBlack
+    case daylight
+    case paper
+    case system
 
     var id: String { rawValue }
 
@@ -38,6 +42,20 @@ enum ThemeAppearance: String, CaseIterable, Codable, Sendable, Identifiable {
         case .dark: return "Amphora Dark"
         case .pandora: return "Pandora Night"
         case .trueBlack: return "True Black"
+        case .daylight: return "Daylight"
+        case .paper: return "Paper"
+        case .system: return "Match System"
+        }
+    }
+
+    /// `true` for the light families. `system` is not a palette of its
+    /// own — `ThemeController` resolves it to a concrete family before
+    /// the tokens are read, so this is only ever asked about a resolved
+    /// appearance.
+    var isLight: Bool {
+        switch self {
+        case .daylight, .paper: return true
+        case .dark, .pandora, .trueBlack, .system: return false
         }
     }
 
@@ -72,6 +90,32 @@ enum ThemeAppearance: String, CaseIterable, Codable, Sendable, Identifiable {
                 surface: Color(red: 0.078, green: 0.078, blue: 0.078),
                 surfaceHighlight: Color(red: 0.133, green: 0.133, blue: 0.133)
             )
+        case .daylight:
+            // Cool neutral light — a very light grey floor with white
+            // cards sitting on it.
+            return AppearancePalette(
+                background: Color(red: 0.929, green: 0.937, blue: 0.957),
+                backgroundTop: Color(red: 0.980, green: 0.984, blue: 0.996),
+                surface: Color(red: 1.000, green: 1.000, blue: 1.000),
+                surfaceHighlight: Color(red: 0.886, green: 0.898, blue: 0.925)
+            )
+        case .paper:
+            // Warm light — a paper-white floor with a cream card tone.
+            return AppearancePalette(
+                background: Color(red: 0.957, green: 0.937, blue: 0.902),
+                backgroundTop: Color(red: 0.996, green: 0.988, blue: 0.969),
+                surface: Color(red: 1.000, green: 0.996, blue: 0.984),
+                surfaceHighlight: Color(red: 0.906, green: 0.878, blue: 0.831)
+            )
+        case .system:
+            // Resolved by `ThemeController` before it reaches the
+            // tokens; the fallback keeps a preview sane.
+            return AppearancePalette(
+                background: Color(red: 0.047, green: 0.039, blue: 0.078),
+                backgroundTop: Color(red: 0.086, green: 0.075, blue: 0.137),
+                surface: Color(red: 0.106, green: 0.094, blue: 0.157),
+                surfaceHighlight: Color(red: 0.157, green: 0.141, blue: 0.227)
+            )
         }
     }
 }
@@ -104,32 +148,37 @@ enum ThemeAccent: String, CaseIterable, Codable, Sendable, Identifiable {
             return AccentPalette(
                 primary: Color(red: 0.949, green: 0.698, blue: 0.200),
                 secondary: Color(red: 0.424, green: 0.290, blue: 0.714),
-                glyph: .black
+                glyph: .black,
+                readable: Color(red: 0.620, green: 0.408, blue: 0.020)
             )
         case .pandora:
             // Pandora's brand pair: cerulean #00A0EE → deep blue #224099.
             return AccentPalette(
                 primary: Color(red: 0.000, green: 0.627, blue: 0.933),
                 secondary: Color(red: 0.133, green: 0.251, blue: 0.600),
-                glyph: .black
+                glyph: .black,
+                readable: Color(red: 0.020, green: 0.353, blue: 0.612)
             )
         case .violet:
             return AccentPalette(
                 primary: Color(red: 0.545, green: 0.361, blue: 0.965),
                 secondary: Color(red: 0.925, green: 0.282, blue: 0.600),
-                glyph: .white
+                glyph: .white,
+                readable: Color(red: 0.396, green: 0.227, blue: 0.804)
             )
         case .aqua:
             return AccentPalette(
                 primary: Color(red: 0.176, green: 0.831, blue: 0.749),
                 secondary: Color(red: 0.055, green: 0.647, blue: 0.914),
-                glyph: .black
+                glyph: .black,
+                readable: Color(red: 0.020, green: 0.427, blue: 0.388)
             )
         case .rose:
             return AccentPalette(
                 primary: Color(red: 0.984, green: 0.443, blue: 0.522),
                 secondary: Color(red: 0.753, green: 0.149, blue: 0.827),
-                glyph: .black
+                glyph: .black,
+                readable: Color(red: 0.706, green: 0.149, blue: 0.239)
             )
         }
     }
@@ -149,6 +198,9 @@ struct AccentPalette {
     let secondary: Color
     /// Black or white — whichever keeps glyphs legible on `primary`.
     let glyph: Color
+    /// A darker sibling of `primary`, for the accent used as *text* on a
+    /// light floor (the bright fill colours lose contrast against white).
+    let readable: Color
 
     var gradient: LinearGradient {
         LinearGradient(
@@ -162,8 +214,10 @@ struct AccentPalette {
 // MARK: - Live tokens
 
 enum Theme {
+    /// The *resolved* selection — `.system` is already mapped to a
+    /// concrete light or dark family by the controller.
     @MainActor private static var selection: ThemeSelection {
-        ThemeController.shared.selection
+        ThemeController.shared.resolvedSelection
     }
 
     /// The app's floor.
@@ -174,15 +228,47 @@ enum Theme {
     @MainActor static var surfaceHighlight: Color {
         selection.appearance.palette.surfaceHighlight
     }
-    /// The active accent.
+    /// The active accent — the *fill* colour (buttons, dots, washes).
     @MainActor static var accent: Color { selection.accent.palette.primary }
     /// The accent's gradient partner.
     @MainActor static var accentSecondary: Color { selection.accent.palette.secondary }
     /// Black or white — the glyph color that stays legible on `accent`.
     @MainActor static var accentGlyph: Color { selection.accent.palette.glyph }
+    /// The accent as *text* — a darker sibling that stays legible on a
+    /// light floor (the bright fill colours wash out against white).
+    @MainActor static var accentText: Color {
+        isLight ? selection.accent.palette.readable : selection.accent.palette.primary
+    }
     /// Whisper-soft strokes (used sparingly — surfaces, not borders,
-    /// carry the structure).
-    @MainActor static var stroke: Color { Color.white.opacity(0.07) }
+    /// carry the structure). On a light floor a white stroke would be
+    /// invisible, so the stroke inverts to a soft black.
+    @MainActor static var stroke: Color {
+        isLight ? Color.black.opacity(0.10) : Color.white.opacity(0.07)
+    }
+    /// The recessed track of a progress bar drawn *on the app's
+    /// surfaces* (the mini player). White-on-white would vanish on a
+    /// light floor, so it inverts with the scheme.
+    @MainActor static var progressTrack: Color {
+        isLight ? Color.black.opacity(0.10) : Color.white.opacity(0.10)
+    }
+    /// The full player's own surfaces. The player's backdrop comes from
+    /// the artwork, so it is always a dark scene — its chips and toasts
+    /// use these tones no matter what the rest of the app is wearing.
+    @MainActor static var playerSurface: Color {
+        Color.white.opacity(0.14)
+    }
+    /// The colour scheme the app's own surfaces are built for. The
+    /// system controls (tab bar, alerts, pickers) follow it; the full
+    /// player stays dark because its backdrop comes from the artwork.
+    @MainActor static var colorScheme: ColorScheme {
+        isLight ? .light : .dark
+    }
+
+    /// `true` when the resolved appearance is one of the light
+    /// families.
+    @MainActor static var isLight: Bool {
+        selection.appearance.isLight
+    }
 
     // MARK: Corner radii (continuous curves everywhere)
 

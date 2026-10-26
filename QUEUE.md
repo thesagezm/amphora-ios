@@ -11,6 +11,36 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
+**2026-10-26 feedback round (this session's driver — four asks):**
+
+1. **"Why is there no light mode for Amphora"** → **Unit A landed**:
+   the theme system gained two light families (**Daylight** — cool
+   neutral, **Paper** — warm cream) plus **Match System**, which
+   follows the device's light/dark setting and re-resolves live.
+   `ThemeController` now owns the `.system` resolution; `RootView`
+   reads SwiftUI's `colorScheme` and feeds it in. The app's
+   `.preferredColorScheme(.dark)` is gone (except on the full player,
+   whose backdrop comes from the artwork and is always a dark scene).
+   Scheme-aware tokens: `Theme.stroke` and `Theme.progressTrack`
+   invert to soft black on a light floor, and `Theme.accentText`
+   (new) is a darker sibling of the accent so accent-coloured *text*
+   keeps its contrast against white — the bright fill colours wash out.
+2. **"Pithos can like a song even after it has already played"** →
+   **Unit B** (next): rating controls in the Recents list, plus the
+   shared-station transform Pithos does before rating
+   (`transformIfShared` → `station.transformSharedStation`) — without
+   it, Pandora rejects feedback on a non-personal station.
+3. **"Add some fallbacks in case the first source doesn't have
+   lyrics"** → **Unit C** (next): lrclib's exact-match `/api/get`
+   404s whenever album or duration differ. Fallback chain:
+   lrclib `/api/search` (fuzzy, duration-matched) → a second provider
+   (lyrics.ovh, verified live).
+4. **"How are you handling lyrics for languages with symbols like
+   Korean or Japanese … use alphabet"** → **Unit D** (next): Google's
+   `dt=rm` romanization mode, verified live ("사랑해" → "salanghae",
+   "君の名は" → "Kiminonaha"). Shows the romanization under the
+   original line, alongside the English translation.
+
 **2026-10-24 UI feedback round (this session's driver — beautify):**
 seven numbered points + a follow-up. Mapping to units:
 
@@ -130,6 +160,36 @@ names, `a7dbe49`); sleep timer never fired (`a7dbe49`); bookmark buttons
 gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
+
+**(this push — UI unit A: light mode):** feedback item 1 of the
+2026-10-26 round ("why is there no light mode").
+
+- **New appearances** — `ThemeAppearance` gains `.daylight` (cool
+  neutral: #EDF0F4 floor / white cards), `.paper` (warm cream:
+  #F4EFE6 floor / ivory cards) and `.system` (follows the device).
+  The three dark families are untouched.
+- **`ThemeController` resolves `.system`** — `resolvedAppearance` maps
+  it to `.daylight` when the device is light, `.dark` when it is dark;
+  `resolvedSelection` is what the tokens read. The device's scheme
+  arrives from `RootView` via SwiftUI's `colorScheme` environment
+  value (`setSystemColorScheme`), updated in `.onChange` so a
+  mid-session flip re-themes instantly.
+- **Scheme-aware tokens** — `Theme.stroke` and the new
+  `Theme.progressTrack` invert to soft black on a light floor (a
+  white hairline on white is invisible); `Theme.accentText` is a new
+  darker sibling of each accent, used wherever the accent is *text*
+  (station name, QuickMix glyph, segmented-pill label, browse icons,
+  the Last.fm checkmark) — the bright accent fills lose contrast
+  against white.
+- **Player stays dark** — the full player's backdrop is derived from
+  the artwork, so it keeps `.preferredColorScheme(.dark)`; its chips
+  and toasts use the new `Theme.playerSurface` instead of the app
+  surface, which would have been near-white on a light floor.
+- Sheets (sleep timer, tune station, browse) now follow the theme
+  instead of forcing dark. The app-level `.preferredColorScheme(.dark)`
+  in `RootView` is gone.
+- Local checks: all 12 touched app files parse-clean in Docker
+  (`swiftc -parse`); PandoraCore untouched (214/214 stands).
 
 **(this push — public release v0.1.0):** user directed: repo goes public,
 prerelease `v0.1.0` is cut, all authorship moves to thesagezm, and

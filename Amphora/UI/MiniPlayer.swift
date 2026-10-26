@@ -107,7 +107,7 @@ private struct MiniPlayerProgress: View {
                 ? min(1, max(0, store.player.elapsed / store.player.duration))
                 : 0
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.10))
+                Capsule().fill(Theme.progressTrack)
                 Capsule()
                     .fill(LinearGradient(
                         colors: [Theme.accent, Theme.accentSecondary],

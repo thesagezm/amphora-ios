@@ -44,7 +44,7 @@ struct BrowseStationsSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeController.shared.preferredColorScheme)
         .onAppear {
             store.send(.loadGenreStations)
         }
@@ -67,7 +67,7 @@ struct BrowseStationsSheet: View {
                         .overlay(
                             Image(systemName: "radio")
                                 .font(.body)
-                                .foregroundStyle(Theme.accent)
+                                .foregroundStyle(Theme.accentText)
                         )
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
@@ -132,7 +132,7 @@ private struct CategoryStationsView: View {
                     } else {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.accentText)
                             .accessibilityHidden(true)
                     }
                 }

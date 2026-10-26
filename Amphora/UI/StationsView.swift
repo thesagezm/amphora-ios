@@ -346,12 +346,12 @@ private struct StationRow: View {
                     if station.isQuickMix {
                         Image(systemName: "shuffle")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.accentText)
                             .accessibilityHidden(true)
                     }
                     Text(station.name)
                         .font(.body.weight(.medium))
-                        .foregroundStyle(isCurrent ? Theme.accent : Color.primary)
+                        .foregroundStyle(isCurrent ? Theme.accentText : Color.primary)
                         .lineLimit(1)
                 }
                 if let caption = badgeCaption {
@@ -398,5 +398,4 @@ private struct StationRow: View {
         StationsView()
             .environment(AppStore())
     }
-    .preferredColorScheme(.dark)
 }

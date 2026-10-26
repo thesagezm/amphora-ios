@@ -42,7 +42,7 @@ struct RecentsView: View {
                 } label: {
                     Text(item.rawValue)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(isSelected ? Theme.accent : Color.secondary)
+                        .foregroundStyle(isSelected ? Theme.accentText : Color.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(

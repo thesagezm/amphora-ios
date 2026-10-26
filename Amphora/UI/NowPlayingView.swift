@@ -201,7 +201,7 @@ struct NowPlayingView: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .background(
-                        Capsule().fill(Theme.surfaceHighlight.opacity(0.8))
+                        Capsule().fill(Theme.playerSurface)
                     )
                     .accessibilityLabel("Audio quality \(quality)")
             }
@@ -311,7 +311,7 @@ struct NowPlayingView: View {
                 .font(.footnote.weight(.medium))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(Theme.surfaceHighlight, in: Capsule())
+                .background(Theme.playerSurface, in: Capsule())
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .accessibilityAddTraits(.isStaticText)
         }

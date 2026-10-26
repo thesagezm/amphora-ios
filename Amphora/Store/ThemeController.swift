@@ -11,6 +11,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 /// The two user-selectable pieces, as one value so a change is a single
 /// observable write.
@@ -24,7 +25,32 @@ struct ThemeSelection: Equatable, Sendable {
 final class ThemeController {
     static let shared = ThemeController()
 
+    /// The user's choice, as stored. `appearance` may be `.system`, which
+    /// is resolved against `systemIsLight` before the tokens are read.
     private(set) var selection: ThemeSelection
+
+    /// Whether the device is currently in light mode. Written by the
+    /// root view from SwiftUI's `colorScheme` environment value.
+    private(set) var systemIsLight = false
+
+    /// The concrete appearance behind the user's choice: `.system`
+    /// resolves to Daylight (light) or Amphora Dark (dark).
+    var resolvedAppearance: ThemeAppearance {
+        guard selection.appearance == .system else { return selection.appearance }
+        return systemIsLight ? .daylight : .dark
+    }
+
+    /// The selection with the appearance resolved.
+    var resolvedSelection: ThemeSelection {
+        ThemeSelection(appearance: resolvedAppearance, accent: selection.accent)
+    }
+
+    /// The color scheme the app's surfaces are built for. `nil` means
+    /// "follow the system" — used when the user picked `.system`.
+    var preferredColorScheme: ColorScheme? {
+        guard selection.appearance != .system else { return nil }
+        return resolvedAppearance.isLight ? .light : .dark
+    }
 
     private let store: ThemeDiskStore
 
@@ -43,6 +69,13 @@ final class ThemeController {
         guard selection.accent != accent else { return }
         selection.accent = accent
         store.save(selection)
+    }
+
+    /// Records the device's current appearance. Called by the root view
+    /// whenever SwiftUI's `colorScheme` environment value changes.
+    func setSystemColorScheme(isLight: Bool) {
+        guard systemIsLight != isLight else { return }
+        systemIsLight = isLight
     }
 }
 

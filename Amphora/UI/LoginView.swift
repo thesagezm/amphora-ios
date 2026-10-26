@@ -126,5 +126,4 @@ struct LoginView: View {
 #Preview {
     LoginView()
         .environment(AppStore())
-        .preferredColorScheme(.dark)
 }

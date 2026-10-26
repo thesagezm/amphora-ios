@@ -60,7 +60,6 @@ struct SettingsView: View {
         .pickerStyle(.menu)
         .amphoraCardRow()
     }
-
     private var accentRow: some View {
         HStack(spacing: 16) {
             Text("Accent")
@@ -216,7 +215,7 @@ private struct LastFmSettings: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(Theme.accentText)
                     .accessibilityHidden(true)
             }
             .font(.footnote)
