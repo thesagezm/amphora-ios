@@ -36,10 +36,11 @@ superseded by the crash report below.)
    lrclib `/api/search` (fuzzy, duration-matched) → a second provider
    (lyrics.ovh, verified live).
 4. **"How are you handling lyrics for languages with symbols like
-   Korean or Japanese … use alphabet"** → **Unit D** (next): Google's
-   `dt=rm` romanization mode, verified live ("사랑해" → "salanghae",
-   "君の名は" → "Kiminonaha"). Shows the romanization under the
-   original line, alongside the English translation.
+   Korean or Japanese … use alphabet"** → **Unit D landed**: Google's
+   `dt=rm` romanization mode (verified live: "사랑해" → "salanghae",
+   "君の名は" → "Kiminonaha"). Non-Latin-script lines now render the
+   alphabet spelling as the primary reading line (accent-tinted) under
+   the original script, with the English translation beneath.
 
 **2026-10-24 UI feedback round (this session's driver — beautify):**
 seven numbered points + a follow-up. Mapping to units:
@@ -161,7 +162,56 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — core unit C: lyrics source fallbacks):** feedback item 3 of
+**(this push — core + app unit D: romanization for non-Latin-script
+lyrics):** feedback item 4 of the 2026-10-26 round ("how are you
+handling lyrics for languages with symbols like korean or japanese…
+id like to sound the correct way with the words basically use
+alphabet"). All protocol research was verified live in the prior
+session; this unit is the implementation.
+
+- **Core (`LyricsProvider.swift`)** — `GoogleTranslateClient` now also
+  conforms to the new `LyricsRomanizing` protocol
+  (`romanization(of lines: [String]) async -> [String]?`). It calls
+  the same `translate_a/single` endpoint with `dt=rm` (instead of
+  `dt=t`) and decodes the `rm` reply
+  (`[[[null,null,null,"romanized"],…],null,"ko",…]`) — a different
+  segment shape from the translation reply (text at index 3), so it
+  has its own `RomanizationResponse` decoder; a segment with fewer
+  elements decodes as no-romanization and is dropped. The reply
+  preserves line breaks, so the joined segment texts must split back
+  into exactly the input line count (or the segments line up one per
+  line) — a mismatched count returns nil and nothing is shown, never a
+  shifted alignment.
+- **The rate-limit gate** — `GoogleTranslateClient.
+  containsNonLatinScript(_:)` (public, tested) skips the request
+  entirely for Latin-script text (Hangul syllables + jamo, kana, CJK
+  ideographs + extension A, Thai, Cyrillic ranges). English/French/
+  Portuguese lyrics cost exactly one Google request as today; the
+  endpoint 302s probing IPs to its "unusual traffic" page. The
+  no-segments reply (`[null,null,"en",…]`) is the second net for
+  Latin input that slips through.
+- **Core (`Lyrics.swift`)** — `LyricLine` gains
+  `romanization: String?` (optional; lines without the key still
+  decode — regression-tested).
+- **App (`AppStore`)** — a new injected `lyricsRomanizer` (default
+  `GoogleTranslateClient()`), its own cancellable `romanizationTask`,
+  and `applyRomanization` mirroring `applyTranslation` (line-count
+  guard; rebuilds from the current cache entry so whichever of
+  translation/romanization lands second keeps the first one's field).
+  `translateIfNeeded` now fires both tasks independently — a failed
+  romanization never suppresses the translation.
+- **App (`LyricsPanel`)** — a line with a romanization renders three
+  rows: the original script (demoted to a secondary reference line),
+  the romanization as the **primary reading line** (title3, semibold
+  when active, tinted with the artwork accent), and the English
+  translation beneath. Lines without one render exactly as before.
+- 16 new tests — **259/259 green in Docker** (`swift:6.0`; was 245).
+- **Device expectation**: Korean/Japanese/Chinese/Thai/Cyrillic
+  lyrics now show the alphabet spelling under each line, sing-along
+  style; English and other Latin-script lyrics are unchanged and cost
+  no extra request.
+
+**(previous push — core unit C: lyrics source fallbacks):** feedback item 3 of
 the 2026-10-26 round ("add some fallbacks incase the first source doesnt
 have lyrics"). App target untouched except the provider injection.
 
@@ -1113,55 +1163,16 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 1. **User device test of this round's IPAs** — the gating item (light
-   mode, history ratings, lyrics fallbacks).
-2. **Unit D — romanization for non-Latin-script lyrics** (feedback item
-   4: "how are you handling lyrics for languages with symbols like
-   korean or japanese… id like to sound the correct way with the words
-   basically use alphabet"). **All protocol research is done and
-   verified live this session — the next session implements only:**
-   - **Endpoint**: Google `translate_a/single` with
-     `client=gtx&sl=auto&tl=en&dt=rm` — the same endpoint the app
-     already uses for translation, one extra `dt` parameter. Verified:
-     "사랑해" → `salanghae`, "君の名は" → `Kiminonaha`,
-     "我爱你" → pinyin, "사랑해\n안녕" → `salanghae\nannyeong`
-     (**line breaks preserved — split on "\n" to align with lines**).
-   - **Reply shape**: `[[[null,null,null,"romanized"], …],null,"ko",…]`
-     — the romanized text is `segments[0][3]`; index 2 of the root
-     array is the detected language. For **Latin-script input the
-     response carries NO segments** (`[null,null,"en",…]`) — that is
-     the signal to show nothing (do not romanize English/French).
-   - **Design (decided)**: `LyricLine` gains `romanization: String?`;
-     a new `LyricsRomanizing` protocol in PandoraCore
-     (`func romanization(of lines: [String]) async -> [String]?`),
-     implemented by `GoogleTranslateClient` (it already has the
-     transport + user-agent). `AppStore.translateIfNeeded` fires both
-     requests; both are non-blocking and **independent** — a failed
-     romanization must never suppress the translation. Guard by line
-     count exactly like `applyTranslation` does. UI: render
-     original → romanization → translation under each line; when a
-     romanization exists it should be visually the *primary* reading
-     line (accent-colored) since the user cannot read the script.
-   - **Rate-limit trap (observed live this session)**: Google answers
-     `302` to the `/sorry/index` "unusual traffic" page when an IP
-     probes repeatedly — a client hammering the endpoint per track
-     would trip it. Mitigation already in place: results are cached
-     per trackToken and only non-Latin-script tracks should ask. Do
-     NOT romanize when the detected language is Latin-script; consider
-     skipping the romanization request entirely when the text contains
-     no non-Latin characters (a cheap Unicode-range check in the core,
-     e.g. Hangul U+AC00–U+D7AF, Kana U+3040–U+30FF, CJK U+4E00–U+9FFF,
-     Thai U+0E00–U+0E7F) — that keeps English/French/Portuguese
-     lyrics at exactly one Google request as today.
-   - Traps: keep `LyricsPanel`'s per-line rendering tolerant to all
-     three variants being present or absent; tests go in
-     `LyricsProviderTests` style (stub transport, no network).
-3. **Bookmarks on device** — user reports they don't work; protocol
+   mode, history ratings, lyrics fallbacks, romanization). The romanized
+   panel needs a non-Latin song to check (e.g. a K-pop track).
+2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
-4. Anything red on the next `gh run list` — repair first.
+3. Anything red on the next `gh run list` — repair first.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — this push
-(unit C) must be green, then Unit D per the notes above.
+(unit D) must be green on CI. The 2026-10-26 feedback round is then
+fully landed; the next driver is the user's device test.
 
 ## Session handover (2026-10-23, second session)
 

@@ -288,3 +288,118 @@ public struct GoogleTranslateClient: LyricsTranslating, Sendable {
         }
     }
 }
+
+// MARK: - Romanization
+
+/// Spells lyric lines in alphabet letters ("사랑해" → "salanghae") for
+/// lyrics written in a non-Latin script, so the user can sing along.
+public protocol LyricsRomanizing: Sendable {
+    /// The romanized version of `lines`, one entry per line, or nil when
+    /// the lines need none (Latin script) or none could be produced.
+    func romanization(of lines: [String]) async -> [String]?
+}
+
+/// The `dt=rm` reply: `[[[null,null,null,"romanized"],…],null,"ko",…]`.
+/// A different segment shape from the translation reply — the
+/// romanized text sits at index 3, and Latin-script input answers with
+/// **no segments at all**.
+struct RomanizationResponse: Decodable {
+    struct Segment: Decodable {
+        let text: String?
+
+        init(from decoder: Decoder) throws {
+            var container = try decoder.unkeyedContainer()
+            // Indices 0–2 are null placeholders; the text is index 3.
+            // A segment may carry fewer elements (no romanization) —
+            // that decodes as nil and the entry is dropped.
+            _ = try container.decode(String?.self)
+            _ = try container.decode(String?.self)
+            _ = try container.decode(String?.self)
+            text = try container.decodeIfPresent(String.self)
+        }
+    }
+
+    let segments: [Segment]?
+    let detectedSourceLanguage: String?
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        segments = try container.decode([Segment]?.self)
+        // The second element is a placeholder (`null`).
+        _ = try container.decode([Segment]?.self)
+        detectedSourceLanguage = try container.decodeIfPresent(String.self)
+    }
+}
+
+extension GoogleTranslateClient: LyricsRomanizing {
+    /// The same `translate_a` endpoint the translation uses, with the
+    /// `dt=rm` mode instead of `dt=t`. Verified live:
+    /// "사랑해" → "salanghae", "君の名は" → "Kiminonaha", "我爱你" →
+    /// pinyin; the reply preserves line breaks, so the result aligns
+    /// with the input lines. Latin-script input answers with **no
+    /// segments** (`[null,null,"en",…]`) — that is the signal that
+    /// there is nothing to romanize.
+    public func romanization(of lines: [String]) async -> [String]? {
+        let text = lines.joined(separator: "\n")
+        guard !text.isEmpty else { return nil }
+        // Only non-Latin scripts can be romanized. Skipping the request
+        // outright keeps English/French/Portuguese lyrics at exactly one
+        // Google request (the translation) — the endpoint rate-limits
+        // probing IPs with a 302 to its "unusual traffic" page.
+        guard Self.containsNonLatinScript(text) else { return nil }
+
+        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "client", value: "gtx"),
+            URLQueryItem(name: "sl", value: "auto"),
+            URLQueryItem(name: "tl", value: "en"),
+            URLQueryItem(name: "dt", value: "rm"),
+            URLQueryItem(name: "q", value: text)
+        ]
+        guard let url = components?.url else { return nil }
+
+        guard let data = try? await transport.get(
+            url: url,
+            headers: ["User-Agent": userAgent]
+        ) else { return nil }
+        guard let response = try? JSONDecoder().decode(RomanizationResponse.self, from: data) else {
+            return nil
+        }
+        // Latin-script input carries no segments — nothing to do.
+        guard let segments = response.segments, !segments.isEmpty else { return nil }
+        let parts = segments.compactMap(\.text)
+        guard !parts.isEmpty else { return nil }
+        // The service keeps the line breaks, so the joined text must
+        // split back into exactly the input lines — a mismatched count
+        // would shift the alignment, which is never shown.
+        let joined = parts.joined(separator: "\n")
+        let romanized = joined.components(separatedBy: "\n")
+        if romanized.count == lines.count { return romanized }
+        // Segmentation without embedded breaks: one segment per line.
+        if parts.count == lines.count { return parts }
+        return nil
+    }
+
+    /// `true` when the text contains characters from a script the
+    /// romanization mode can spell in alphabet letters. Scripts covered:
+    /// Hangul (syllables + jamo), kana, CJK ideographs, Thai, and
+    /// Cyrillic — the endpoint transliterates all of them. Latin-script
+    /// languages (English, French, Portuguese, …) contain none and never
+    /// reach the endpoint from `romanization(of:)`.
+    public static func containsNonLatinScript(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            Self.nonLatinScriptRanges.contains { $0.contains(scalar) }
+        }
+    }
+
+    private static let nonLatinScriptRanges: [ClosedRange<Unicode.Scalar>] = [
+        "\u{0400}"..."\u{04FF}",  // Cyrillic
+        "\u{0E00}"..."\u{0E7F}",  // Thai
+        "\u{1100}"..."\u{11FF}",  // Hangul jamo
+        "\u{3040}"..."\u{30FF}",  // Kana (hiragana + katakana)
+        "\u{3130}"..."\u{318F}",  // Hangul compatibility jamo
+        "\u{3400}"..."\u{4DBF}",  // CJK extension A
+        "\u{4E00}"..."\u{9FFF}",  // CJK unified ideographs
+        "\u{AC00}"..."\u{D7AF}",  // Hangul syllables
+    ]
+}

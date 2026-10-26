@@ -14,6 +14,10 @@ import SwiftUI
 struct LyricsPanel: View {
     @Environment(AppStore.self) private var store
 
+    /// The shared ambient theme — the romanization line is tinted with
+    /// the artwork accent, like the player's other accent surfaces.
+    private var theme: ArtworkThemeController { ArtworkThemeController.shared }
+
     var body: some View {
         Group {
             if let lyrics = store.lyrics, !lyrics.isEmpty {
@@ -65,15 +69,43 @@ struct LyricsPanel: View {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         let isActive = index == activeIndex
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(line.text)
-                                .font(.title3.weight(isActive ? .semibold : .regular))
-                                .foregroundStyle(isActive ? Color.primary : Color.secondary)
-                            if let translation = line.translation, !translation.isEmpty {
-                                Text(translation)
+                            if let romanization = line.romanization, !romanization.isEmpty {
+                                // Non-Latin-script lyrics: the original
+                                // script stays as a reference line, the
+                                // romanization is the reading line the
+                                // user sings along with (accent-tinted),
+                                // and the English translation sits
+                                // beneath both.
+                                Text(line.text)
                                     .font(.subheadline)
                                     .foregroundStyle(
                                         isActive ? Color.secondary : Color.secondary.opacity(0.6)
                                     )
+                                Text(romanization)
+                                    .font(.title3.weight(isActive ? .semibold : .regular))
+                                    .foregroundStyle(
+                                        isActive
+                                            ? theme.colors.accent.color
+                                            : theme.colors.accent.color.opacity(0.7)
+                                    )
+                                if let translation = line.translation, !translation.isEmpty {
+                                    Text(translation)
+                                        .font(.subheadline)
+                                        .foregroundStyle(
+                                            isActive ? Color.secondary : Color.secondary.opacity(0.6)
+                                        )
+                                }
+                            } else {
+                                Text(line.text)
+                                    .font(.title3.weight(isActive ? .semibold : .regular))
+                                    .foregroundStyle(isActive ? Color.primary : Color.secondary)
+                                if let translation = line.translation, !translation.isEmpty {
+                                    Text(translation)
+                                        .font(.subheadline)
+                                        .foregroundStyle(
+                                            isActive ? Color.secondary : Color.secondary.opacity(0.6)
+                                        )
+                                }
                             }
                         }
                         .lineLimit(3)

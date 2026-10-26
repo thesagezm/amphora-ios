@@ -40,13 +40,23 @@ public struct LyricLine: Codable, Sendable, Equatable, Identifiable {
     /// English translation of `text` (nil when the lyrics are already in
     /// English, or when no translation was fetched).
     public var translation: String?
+    /// `text` spelled in alphabet letters (romanization) for lyrics
+    /// written in a non-Latin script — "사랑해" → "salanghae". Nil when the
+    /// line needs none, or none was fetched.
+    public var romanization: String?
 
     public var id: String { "\(timestamp)-\(text)" }
 
-    public init(timestamp: TimeInterval, text: String, translation: String? = nil) {
+    public init(
+        timestamp: TimeInterval,
+        text: String,
+        translation: String? = nil,
+        romanization: String? = nil
+    ) {
         self.timestamp = timestamp
         self.text = text
         self.translation = translation
+        self.romanization = romanization
     }
 
     /// The line as it should be displayed: the original words, with the
