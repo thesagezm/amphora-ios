@@ -161,6 +161,42 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**(this push — core unit C: lyrics source fallbacks):** feedback item 3 of
+the 2026-10-26 round ("add some fallbacks incase the first source doesnt
+have lyrics"). App target untouched except the provider injection.
+
+- **The gap** — lrclib's exact-match `/api/get` 404s whenever album or
+  duration differ from what Pandora sends (verified live this session:
+  "Creep" with a wrong album → 404; with just track+artist → 200). One
+  miss and the user saw "No lyrics".
+- **New `LyricsFallbacks.swift` (PandoraCore)** — three pieces:
+  1. **`LRCLibSearchClient`** — lrclib's own fuzzy endpoint
+     (`/api/search?track_name=&artist_name=`, the same database). The
+     candidates are scored against the track by `LyricsMatchScorer`
+     (artist first — a different artist is disqualifying on its own,
+     caught by the `testSameTitleDifferentArtistIsRejected` test; then
+     title, then duration as tie-breaker, minimum score 30) and the
+     best one wins. Handles 503-retry like the exact-match client.
+  2. **`LyricsOvhClient`** — lyrics.ovh, a genuinely different database
+     (plain lyrics only, verified live). Path components are
+     percent-encoded by hand — "AC/DC" must become `AC%2FDC`, and
+     `appendingPathComponent` would treat the slash as a separator
+     (regression-tested).
+  3. **`LyricsProviderChain`** — tries providers in order
+     (exact match → fuzzy search → lyrics.ovh), skips a provider that
+     returns empty/instrumental-only content, and reports
+     `notFound` only when *every* source has nothing.
+- **App wiring** — `AppStore`'s injected provider defaults to
+  `LyricsProviderChain.defaultChain()`. The lyrics cache, translation
+  and UI are unchanged: the chain is invisible to them.
+- **19 new tests — 245/245 green in Docker** (`swift:6.0`; was 226).
+  The test suite shares `StubGETTransport` with the provider tests
+  (now internal rather than file-private).
+- **Device expectation**: lyrics that used to say "Couldn't find lyrics
+  for this track" (wrong-album or non-lrclib songs) now show words.
+  Synced lyrics are unaffected — they still come from the exact match
+  first.
+
 **(this push — core + app unit B: rate a song that has already played):**
 feedback item 2 of the 2026-10-26 round ("pithos am able to like a
 song even after it has already played").
@@ -1076,21 +1112,56 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-1. **Release follow-up** — v0.1.0 runs green on the rewritten HEAD;
-   release asset is the 0.1.0 build (swap command in the 2026-10-25
-   handover if not).
-2. **User device test of this round's IPA** — the gating item; the
-   checklist is in the 2026-10-24 handover section above (tabs,
-   appearance themes, hero, player menu/quality chip, sign out,
-   bookmarks-on-device investigation).
+1. **User device test of this round's IPAs** — the gating item (light
+   mode, history ratings, lyrics fallbacks).
+2. **Unit D — romanization for non-Latin-script lyrics** (feedback item
+   4: "how are you handling lyrics for languages with symbols like
+   korean or japanese… id like to sound the correct way with the words
+   basically use alphabet"). **All protocol research is done and
+   verified live this session — the next session implements only:**
+   - **Endpoint**: Google `translate_a/single` with
+     `client=gtx&sl=auto&tl=en&dt=rm` — the same endpoint the app
+     already uses for translation, one extra `dt` parameter. Verified:
+     "사랑해" → `salanghae`, "君の名は" → `Kiminonaha`,
+     "我爱你" → pinyin, "사랑해\n안녕" → `salanghae\nannyeong`
+     (**line breaks preserved — split on "\n" to align with lines**).
+   - **Reply shape**: `[[[null,null,null,"romanized"], …],null,"ko",…]`
+     — the romanized text is `segments[0][3]`; index 2 of the root
+     array is the detected language. For **Latin-script input the
+     response carries NO segments** (`[null,null,"en",…]`) — that is
+     the signal to show nothing (do not romanize English/French).
+   - **Design (decided)**: `LyricLine` gains `romanization: String?`;
+     a new `LyricsRomanizing` protocol in PandoraCore
+     (`func romanization(of lines: [String]) async -> [String]?`),
+     implemented by `GoogleTranslateClient` (it already has the
+     transport + user-agent). `AppStore.translateIfNeeded` fires both
+     requests; both are non-blocking and **independent** — a failed
+     romanization must never suppress the translation. Guard by line
+     count exactly like `applyTranslation` does. UI: render
+     original → romanization → translation under each line; when a
+     romanization exists it should be visually the *primary* reading
+     line (accent-colored) since the user cannot read the script.
+   - **Rate-limit trap (observed live this session)**: Google answers
+     `302` to the `/sorry/index` "unusual traffic" page when an IP
+     probes repeatedly — a client hammering the endpoint per track
+     would trip it. Mitigation already in place: results are cached
+     per trackToken and only non-Latin-script tracks should ask. Do
+     NOT romanize when the detected language is Latin-script; consider
+     skipping the romanization request entirely when the text contains
+     no non-Latin characters (a cheap Unicode-range check in the core,
+     e.g. Hangul U+AC00–U+D7AF, Kana U+3040–U+30FF, CJK U+4E00–U+9FFF,
+     Thai U+0E00–U+0E7F) — that keeps English/French/Portuguese
+     lyrics at exactly one Google request as today.
+   - Traps: keep `LyricsPanel`'s per-line rendering tolerant to all
+     three variants being present or absent; tests go in
+     `LyricsProviderTests` style (stub transport, no network).
 3. **Bookmarks on device** — user reports they don't work; protocol
-   verified against pydora this session (endpoints/params/decode all
-   match). If the device test still fails, the Diagnostics log decides
-   the next step.
+   verified against pydora. If the device test still fails, the
+   Diagnostics log decides the next step.
 4. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5`. If red, read
-the failure summary annotation and repair before any new unit.
+**FIRST ACTION next session:** `gh run list --limit 5` — this push
+(unit C) must be green, then Unit D per the notes above.
 
 ## Session handover (2026-10-23, second session)
 

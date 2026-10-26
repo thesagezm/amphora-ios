@@ -15,6 +15,7 @@ import XCTest
 // MARK: - Stub transport
 
 /// Returns scripted responses in call order and records every request.
+/// Shared by the lyrics provider and fallback tests.
 final class StubGETTransport: HTTPGETTransport, @unchecked Sendable {
     struct RecordedRequest {
         let url: URL

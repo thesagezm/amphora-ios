@@ -71,8 +71,8 @@ final class AppStore {
     /// scrobble per played track (pithos rule), session key in the
     /// Keychain. Failures never disturb playback.
     let scrobbler: Scrobbler
-    /// Lyrics provider (lrclib.net). Protocol lives in PandoraCore so a
-    /// stub can be injected instead.
+    /// Lyrics provider (lrclib.net + fallbacks). Protocol lives in
+    /// PandoraCore so a stub can be injected instead.
     private let lyricsProvider: any LyricsProviding
     /// English translator for non-English lyrics (the endpoint detects the
     /// source language; `nil` result means "already English").
@@ -176,7 +176,7 @@ final class AppStore {
         session: SessionManager = SessionManager(store: KeychainSessionStore()),
         historyStore: HistoryStore = HistoryStore(),
         preferencesStore: PreferencesStore = PreferencesStore(),
-        lyricsProvider: any LyricsProviding = LRCLibClient(),
+        lyricsProvider: any LyricsProviding = LyricsProviderChain.defaultChain(),
         lyricsTranslator: any LyricsTranslating = GoogleTranslateClient()
     ) {
         self.session = session
