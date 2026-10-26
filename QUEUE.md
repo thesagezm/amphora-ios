@@ -161,6 +161,42 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**(this push — core + app unit B: rate a song that has already played):**
+feedback item 2 of the 2026-10-26 round ("pithos am able to like a
+song even after it has already played").
+
+- **Why Amphora could not do it before** — two protocol gaps, both
+  confirmed against pithos and pydora this session:
+  1. **Pithos transforms a shared station before rating**
+     (`Song.rate` → `self.station.transformIfShared()` →
+     `station.transformSharedStation`). Pandora rejects feedback on a
+     station the user has not personalised. Amphora's `addFeedback`
+     never did this.
+  2. **Removing a rating needs a `feedbackId`**, and the id is unknown
+     for a song rated before this device saw it. Pithos' trick:
+     re-rate with the *opposite* rating to obtain an id, then delete
+     that feedback.
+- **Core (`SessionManager.rateTrack`)** — Pithos's `Song.rate` verbatim:
+  transform a shared station (once per station token — pithos's
+  `isCreator` flag, mirrored as a token set), replace an existing
+  rating by its id, and obtain an id by re-rating when removing one
+  whose id is unknown. Returns `TrackRatingResult` (new type: the
+  rating afterwards + the new feedback id). 7 new tests.
+- **Core (`PlayHistory.Entry`)** — now carries the `stationToken` the
+  track was played from (the rating belongs to that station) and its
+  rating. The station token and rating are optional, so a history file
+  written by an older build still decodes. A re-listen keeps the
+  rating the user already gave — the rating belongs to the song, not
+  to the play. 6 new tests.
+- **App** — the Recents list rows now carry thumbs-up / thumbs-down
+  glyphs (the same language as the player's FeedbackBar: the active
+  rating fills, tapping it again removes the rating). The rows are
+  disabled when the station the track was played from is no longer in
+  the user's list. New intents `rateHistoryTrack` /
+  `removeHistoryTrackRating`.
+- Local checks: 226/226 green in Docker (`swift:6.0`; was 214);
+  both touched app files parse-clean.
+
 **(this push — UI unit A: light mode):** feedback item 1 of the
 2026-10-26 round ("why is there no light mode").
 

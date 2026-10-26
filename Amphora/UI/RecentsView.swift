@@ -74,31 +74,117 @@ struct RecentsView: View {
             }
         } else {
             List(store.history.entries) { entry in
-                HStack(spacing: 12) {
-                    CachedArtwork(urlString: entry.artworkUrl, cornerRadius: Theme.radiusS)
-                        .frame(width: 44, height: 44)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.title)
-                            .font(.body.weight(.medium))
-                            .lineLimit(1)
-                        Text(entry.artist)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                let station = station(for: entry)
+                HistoryRow(
+                    entry: entry,
+                    station: station,
+                    isRating: store.ratingTrackTokens.contains(entry.trackToken),
+                    onRate: { rating in
+                        guard let station else { return }
+                        store.send(.rateHistoryTrack(rating, entry: entry, station: station))
+                    },
+                    onRemoveRating: {
+                        guard let station else { return }
+                        store.send(.removeHistoryTrackRating(entry: entry, station: station))
                     }
-                    Spacer(minLength: 0)
-                    Text(entry.playedAt, style: .relative)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(minHeight: 44)
-                .accessibilityElement(children: .combine)
+                )
                 .amphoraCardRow()
             }
             .listStyle(.plain)
             .amphoraListBackground()
         }
+    }
+
+    /// The station a remembered track was played from — the rating of a
+    /// past track belongs to that station. Nil when the station is no
+    /// longer in the user's list (deleted or transformed), in which case
+    /// the row's rating buttons are disabled.
+    private func station(for entry: PlayHistory.Entry) -> Station? {
+        guard let token = entry.stationToken else { return nil }
+        return store.stations.first { $0.token == token }
+    }
+}
+
+/// One remembered play: artwork, title/artist, when it played, and the
+/// rating controls.
+///
+/// **Rating a song that has already played** (user request 2026-10-26)
+/// — the rating belongs to the song, so it can be given long after the
+/// track ended. The buttons mirror the player's FeedbackBar: the active
+/// rating fills, tapping it again removes the rating.
+private struct HistoryRow: View {
+    let entry: PlayHistory.Entry
+    /// The station the track was played from — nil when it is gone.
+    let station: Station?
+    /// A rating request is in flight for this row.
+    let isRating: Bool
+    let onRate: (FeedbackRating) -> Void
+    let onRemoveRating: () -> Void
+
+    private var rating: FeedbackRating { entry.rating ?? .none }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            CachedArtwork(urlString: entry.artworkUrl, cornerRadius: Theme.radiusS)
+                .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text(entry.artist)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+
+            ratingControls
+        }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The two rating glyphs, plus when the track played.
+    @ViewBuilder
+    private var ratingControls: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .trailing, spacing: 2) {
+                ratingButton(.loved, systemImage: "hand.thumbsup", label: "Thumbs up")
+                ratingButton(.banned, systemImage: "hand.thumbsdown", label: "Thumbs down")
+            }
+            Text(entry.playedAt, style: .relative)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(minWidth: 48, alignment: .trailing)
+        }
+    }
+
+    private func ratingButton(
+        _ value: FeedbackRating,
+        systemImage: String,
+        label: String
+    ) -> some View {
+        let isActive = rating == value
+        return Button {
+            Haptics.light()
+            if isActive {
+                onRemoveRating()
+            } else {
+                onRate(value)
+            }
+        } label: {
+            Image(systemName: isActive ? "\(systemImage).fill" : systemImage)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(isActive ? Theme.accentText : Color.secondary)
+                .frame(width: 30, height: 24)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(PressableButtonStyle())
+        .disabled(isRating || station == nil)
+        .opacity(station == nil ? 0.4 : 1)
+        .accessibilityLabel(label)
+        .accessibilityValue(isActive ? "On" : "Off")
     }
 }
 

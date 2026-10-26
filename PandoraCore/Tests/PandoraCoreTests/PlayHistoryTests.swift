@@ -63,4 +63,57 @@ final class PlayHistoryTests: XCTestCase {
         let restored = try JSONDecoder().decode(PlayHistory.self, from: data)
         XCTAssertEqual(restored, history)
     }
+
+    // MARK: - Rating a song that has already played
+
+    func testEntryCarriesTheStationToken() {
+        var history = PlayHistory()
+        history.record(track("A"), stationToken: "ST-1")
+        XCTAssertEqual(history.entries.first?.stationToken, "ST-1")
+    }
+
+    func testSetRatingStoresAndReadsTheRating() {
+        var history = PlayHistory()
+        history.record(track("A"))
+        XCTAssertTrue(history.setRating(.loved, for: "A"))
+        XCTAssertEqual(history.rating(for: "A"), .loved)
+        XCTAssertEqual(history.entries.first?.rating, .loved)
+    }
+
+    func testSetRatingOnAnUnknownTrackReturnsFalse() {
+        var history = PlayHistory()
+        history.record(track("A"))
+        XCTAssertFalse(history.setRating(.loved, for: "NOPE"))
+    }
+
+    func testRelisteningKeepsTheRatingTheUserAlreadyGave() {
+        var history = PlayHistory()
+        history.record(track("A"))
+        history.setRating(.loved, for: "A")
+        // The track plays again — the rating belongs to the song, so it
+        // must not be lost.
+        history.record(track("A"))
+        XCTAssertEqual(history.rating(for: "A"), .loved)
+        XCTAssertEqual(history.entries.count, 1)
+    }
+
+    func testRemovingARatingClearsIt() {
+        var history = PlayHistory()
+        history.record(track("A"))
+        history.setRating(.loved, for: "A")
+        history.setRating(nil, for: "A")
+        XCTAssertNil(history.rating(for: "A"))
+    }
+
+    func testHistoryFromBeforeTheStationFieldStillDecodes() throws {
+        // An entry written before the station token existed must still
+        // decode (the field is optional).
+        let json = """
+        {"entries":[{"trackToken":"A","title":"S","artist":"B","album":"C",
+        "playedAt":100}],"capacity":100}
+        """
+        let restored = try JSONDecoder().decode(PlayHistory.self, from: Data(json.utf8))
+        XCTAssertEqual(restored.entries.first?.stationToken, nil)
+        XCTAssertEqual(restored.entries.first?.rating, nil)
+    }
 }

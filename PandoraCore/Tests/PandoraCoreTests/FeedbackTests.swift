@@ -99,6 +99,162 @@ final class FeedbackTests: XCTestCase {
         XCTAssertTrue(body.contains(#""stationToken":"ST-1""#), body)
     }
 
+    // MARK: - Rating a song that has already played
+
+    func testRateTrackTransformsASharedStationFirst() async throws {
+        let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
+            ok("{}"),                             // transformSharedStation
+            ok(#"{"feedbackId":"FB-9"}"#)        // addFeedback
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let result = try await subject.rateTrack(
+            trackToken: "TT-OLD",
+            station: sharedStation(),
+            rating: .loved
+        )
+
+        XCTAssertEqual(result.rating, .loved)
+        XCTAssertEqual(result.feedbackId, "FB-9")
+
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 4, "partner, user, transform, addFeedback")
+        XCTAssertTrue(requests[2].url.absoluteString.contains("method=station.transformSharedStation"))
+        XCTAssertTrue(requests[3].url.absoluteString.contains("method=station.addFeedback"))
+        let transformBody = try decryptedBody(requests[2])
+        XCTAssertTrue(transformBody.contains(#""stationToken":"ST-SHARED""#), transformBody)
+    }
+
+    func testRateTrackDoesNotTransformAPersonalStation() async throws {
+        let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
+            ok(#"{"feedbackId":"FB-9"}"#)
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        _ = try await subject.rateTrack(
+            trackToken: "TT-OLD",
+            station: personalStation(),
+            rating: .loved
+        )
+
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 3, "partner, user, addFeedback")
+        XCTAssertFalse(
+            requests[2].url.absoluteString.contains("transformSharedStation"),
+            "a personal station must not be transformed"
+        )
+    }
+
+    func testRateTrackTransformsASharedStationOnlyOnce() async throws {
+        let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
+            ok("{}"),                              // transform
+            ok(#"{"feedbackId":"FB-1"}"#),        // first rating
+            ok(#"{"feedbackId":"FB-2"}"#)         // second rating
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let station = sharedStation()
+        _ = try await subject.rateTrack(
+            trackToken: "TT-1", station: station, rating: .loved
+        )
+        _ = try await subject.rateTrack(
+            trackToken: "TT-1", station: station, rating: .banned
+        )
+
+        let transforms = transport.requests.filter {
+            $0.url.absoluteString.contains("method=station.transformSharedStation")
+        }
+        XCTAssertEqual(transforms.count, 1, "the transform happens once per station")
+    }
+
+    func testRateTrackReplacesAnExistingRatingByItsId() async throws {
+        let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
+            ok("{}"),                              // deleteFeedback
+            ok(#"{"feedbackId":"FB-NEW"}"#)        // addFeedback
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let result = try await subject.rateTrack(
+            trackToken: "TT-1",
+            station: personalStation(),
+            rating: .banned,
+            knownFeedbackId: "FB-OLD"
+        )
+
+        XCTAssertEqual(result.rating, .banned)
+        XCTAssertEqual(result.feedbackId, "FB-NEW")
+        let requests = transport.requests
+        XCTAssertTrue(requests[2].url.absoluteString.contains("method=station.deleteFeedback"))
+        let deleteBody = try decryptedBody(requests[2])
+        XCTAssertTrue(deleteBody.contains(#""feedbackId":"FB-OLD""#), deleteBody)
+        XCTAssertTrue(requests[3].url.absoluteString.contains("method=station.addFeedback"))
+        let addBody = try decryptedBody(requests[3])
+        XCTAssertTrue(addBody.contains(#""isPositive":false"#), addBody)
+    }
+
+    func testRemovingARatingWithoutAKnownIdReRatesFirstToObtainIt() async throws {
+        // Pithos' trick: add the opposite rating to learn the feedback
+        // id, then delete that feedback.
+        let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
+            ok(#"{"feedbackId":"FB-TEMP"}"#),     // addFeedback (opposite)
+            ok("{}")                               // deleteFeedback
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let result = try await subject.rateTrack(
+            trackToken: "TT-1",
+            station: personalStation(),
+            rating: .none
+        )
+
+        XCTAssertEqual(result.rating, .none)
+        XCTAssertNil(result.feedbackId)
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 4, "partner, user, addFeedback, deleteFeedback")
+        XCTAssertTrue(requests[2].url.absoluteString.contains("method=station.addFeedback"))
+        XCTAssertTrue(requests[3].url.absoluteString.contains("method=station.deleteFeedback"))
+        let deleteBody = try decryptedBody(requests[3])
+        XCTAssertTrue(deleteBody.contains(#""feedbackId":"FB-TEMP""#), deleteBody)
+    }
+
+    func testRemovingARatingWithAKnownIdSkipsTheReRating() async throws {
+        let transport = MockTransport(responses: [
+            partnerOK(),
+            userOK(),
+            ok("{}")                               // deleteFeedback only
+        ])
+        let subject = makeManager(transport: transport)
+        _ = try await subject.login(username: "u", password: "p")
+
+        let result = try await subject.rateTrack(
+            trackToken: "TT-1",
+            station: personalStation(),
+            rating: .none,
+            knownFeedbackId: "FB-OLD"
+        )
+
+        XCTAssertEqual(result.rating, .none)
+        XCTAssertNil(result.feedbackId)
+        let requests = transport.requests
+        XCTAssertEqual(requests.count, 3, "partner, user, deleteFeedback")
+        XCTAssertTrue(requests[2].url.absoluteString.contains("method=station.deleteFeedback"))
+    }
+
     func testSleepSongSendsTrackToken() async throws {
         let transport = MockTransport(responses: [
             partnerOK(),
@@ -231,6 +387,28 @@ final class FeedbackTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// A station the user owns.
+    private func personalStation() -> Station {
+        Station(
+            id: "1",
+            token: "ST-1",
+            name: "My Station",
+            isShared: false,
+            isQuickMix: false
+        )
+    }
+
+    /// A shared station — one the user has not personalised yet.
+    private func sharedStation() -> Station {
+        Station(
+            id: "2",
+            token: "ST-SHARED",
+            name: "Shared Station",
+            isShared: true,
+            isQuickMix: false
+        )
+    }
 
     private func makeManager(transport: MockTransport) -> SessionManager {
         SessionManager(

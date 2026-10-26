@@ -126,6 +126,10 @@ public actor SessionManager {
     private var credentials: Credentials?
     private var tokens: SessionTokens?
     private var subscriber = false
+    /// Station tokens already transformed into personal ones (pithos's
+    /// `isCreator` flag). A shared station may only be transformed once,
+    /// so the set keeps a repeat rating from calling the endpoint again.
+    private var transformedStations: Set<String> = []
 
     public init(
         client: LegacyPandoraClient = LegacyPandoraClient(),
@@ -566,6 +570,117 @@ public actor SessionManager {
                 "stationToken": .string(stationToken)
             ]
         )
+    }
+
+    /// Makes a shared station personal, once per station token.
+    ///
+    /// Pithos calls `Station.transformIfShared()` before *any* mutation
+    /// that a shared station rejects — including rating a track
+    /// (`Song.rate` → `self.station.transformIfShared()`). The
+    /// reference implementation keeps an `isCreator` flag on the station
+    /// so the transform happens once; this mirrors that with a token set.
+    ///
+    /// A failure here is not fatal: the caller's real request may still
+    /// succeed on a station Pandora considers personal already (the
+    /// `isShared` flag in a station list can be stale), so the error is
+    /// swallowed and the caller proceeds.
+    @discardableResult
+    public func transformStationIfShared(_ station: Station) async -> Bool {
+        guard station.isShared, !transformedStations.contains(station.token) else {
+            return false
+        }
+        do {
+            _ = try await authenticatedRequest(
+                PandoraAPI.Method.transformSharedStation,
+                parameters: ["stationToken": .string(station.token)]
+            )
+            transformedStations.insert(station.token)
+            return true
+        } catch {
+            // The station may already be personal server-side. Let the
+            // caller's request decide.
+            return false
+        }
+    }
+
+    /// Sets a track's rating, replacing any rating it already has.
+    ///
+    /// This is Pithos's `Song.rate` verbatim:
+    ///
+    ///     self.station.transformIfShared()
+    ///     if rating == RATE_NONE:
+    ///         if not self.feedbackId:
+    ///             opposite = RATE_BAN if self.rating == RATE_LOVE else RATE_LOVE
+    ///             self.feedbackId = self.pandora.add_feedback(self.trackToken, opposite)
+    ///         self.pandora.delete_feedback(self.station.idToken, self.feedbackId)
+    ///     else:
+    ///         self.feedbackId = self.pandora.add_feedback(self.trackToken, rating)
+    ///
+    /// Two details matter for rating a song that has *already played*:
+    ///
+    /// 1. **The station is transformed first.** Pandora rejects
+    ///    feedback on a station the user has not personalised; the
+    ///    transform is what makes the station theirs. This is why a
+    ///    rating from the Recents list (where the station may not even
+    ///    be the one playing) has to go through here and not through a
+    ///    bare `addFeedback` call.
+    /// 2. **Removing a rating needs a `feedbackId`.** When the rating
+    ///    was set in an earlier session (or by another client), the id
+    ///    is unknown — Pithos re-rates with the *opposite* rating to
+    ///    obtain one, then deletes it. The same trick works here.
+    ///
+    /// - Parameters:
+    ///   - trackToken: the song to rate.
+    ///   - station: the station the rating belongs to.
+    ///   - rating: the new rating; `.none` removes the rating.
+    ///   - knownFeedbackId: the feedback id, when the caller already
+    ///     has one (the player path keeps the id of the rating it just
+    ///     set). Nil means "look it up".
+    /// - Returns: the track's rating after the call, and the feedback
+    ///   id when one is known (nil after a removal).
+    @discardableResult
+    public func rateTrack(
+        trackToken: String,
+        station: Station,
+        rating: FeedbackRating,
+        knownFeedbackId: String? = nil
+    ) async throws -> TrackRatingResult {
+        await transformStationIfShared(station)
+
+        if rating == .none {
+            var feedbackId = knownFeedbackId
+            if feedbackId == nil {
+                // Pithos' trick: re-rate with the opposite rating to
+                // obtain a feedback id, then delete that feedback.
+                let opposite: FeedbackRating = .loved
+                let receipt = try await addFeedback(
+                    trackToken: trackToken,
+                    stationToken: station.token,
+                    rating: opposite
+                )
+                feedbackId = receipt.feedbackId
+            }
+            try await deleteFeedback(
+                feedbackId: feedbackId!,
+                stationToken: station.token
+            )
+            return TrackRatingResult(rating: .none, feedbackId: nil)
+        }
+
+        // Replace an existing rating first — Pandora rejects a second
+        // `addFeedback` for the same track.
+        if let knownFeedbackId {
+            try await deleteFeedback(
+                feedbackId: knownFeedbackId,
+                stationToken: station.token
+            )
+        }
+        let receipt = try await addFeedback(
+            trackToken: trackToken,
+            stationToken: station.token,
+            rating: rating
+        )
+        return TrackRatingResult(rating: rating, feedbackId: receipt.feedbackId)
     }
 
     /// Hide a track for the next few hours (`user.sleepSong`, pithos

@@ -61,6 +61,27 @@ public struct FeedbackReceipt: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Track rating result
+
+/// The outcome of a rating change: the track's rating afterwards, and
+/// the `feedbackId` that rating now carries (nil when the rating was
+/// removed — there is no feedback left to undo).
+///
+/// The id matters because a rating can only be *replaced* or *removed*
+/// by its id, and the id is not known for a song rated before this
+/// device saw it.
+public struct TrackRatingResult: Sendable, Equatable {
+    /// The rating the track carries now.
+    public let rating: FeedbackRating
+    /// The feedback id of the new rating, nil when unrated.
+    public let feedbackId: String?
+
+    public init(rating: FeedbackRating, feedbackId: String?) {
+        self.rating = rating
+        self.feedbackId = feedbackId
+    }
+}
+
 // MARK: - Bookmarks
 
 /// One bookmarked artist or song (`user.getBookmarks`).

@@ -35,6 +35,10 @@ final class AppStore {
         case setStationMode(StationMode, for: Station?)
         case rateCurrentTrack(FeedbackRating)
         case removeCurrentRating
+        /// Rate a song that has already played, from the Recents list.
+        /// `station` is the station the track was played from.
+        case rateHistoryTrack(FeedbackRating, entry: PlayHistory.Entry, station: Station)
+        case removeHistoryTrackRating(entry: PlayHistory.Entry, station: Station)
         case sleepCurrentTrack
         case bookmarkCurrentSong
         case bookmarkCurrentArtist
@@ -147,6 +151,9 @@ final class AppStore {
     /// it) and the rating itself.
     private(set) var currentRating: FeedbackRating = .none
     private var currentFeedbackId: String?
+    /// Track tokens with a rating request in flight (from the Recents
+    /// list) — the UI disables those rows' buttons while it runs.
+    private(set) var ratingTrackTokens: Set<String> = []
     /// Short confirmation of the last successful action ("Song
     /// bookmarked"), shown briefly in the player so the user can see
     /// that a button did something. Nil when there is nothing to show.
@@ -214,8 +221,10 @@ final class AppStore {
             self.currentFeedbackId = nil
             self.currentRating = Self.feedbackRating(for: track?.rating)
             // Record the play in the local history (ads are not songs).
+            // The station token rides along so the Recents list can rate
+            // the track later — the rating belongs to that station.
             if let track, !track.isAdvertisement {
-                self.history.record(track)
+                self.history.record(track, stationToken: currentStation?.token)
                 self.historyStore.save(self.history)
             }
             // An advertisement that plays must be resolved + registered
@@ -302,6 +311,10 @@ final class AppStore {
             Task { await rateCurrentTrack(rating) }
         case .removeCurrentRating:
             Task { await removeCurrentRating() }
+        case .rateHistoryTrack(let rating, let entry, let station):
+            Task { await rateHistoryTrack(rating, entry: entry, station: station) }
+        case .removeHistoryTrackRating(let entry, let station):
+            Task { await rateHistoryTrack(.none, entry: entry, station: station) }
         case .sleepCurrentTrack:
             Task { await sleepCurrentTrack() }
         case .bookmarkCurrentSong:
@@ -919,9 +932,45 @@ final class AppStore {
         }
     }
 
+    /// Rate a song that has already played, from the Recents list
+    /// (user request 2026-10-26: "pithos am able to like a song even
+    /// after it has already played").
+    ///
+    /// The rating belongs to the *song*, not to the play — so it goes
+    /// through `SessionManager.rateTrack`, which is Pithos's
+    /// `Song.rate` verbatim: transform a shared station first, replace
+    /// an existing rating by its feedback id, and obtain a feedback id
+    /// (when removing a rating whose id is unknown) by re-rating with
+    /// the opposite rating before deleting it.
+    ///
+    /// The rating is written back into the history so the row shows it.
+    private func rateHistoryTrack(
+        _ rating: FeedbackRating,
+        entry: PlayHistory.Entry,
+        station: Station
+    ) async {
+        lastErrorMessage = nil
+        ratingTrackTokens.insert(entry.trackToken)
+        defer { ratingTrackTokens.remove(entry.trackToken) }
+        do {
+            let result = try await session.rateTrack(
+                trackToken: entry.trackToken,
+                station: station,
+                rating: rating
+            )
+            history.setRating(result.rating, for: entry.trackToken)
+            historyStore.save(history)
+            AppLog.info(
+                "history track rated: \"\(entry.title)\" → \(result.rating.rawValue)",
+                .playback
+            )
+        } catch {
+            record(error)
+        }
+    }
+
     /// Hide the current track for a few hours (`user.sleepSong`).
-    private func sleepCurrentTrack() async {
-        guard let track = player.currentTrack, !track.isAdvertisement else { return }
+    private func sleepCurrentTrack() async {        guard let track = player.currentTrack, !track.isAdvertisement else { return }
         lastErrorMessage = nil
         do {
             try await session.sleepSong(trackToken: track.trackToken)
