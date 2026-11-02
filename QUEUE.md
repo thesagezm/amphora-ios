@@ -165,7 +165,15 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: AirPlay in the mini player):** the follow-up
+**(this push — repair of the mini-player AirPlay unit):** the unit-2
+push was red on the iOS Build with one error:
+`AVPlayerItem` has no member `allowsExternalPlayback` — that property
+lives on **`AVPlayer`**, not on the item. The explicit opt-in is now
+set on the player (and on the replacement player built after a media
+services reset). Everything else in the unit compiled.
+
+**(previous push — app unit: AirPlay in the mini player; the iOS Build
+was red on it, see the repair above):** the follow-up
 to the AirPlay unit below (same request). The route picker now lives in
 the **mini player** as well, so the output can be switched from any
 screen without opening the full player; the mini player's second line
@@ -173,10 +181,10 @@ shows the name of the device the music is playing on (the artist when
 the audio is on the phone), with the route glyph beside it. The idle
 picker is tinted with the secondary label colour and turns accent when
 a route is active — the same state the system's own control shows.
-`AVPlayerItem.allowsExternalPlayback` is now set explicitly on every
-item (the default, stated so the intent survives a future change).
-The AirPlay symbol name lives in one place (`RouteSymbol`) shared by
-the full player and the mini player.
+`AVPlayer.allowsExternalPlayback` is now set explicitly (the default,
+stated so the intent survives a future change). The AirPlay symbol name
+lives in one place (`RouteSymbol`) shared by the full player and the
+mini player.
 
 **(previous push — app unit: AirPlay support):** the user's explicit
 request ("add support for airplay to the app"). AGENTS.md lists "AirPlay

@@ -120,6 +120,9 @@ final class PlayerService {
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = true
+        // AirPlay: the player may be handed to an external receiver.
+        // This is the default, stated here so the intent is explicit.
+        player.allowsExternalPlayback = true
         observeTimeControl()
         startTimeObserver()
         observePlayerEvents()
@@ -299,9 +302,6 @@ final class PlayerService {
               let url = URL(string: stream) else { return nil }
         let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 30
-        // AirPlay: the item may be handed to an external receiver.
-        // This is the default, stated here so the intent is explicit.
-        item.allowsExternalPlayback = true
         return item
     }
 
@@ -595,6 +595,7 @@ final class PlayerService {
         timeControlObservation = nil
         player = AVQueuePlayer()
         player.automaticallyWaitsToMinimizeStalling = true
+        player.allowsExternalPlayback = true
         observeTimeControl()
         startTimeObserver()
         slots = []
