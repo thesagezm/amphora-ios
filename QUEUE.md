@@ -165,7 +165,16 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: the route caption follows the lyrics mode):**
+**(this push — app unit: the mini player's route caption respects the
+light themes):** the mini player sits on the app floor, which can be
+Daylight or Paper — and the bright accent fill loses contrast against
+a white floor. The route caption, its glyph and the route picker's
+active tint now use `Theme.accentText` (the accent's darker sibling
+that stays legible on a light floor), the same rule the rest of the
+app follows. The full player is unaffected: its backdrop comes from
+the artwork and is always dark.
+
+**(previous push — app unit: the route caption follows the lyrics mode):**
 the "Playing on …" capsule in the full player only existed in the
 artwork layout — opening the lyrics panel made it disappear. It is now
 shown in both layouts, so the user always knows where the sound is

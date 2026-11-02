@@ -41,14 +41,14 @@ struct MiniPlayer: View {
                             if store.player.outputRouteName != nil {
                                 Image(systemName: RouteSymbol.name(isAirPlay: store.player.isAirPlayActive))
                                     .font(.caption2)
-                                    .foregroundStyle(Theme.accent)
+                                    .foregroundStyle(Theme.accentText)
                             }
                             Text(caption)
                                 .font(.caption2)
                                 .foregroundStyle(
                                     store.player.outputRouteName == nil
                                         ? Color.secondary
-                                        : Theme.accent
+                                        : Theme.accentText
                                 )
                                 .lineLimit(1)
                         }
@@ -62,7 +62,7 @@ struct MiniPlayer: View {
 
             AirPlayRoutePicker(
                 tint: UIColor.secondaryLabel,
-                activeTint: UIColor(Theme.accent)
+                activeTint: UIColor(Theme.accentText)
             )
             .frame(width: 44, height: 44)
             .accessibilityLabel("AirPlay")
