@@ -120,6 +120,7 @@ struct NowPlayingView: View {
             if isShowingLyrics {
                 // The lyrics panel scrolls itself; the transport stays fixed.
                 VStack(spacing: 20) {
+                    routeIndicator
                     LyricsPanel()
                     fixedControls(for: track)
                 }

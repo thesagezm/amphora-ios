@@ -165,7 +165,13 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: AirPlay in Diagnostics):** the Diagnostics
+**(this push — app unit: the route caption follows the lyrics mode):**
+the "Playing on …" capsule in the full player only existed in the
+artwork layout — opening the lyrics panel made it disappear. It is now
+shown in both layouts, so the user always knows where the sound is
+going.
+
+**(previous push — app unit: AirPlay in Diagnostics):** the Diagnostics
 report (Settings → Diagnostics & Logs, then Copy/Share) now carries a
 `route:` line — the live output route, e.g. `Living Room (airplay)` or
 `device speaker`. AirPlay problems are reported from the phone, so the
