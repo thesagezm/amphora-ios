@@ -15,7 +15,14 @@ superseded by the crash report below.)
 ## User Feedback Pending
 
 **2026-11-02 request:** "add support for airplay to the app" → **the
-AirPlay unit landed this push** (see In Flight / Last Push).
+AirPlay unit landed** (see In Flight / Last Push).
+
+**2026-11-02 follow-up (this session's driver):** "selecting the tv to
+be the audio output for just the music … its pausing the playback
+instead" → **this push**: the handover no longer rebuilds the player
+item (that tore down the handover the system was establishing) and the
+system's pause during the switch is now resumed (see In Flight / Last
+Push).
 
 **2026-10-26 feedback round (this session's driver — four asks):**
 
@@ -168,7 +175,58 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: rebuild the player item on an AirPlay
+**(this push — app unit: the AirPlay handover gets out of the system's
+way and resumes its pause):** the user's device report on the
+audio-only path: "selecting the tv to be the audio output for just the
+music … its pausing the playback instead". Both previous approaches are
+replaced — each was wrong in a complementary way:
+
+1. **The item rebuild is gone** (`handOverToCurrentRoute` removed).
+   Its premise was wrong: a player item is *not* bound to the renderer
+   it was created for. AVPlayer follows the output route on its own —
+   external playback carries AirPlay, the session's audio graph
+   carries everything else. What `replaceCurrentItem` actually did was
+   kill the external-playback connection the system was in the middle
+   of establishing to the TV, then force a fresh item to re-buffer
+   from scratch under `automaticallyWaitsToMinimizeStalling` — the
+   user sees that as playback pausing. `handleRouteChange` is now two
+   lines of real work: publish the new route for the UI, and re-apply
+   the sharing policy on `.categoryChange` (as before). Every route
+   reason takes the same path; `.oldDeviceUnavailable` (receiver went
+   away) needs no rebuild either — the system falls back to the phone
+   on its own.
+2. **The system's pause during the switch is now recovered.** Picking
+   an audio-only receiver parks the player (`timeControlStatus →
+   .paused`) for a moment and the system does not always resume it —
+   the pause the user reported, present even in the earlier build that
+   never touched the item. The timeControlStatus observer now treats a
+   paused player as a question: if the app still wants audio
+   (`wantsToPlay` — cleared only by `pause()`/`stop()`, so a
+   deliberate pause is never overridden), no interruption is active
+   and no failure is being shown, it resumes (`play()`, state →
+   `.buffering` until the player reports for itself). `play()` on a
+   dead item does not change the status, so the rule cannot loop — and
+   the resume works even if the system parks the player without a
+   route notification at all.
+3. **The route log carries the missing diagnostic** — `external
+   playback active/off` (`player.isExternalPlaybackActive`) between
+   the route name and the port list. On the audio-only path that flag
+   says whether AVPlayer actually engaged the receiver; the next
+   Diagnostics report from a failing handover says which side dropped
+   it (route moved but external playback off → the player never
+   engaged).
+
+Local checks: `PlayerService.swift` parse-clean in Docker
+(`swiftc -parse`); PandoraCore untouched (259/259 stands).
+**Device expectation**: music playing on the phone → pick the TV from
+the route picker (mini player or full player) → the music moves to the
+TV within a couple of seconds, never pausing; the "Playing on …"
+caption follows; picking the phone back (or the TV going away) moves
+the music back the same way. If it still fails: Settings →
+Diagnostics → Copy — the `output route:` line now shows whether
+external playback engaged.
+
+**(previous push — app unit: rebuild the player item on an AirPlay
 handover):** the user reported that **screen mirroring** to a Samsung TV
 works (and carries Amphora's audio), but picking the TV as the
 **audio-only** output does not. That is the app's own path, and it was
@@ -1340,9 +1398,11 @@ toolbar) → Copy → paste.
    Diagnostics log decides the next step.
 3. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — this push
-(the AirPlay unit) must be green on CI. The 2026-10-26 feedback round
-is then fully landed; the next driver is the user's device test.
+**FIRST ACTION next session:** `gh run list --limit 5` — the AirPlay
+handover-resume push must be green on CI. The next driver is the
+user's device test: audio-only AirPlay to the TV must move the music
+without pausing (if it still fails, the Diagnostics report's
+`output route:` line decides the next step).
 
 ## Session handover (2026-10-23, second session)
 

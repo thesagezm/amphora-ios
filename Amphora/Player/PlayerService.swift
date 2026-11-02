@@ -383,14 +383,18 @@ final class PlayerService {
         guard name != outputRouteName || isAirPlay != isAirPlayActive else { return }
         outputRouteName = name
         isAirPlayActive = isAirPlay
-        // The port list and types go into the log: when an AirPlay
-        // handover misbehaves on a device, this is what says whether
-        // the system actually moved the output.
+        // The port list, the types and the external-playback flag go
+        // into the log: when an AirPlay handover misbehaves on a
+        // device, this is what says whether the system moved the
+        // output, to which port types, and whether AVPlayer actually
+        // engaged the receiver for the audio-only path.
         let ports = outputs
             .map { "\($0.portName) [\($0.portType.rawValue)]" }
             .joined(separator: ", ")
         AppLog.info(
-            "output route: \(name ?? "device speaker")\(isAirPlay ? " [airplay]" : "") — ports: \(ports)",
+            "output route: \(name ?? "device speaker")\(isAirPlay ? " [airplay]" : "")"
+                + " — external playback \(player.isExternalPlaybackActive ? "active" : "off")"
+                + " — ports: \(ports)",
             .playback
         )
         for observer in onRouteChanged { observer() }
@@ -434,7 +438,21 @@ final class PlayerService {
         case .waitingToPlayAtSpecifiedRate:
             state = .buffering
         case .paused:
-            state = .paused
+            if state == .failed { break }
+            // A pause the app did not ask for: the system parks the
+            // player for a moment when the output route is switched
+            // (the audio-only AirPlay handover does this) and does not
+            // always resume it. `pause()` and `stop()` clear
+            // `wantsToPlay`, so a deliberate pause is never overridden;
+            // while the app still wants audio and no interruption holds
+            // the session, resume. If the current item is dead,
+            // `play()` does not change the status, so this cannot loop.
+            if wantsToPlay, !isInterrupted {
+                player.play()
+                state = .buffering
+            } else {
+                state = .paused
+            }
         @unknown default:
             state = .idle
         }
@@ -568,104 +586,22 @@ final class PlayerService {
     private func handleRouteChange(reason: UInt?) {
         guard let reason, let kind = AVAudioSession.RouteChangeReason(rawValue: reason) else { return }
         AppLog.info("audio route change: \(kind.rawValue)", .playback)
-        // The route is already the new one when the notification
-        // arrives. Comparing it with the previous one tells a real
-        // handover apart from a receiver that merely woke up nearby —
-        // only the former must rebuild the player item.
-        let previousRoute = outputRouteName
+        // AVPlayer follows the output route on its own — external
+        // playback carries AirPlay, the session's audio graph carries
+        // everything else; a player item is not bound to the renderer
+        // it was created for. Replacing the item here tore down the
+        // handover the system was in the middle of establishing (the
+        // music stopped instead of moving), so no player work belongs
+        // in this path. The new route is published for the UI, and if
+        // the system paused the player as part of the switch, the
+        // timeControlStatus observer resumes it: `wantsToPlay` is still
+        // set and no interruption is active.
         refreshOutputRoute()
-        let routeChanged = previousRoute != outputRouteName
-        switch kind {
-        case .newDeviceAvailable:
-            // A receiver became available. If the output actually moved
-            // to it, hand the music over. If nothing is playing, only
-            // remember the route — activating the session for a route
-            // the user merely browsed would start the audio stack for
-            // nothing, and a category change at that moment can drop
-            // the selection they had just made.
-            if wantsToPlay, !slots.isEmpty, !isInterrupted, routeChanged {
-                activateAudioSession()
-                handOverToCurrentRoute()
-            }
-        case .routeConfigurationChange:
-            // The user picked a route in the picker.
-            if wantsToPlay, !slots.isEmpty, !isInterrupted {
-                activateAudioSession()
-                handOverToCurrentRoute()
-            }
-        case .oldDeviceUnavailable:
-            // The receiver went away — the system falls back to the
-            // phone's speaker. The item was streaming to the receiver,
-            // so it is rebuilt for the phone too.
-            if wantsToPlay, !slots.isEmpty, !isInterrupted {
-                activateAudioSession()
-                handOverToCurrentRoute()
-            }
-        case .categoryChange:
+        if kind == .categoryChange {
             // Our own category change, or the system's. Re-apply the
             // sharing policy, but never re-activate from here — that
             // would post another category change and loop.
             configureAudioSession()
-        case .wakeFromSleep:
-            refreshOutputRoute()
-        default:
-            break
-        }
-        refreshOutputRoute()
-    }
-
-    /// Hands the current track over to the route the audio session is
-    /// on now.
-    ///
-    /// A player item keeps its connection to the renderer it was
-    /// created for — the phone's own output. When the route changes to
-    /// an AirPlay receiver (or back again), that item is not attached
-    /// to the new renderer: it keeps playing — or stalls — on the
-    /// device. So the item is rebuilt for the new route and the
-    /// position is restored, which is what actually moves the sound to
-    /// the receiver.
-    ///
-    /// The track itself does not change, so the now-playing and
-    /// scrobbling hooks are deliberately not fired.
-    private func handOverToCurrentRoute() {
-        guard let slot = slots.first else { return }
-        let position = elapsed
-        guard let item = makeItem(for: slot.track) else {
-            AppLog.error("handover: the current track has no playable stream", .playback)
-            return
-        }
-        player.replaceCurrentItem(with: item)
-        slots[0] = Slot(track: slot.track, item: item)
-        if position > 0 {
-            player.seek(
-                to: CMTime(seconds: position, preferredTimescale: 600),
-                toleranceBefore: .zero,
-                toleranceAfter: .zero
-            )
-        }
-        player.play()
-        state = .playing
-        logHandoverDetails()
-    }
-
-    /// What the player and its item look like right after a handover.
-    /// This is the line that says whether the stream actually made it
-    /// to the new route or stalled on the way.
-    private func logHandoverDetails() {
-        let status: String
-        switch player.currentItem?.status {
-        case .some(.readyToPlay): status = "readyToPlay"
-        case .some(.failed): status = "failed"
-        case .some(.unknown): status = "unknown"
-        case nil: status = "no item"
-        @unknown default: status = "?"
-        }
-        AppLog.info(
-            "handover: item \(status), timeControl \(player.timeControlStatus.rawValue), rate \(player.rate)",
-            .playback
-        )
-        if let error = player.currentItem?.error {
-            AppLog.error("handover: item error \(error.localizedDescription)", .playback)
         }
     }
 
