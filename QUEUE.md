@@ -3,6 +3,9 @@
 Working memory for the Amphora build pipeline. Owned by the agent.
 Updated in the same commit as the work it describes.
 
+**Working style (2026-11-02, user):** no subagents — do the research
+and the implementation directly in this session.
+
 ## Current Milestone
 
 **M6** — performance & robustness. (M0–M5 code complete; M2 confirmed on
@@ -165,7 +168,37 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: the mini player's route caption respects the
+**(this push — app unit: harden the AirPlay handover):** the user
+reported that a **Samsung TV** (which does support AirPlay 2) would not
+play Amphora's audio. Two real bugs in the handover, both of which
+produce exactly that symptom — the receiver is picked, but the sound
+stays on the phone:
+
+1. **The session category was configured at playback time, not at
+   launch.** `configureAudioSession()` only ran from
+   `activateAudioSession()`, i.e. on the first press of play. Setting
+   the category re-evaluates the available routes, so a category change
+   made *after* the user chose a receiver can drop that choice and fall
+   back to the built-in speaker — which is what happens when the user
+   picks the TV in the route picker and then presses play. The session
+   is now configured **once in `init()`**, so the category is already
+   `.playback / .default / .longFormAudio` before the route picker is
+   ever used and no category change can undo a route selection.
+2. **A route appearing activated the audio session even with nothing
+   playing.** The `.newDeviceAvailable` branch called
+   `activateAudioSession()` unconditionally, so merely browsing the
+   route list (or a receiver waking up nearby) started the audio stack
+   — and the category change that came with it could drop the
+   selection the user had just made. The session is now activated on a
+   route change **only when music is actually playing**
+   (`wantsToPlay && !slots.isEmpty && !isInterrupted`).
+
+The route log is also richer now: `output route: <name> [airplay] —
+ports: <name> [type] …`, so the Diagnostics report says whether the
+system really moved the output (and to which port types) instead of
+leaving it to guesswork.
+
+**(previous push — app unit: the mini player's route caption respects the
 light themes):** the mini player sits on the app floor, which can be
 Daylight or Paper — and the bright accent fill loses contrast against
 a white floor. The route caption, its glyph and the route picker's

@@ -123,6 +123,13 @@ final class PlayerService {
         // AirPlay: the player may be handed to an external receiver.
         // This is the default, stated here so the intent is explicit.
         player.allowsExternalPlayback = true
+        // Configure the session **before** the user can pick a route.
+        // Setting the category re-evaluates the available routes, so a
+        // category change made after the user chose a receiver can drop
+        // that choice and fall back to the phone's speaker. Doing it
+        // once at launch means the category is already right by the time
+        // the route picker is ever used.
+        configureAudioSession()
         observeTimeControl()
         startTimeObserver()
         observePlayerEvents()
@@ -376,7 +383,16 @@ final class PlayerService {
         guard name != outputRouteName || isAirPlay != isAirPlayActive else { return }
         outputRouteName = name
         isAirPlayActive = isAirPlay
-        AppLog.info("output route: \(name ?? "device speaker")", .playback)
+        // The port list and types go into the log: when an AirPlay
+        // handover misbehaves on a device, this is what says whether
+        // the system actually moved the output.
+        let ports = outputs
+            .map { "\($0.portName) [\($0.portType.rawValue)]" }
+            .joined(separator: ", ")
+        AppLog.info(
+            "output route: \(name ?? "device speaker")\(isAirPlay ? " [airplay]" : "") — ports: \(ports)",
+            .playback
+        )
         for observer in onRouteChanged { observer() }
     }
 
@@ -554,10 +570,14 @@ final class PlayerService {
         AppLog.info("audio route change: \(kind.rawValue)", .playback)
         switch kind {
         case .newDeviceAvailable, .routeConfigurationChange:
-            // A receiver became available or the user picked a route.
-            // Take the new route and keep the music going.
-            activateAudioSession()
+            // A receiver became available, or the user picked one. If
+            // music is playing, hand it over to the new route. If
+            // nothing is playing, only remember the route — activating
+            // the session for a route the user merely browsed would
+            // start the audio stack for nothing, and a category change
+            // at that moment can drop the selection they just made.
             if wantsToPlay, !slots.isEmpty, !isInterrupted {
+                activateAudioSession()
                 player.play()
                 state = .playing
             }
