@@ -165,7 +165,15 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — repair of the mini-player AirPlay unit):** the unit-2
+**(this push — app unit: AirPlay in Diagnostics):** the Diagnostics
+report (Settings → Diagnostics & Logs, then Copy/Share) now carries a
+`route:` line — the live output route, e.g. `Living Room (airplay)` or
+`device speaker`. AirPlay problems are reported from the phone, so the
+report has to say where the audio was going when the problem happened.
+The line is read live (not snapshotted), so it is current at the moment
+the user copies the report.
+
+**(previous push — repair of the mini-player AirPlay unit):** the unit-2
 push was red on the iOS Build with one error:
 `AVPlayerItem` has no member `allowsExternalPlayback` — that property
 lives on **`AVPlayer`**, not on the item. The explicit opt-in is now

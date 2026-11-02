@@ -7,6 +7,7 @@ import UIKit
 /// screen is the only window into what happened on the device.
 /// Presented from Settings → Diagnostics & Logs.
 struct DiagnosticsView: View {
+    @Environment(AppStore.self) private var store
     @State private var logText = ""
     @State private var crashText: String?
     @State private var didCopy = false
@@ -127,6 +128,17 @@ struct DiagnosticsView: View {
         device: \(model.isEmpty ? "?" : model)
         os: iOS \(ProcessInfo.processInfo.operatingSystemVersionString)
         app: \(version) (\(build))
+        route: \(audioRouteSummary)
         """
+    }
+
+    /// Where the audio is going right now. AirPlay problems are
+    /// reported from the device, so the report says which output was
+    /// active when the problem happened.
+    private var audioRouteSummary: String {
+        guard let name = store.player.outputRouteName else {
+            return "device speaker"
+        }
+        return "\(name) (\(store.player.isAirPlayActive ? "airplay" : "external"))"
     }
 }
