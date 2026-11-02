@@ -568,26 +568,38 @@ final class PlayerService {
     private func handleRouteChange(reason: UInt?) {
         guard let reason, let kind = AVAudioSession.RouteChangeReason(rawValue: reason) else { return }
         AppLog.info("audio route change: \(kind.rawValue)", .playback)
+        // The route is already the new one when the notification
+        // arrives. Comparing it with the previous one tells a real
+        // handover apart from a receiver that merely woke up nearby —
+        // only the former must rebuild the player item.
+        let previousRoute = outputRouteName
+        refreshOutputRoute()
+        let routeChanged = previousRoute != outputRouteName
         switch kind {
-        case .newDeviceAvailable, .routeConfigurationChange:
-            // A receiver became available, or the user picked one. If
-            // music is playing, hand it over to the new route. If
-            // nothing is playing, only remember the route — activating
-            // the session for a route the user merely browsed would
-            // start the audio stack for nothing, and a category change
-            // at that moment can drop the selection they just made.
+        case .newDeviceAvailable:
+            // A receiver became available. If the output actually moved
+            // to it, hand the music over. If nothing is playing, only
+            // remember the route — activating the session for a route
+            // the user merely browsed would start the audio stack for
+            // nothing, and a category change at that moment can drop
+            // the selection they had just made.
+            if wantsToPlay, !slots.isEmpty, !isInterrupted, routeChanged {
+                activateAudioSession()
+                handOverToCurrentRoute()
+            }
+        case .routeConfigurationChange:
+            // The user picked a route in the picker.
             if wantsToPlay, !slots.isEmpty, !isInterrupted {
                 activateAudioSession()
-                player.play()
-                state = .playing
+                handOverToCurrentRoute()
             }
         case .oldDeviceUnavailable:
             // The receiver went away — the system falls back to the
-            // phone's speaker. Re-issue the play so the handover does
-            // not leave the queue parked.
+            // phone's speaker. The item was streaming to the receiver,
+            // so it is rebuilt for the phone too.
             if wantsToPlay, !slots.isEmpty, !isInterrupted {
-                player.play()
-                state = .playing
+                activateAudioSession()
+                handOverToCurrentRoute()
             }
         case .categoryChange:
             // Our own category change, or the system's. Re-apply the
@@ -600,6 +612,61 @@ final class PlayerService {
             break
         }
         refreshOutputRoute()
+    }
+
+    /// Hands the current track over to the route the audio session is
+    /// on now.
+    ///
+    /// A player item keeps its connection to the renderer it was
+    /// created for — the phone's own output. When the route changes to
+    /// an AirPlay receiver (or back again), that item is not attached
+    /// to the new renderer: it keeps playing — or stalls — on the
+    /// device. So the item is rebuilt for the new route and the
+    /// position is restored, which is what actually moves the sound to
+    /// the receiver.
+    ///
+    /// The track itself does not change, so the now-playing and
+    /// scrobbling hooks are deliberately not fired.
+    private func handOverToCurrentRoute() {
+        guard let slot = slots.first else { return }
+        let position = elapsed
+        guard let item = makeItem(for: slot.track) else {
+            AppLog.error("handover: the current track has no playable stream", .playback)
+            return
+        }
+        player.replaceCurrentItem(with: item)
+        slots[0] = Slot(track: slot.track, item: item)
+        if position > 0 {
+            player.seek(
+                to: CMTime(seconds: position, preferredTimescale: 600),
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
+            )
+        }
+        player.play()
+        state = .playing
+        logHandoverDetails()
+    }
+
+    /// What the player and its item look like right after a handover.
+    /// This is the line that says whether the stream actually made it
+    /// to the new route or stalled on the way.
+    private func logHandoverDetails() {
+        let status: String
+        switch player.currentItem?.status {
+        case .some(.readyToPlay): status = "readyToPlay"
+        case .some(.failed): status = "failed"
+        case .some(.unknown): status = "unknown"
+        case nil: status = "no item"
+        @unknown default: status = "?"
+        }
+        AppLog.info(
+            "handover: item \(status), timeControl \(player.timeControlStatus.rawValue), rate \(player.rate)",
+            .playback
+        )
+        if let error = player.currentItem?.error {
+            AppLog.error("handover: item error \(error.localizedDescription)", .playback)
+        }
     }
 
     /// The media stack was reset (e.g. after the audio daemon restarted):

@@ -168,7 +168,37 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: harden the AirPlay handover):** the user
+**(this push — app unit: rebuild the player item on an AirPlay
+handover):** the user reported that **screen mirroring** to a Samsung TV
+works (and carries Amphora's audio), but picking the TV as the
+**audio-only** output does not. That is the app's own path, and it was
+wrong: a player item keeps its connection to the renderer it was
+created for — the phone's own output. When the route changes to a
+receiver, the item is not attached to the new renderer, so it keeps
+playing (or stalls) on the device no matter what the session says.
+
+- **`PlayerService.handOverToCurrentRoute()`** (new) — on a route
+  change the current item is rebuilt for the new route
+  (`player.replaceCurrentItem(with:)`), the position is restored with a
+  seek, and playback resumes. This is what actually moves the sound to
+  the receiver. The track does not change, so the now-playing and
+  scrobbling hooks are deliberately not fired.
+- **Only a real handover rebuilds the item** — the route is read
+  *before* the switch and compared with the previous one. A receiver
+  that merely woke up nearby also posts `.newDeviceAvailable`; that
+  must not cause a needless re-buffer on the phone.
+- **The handover is logged in detail** — `handover: item
+  readyToPlay/failed/unknown, timeControl …, rate …` plus the item's
+  error, so the Diagnostics report says whether the stream made it to
+  the new route or stalled on the way.
+
+Together with the previous push (session configured at launch, session
+activated only when music is playing), the audio-only path now differs
+from the mirroring path in the right way: the mirroring path carries
+the phone's system audio over the AirPlay connection, while the
+audio-only path hands a *rebuilt* player item to the receiver.
+
+**(previous push — app unit: harden the AirPlay handover):** the user
 reported that a **Samsung TV** (which does support AirPlay 2) would not
 play Amphora's audio. Two real bugs in the handover, both of which
 produce exactly that symptom — the receiver is picked, but the sound
