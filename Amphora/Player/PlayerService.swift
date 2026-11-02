@@ -51,6 +51,14 @@ final class PlayerService {
     private(set) var duration: TimeInterval = 0
     private(set) var errorMessage: String?
 
+    /// The name of the external output the audio is playing through —
+    /// an AirPlay receiver ("Living Room"), a Bluetooth speaker, a pair
+    /// of headphones. `nil` while the phone's own speaker is the output.
+    private(set) var outputRouteName: String?
+    /// `true` when the current output is an AirPlay receiver rather than
+    /// a device wired to the phone.
+    private(set) var isAirPlayActive: Bool = false
+
     var isPlaying: Bool { state == .playing || state == .buffering }
 
     /// Tracks queued behind the current one, most immediate first — the
@@ -81,6 +89,10 @@ final class PlayerService {
     /// at song-ended). Fires *before* `onTrackChanged` for the
     /// replacement track, so "started at" timestamps stay aligned.
     var onTrackFinished: [(Track, TimeInterval) -> Void] = []
+    /// Fired when the output route changed — an AirPlay receiver was
+    /// picked or lost. The now-playing service re-publishes the metadata
+    /// so a receiver that just joined shows the current track.
+    var onRouteChanged: [() -> Void] = []
 
     // MARK: Private state
 
@@ -95,6 +107,14 @@ final class PlayerService {
     private var timeObserver: Any?
     private var timeControlObservation: NSKeyValueObservation?
     private var wasPlayingBeforeInterruption = false
+    /// `true` while the system has the session paused for an
+    /// interruption (a call, another app taking over).
+    private var isInterrupted = false
+    /// What the user asked for: `true` while the app wants audio running.
+    /// The player's own state can dip to `.paused` for a moment during a
+    /// route handover (an AirPlay receiver joining or leaving), so the
+    /// intent is kept apart from what the player reports.
+    private var wantsToPlay = false
 
     // MARK: Init
 
@@ -130,6 +150,7 @@ final class PlayerService {
         activateAudioSession()
         player.play()
         state = .playing
+        wantsToPlay = true
         requestMoreTracksIfNeeded()
     }
 
@@ -154,6 +175,7 @@ final class PlayerService {
                 duration = TimeInterval(track.duration)
                 player.play()
                 state = .playing
+                wantsToPlay = true
             }
         }
         requestMoreTracksIfNeeded()
@@ -182,6 +204,7 @@ final class PlayerService {
     func pause() {
         player.pause()
         state = .paused
+        wantsToPlay = false
     }
 
     func resume() {
@@ -189,6 +212,7 @@ final class PlayerService {
         activateAudioSession()
         player.play()
         state = .playing
+        wantsToPlay = true
     }
 
     func togglePlayback() {
@@ -242,6 +266,7 @@ final class PlayerService {
         elapsed = 0
         duration = 0
         state = .idle
+        wantsToPlay = false
         deactivateAudioSession()
     }
 
@@ -293,18 +318,63 @@ final class PlayerService {
 
     // MARK: - Audio session
 
+    /// Configures the session for long-form music and lets the route be
+    /// shared with an AirPlay receiver.
+    ///
+    /// The category is only set when it differs from what the session
+    /// already has: `setCategory` posts a `.categoryChange` route
+    /// notification, and setting the same category again would bounce
+    /// straight back into this method.
+    private func configureAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        let sharing = AVAudioSession.RouteSharingPolicy.longFormAudio
+        guard session.category != .playback
+                || session.mode != .default
+                || session.routeSharingPolicy != sharing else { return }
+        do {
+            try session.setCategory(.playback, mode: .default, policy: sharing)
+        } catch {
+            AppLog.error("could not set the audio session category: \(error.localizedDescription)", .playback)
+        }
+    }
+
     private func activateAudioSession() {
+        configureAudioSession()
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
         } catch {
-            errorMessage = "Couldn't start audio output."
+            AppLog.error("could not activate the audio session: \(error.localizedDescription)", .playback)
+            // A failure while audio is already running (a route handover,
+            // say) must not replace the track's error with a scary one.
+            if state != .playing {
+                errorMessage = "Couldn't start audio output."
+            }
         }
+        refreshOutputRoute()
     }
 
     private func deactivateAudioSession() {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    /// Reads the session's live output and publishes it. Everything but
+    /// the phone's own speaker counts as an external route; an AirPlay
+    /// receiver is called out separately so the UI can say so.
+    private func refreshOutputRoute() {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        let isAirPlay = outputs.contains {
+            $0.portType.rawValue == AVAudioSession.Port.airPlay.rawValue
+        }
+        let external = outputs.first {
+            $0.portType.rawValue != AVAudioSession.Port.builtInSpeaker.rawValue
+        }
+        let name = external?.portName
+        guard name != outputRouteName || isAirPlay != isAirPlayActive else { return }
+        outputRouteName = name
+        isAirPlayActive = isAirPlay
+        AppLog.info("output route: \(name ?? "device speaker")", .playback)
+        for observer in onRouteChanged { observer() }
     }
 
     // MARK: - Observation
@@ -459,9 +529,11 @@ final class PlayerService {
         switch kind {
         case .began:
             wasPlayingBeforeInterruption = isPlaying
+            isInterrupted = true
             player.pause()
             state = .paused
         case .ended:
+            isInterrupted = false
             let resumeOptions = AVAudioSession.InterruptionOptions(rawValue: options)
             if wasPlayingBeforeInterruption, resumeOptions.contains(.shouldResume) {
                 activateAudioSession()
@@ -478,12 +550,33 @@ final class PlayerService {
         guard let reason, let kind = AVAudioSession.RouteChangeReason(rawValue: reason) else { return }
         AppLog.info("audio route change: \(kind.rawValue)", .playback)
         switch kind {
-        case .oldDeviceUnavailable, .newDeviceAvailable, .categoryChange:
-            // Keep playing on the new route.
+        case .newDeviceAvailable, .routeConfigurationChange:
+            // A receiver became available or the user picked a route.
+            // Take the new route and keep the music going.
             activateAudioSession()
+            if wantsToPlay, !slots.isEmpty, !isInterrupted {
+                player.play()
+                state = .playing
+            }
+        case .oldDeviceUnavailable:
+            // The receiver went away — the system falls back to the
+            // phone's speaker. Re-issue the play so the handover does
+            // not leave the queue parked.
+            if wantsToPlay, !slots.isEmpty, !isInterrupted {
+                player.play()
+                state = .playing
+            }
+        case .categoryChange:
+            // Our own category change, or the system's. Re-apply the
+            // sharing policy, but never re-activate from here — that
+            // would post another category change and loop.
+            configureAudioSession()
+        case .wakeFromSleep:
+            refreshOutputRoute()
         default:
             break
         }
+        refreshOutputRoute()
     }
 
     /// The media stack was reset (e.g. after the audio daemon restarted):

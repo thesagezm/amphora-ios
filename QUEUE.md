@@ -11,6 +11,9 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
+**2026-11-02 request:** "add support for airplay to the app" → **the
+AirPlay unit landed this push** (see In Flight / Last Push).
+
 **2026-10-26 feedback round (this session's driver — four asks):**
 
 1. **"Why is there no light mode for Amphora"** → **Unit A landed**:
@@ -162,7 +165,65 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — core + app unit D: romanization for non-Latin-script
+**(this push — app unit: AirPlay support):** the user's explicit request
+("add support for airplay to the app"). AGENTS.md lists "AirPlay
+refinements" as a stretch item, but the user asked for it directly, so
+it is in scope; the app target only — `PandoraCore` is untouched (259/259
+still green).
+
+- **The audio session now allows the route to be shared**
+  (`PlayerService.configureAudioSession`): `setCategory(.playback,
+  mode: .default, policy: .longFormAudio)` — the `.longFormAudio`
+  route-sharing policy is what lets an AirPlay receiver take the audio.
+  The category is only set when it differs from the session's current
+  one, because `setCategory` posts a `.categoryChange` route
+  notification: the old code answered that notification by calling
+  `setCategory` again, which risks a feedback loop (and the same
+  `setCategory` + `setActive` pair ran on every single activation).
+  Category and activation are now separate steps, and a failed
+  activation while audio is already playing no longer overwrites the
+  track's error message.
+- **Live route state** — `PlayerService` publishes `outputRouteName`
+  ("Living Room", "AirPods") and `isAirPlayActive`, read from the
+  session's current route. Anything that is not the phone's own speaker
+  counts as an external route; the AirPlay flag is called out
+  separately. A new `onRouteChanged` callback fires when the route
+  changes.
+- **Route handovers keep the music going** — `.newDeviceAvailable` and
+  `.routeConfigurationChange` (the user picked a route) take the new
+  route and re-issue the play; `.oldDeviceUnavailable` (the receiver
+  went away) re-issues it too, so the fallback to the phone's speaker
+  does not leave the queue parked. The play *intent* is tracked
+  separately (`wantsToPlay`) because the player's own state can dip to
+  `.paused` for a moment during a handover, and it is not acted on
+  during an interruption (`isInterrupted`).
+- **Lock screen follows the route** — `NowPlayingService` re-publishes
+  the now-playing info when the route changes, so a receiver that just
+  joined shows the current title and artwork. The artwork already on the
+  lock screen is carried over when the track has not changed, so
+  re-publishing never blanks the cover for a moment.
+- **The picker** — `Amphora/UI/AirPlayRoutePicker.swift` (new): the
+  system `AVRoutePickerView` wrapped for SwiftUI (SwiftUI has no
+  equivalent; this is the one UIKit control the player borrows).
+  `prioritizesVideoDevices = false` — Amphora is an audio app — and it
+  is tinted with the artwork accent so it sits in the player's toolbar.
+  The full player shows it in the toolbar and a "Playing on …" capsule
+  under the track header whenever the output is not the phone's own
+  speaker.
+- **Info.plist** — `NSLocalNetworkUsageDescription` added to
+  `project.yml`: AirPlay receivers are found over the local network
+  (Bonjour), and iOS 14+ hides the devices from the route picker
+  without this string.
+- Local checks: 4 touched app files parse-clean in Docker
+  (`swiftc -parse`); `PandoraCore` 259/259 green in Docker (`swift:6.0`).
+- **Device expectation**: open the full player → the AirPlay button in
+  the toolbar opens the system route list → pick a receiver → the music
+  moves to it and the player shows "Playing on <device>"; pull the
+  receiver away → the music comes back to the phone and the caption
+  disappears. The lock screen / the receiver's own screen show the
+  current track and artwork.
+
+**(previous push — core + app unit D: romanization for non-Latin-script
 lyrics):** feedback item 4 of the 2026-10-26 round ("how are you
 handling lyrics for languages with symbols like korean or japanese…
 id like to sound the correct way with the words basically use
@@ -1163,16 +1224,17 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 1. **User device test of this round's IPAs** — the gating item (light
-   mode, history ratings, lyrics fallbacks, romanization). The romanized
-   panel needs a non-Latin song to check (e.g. a K-pop track).
+   mode, history ratings, lyrics fallbacks, romanization, AirPlay). The
+   romanized panel needs a non-Latin song to check (e.g. a K-pop track);
+   AirPlay needs a receiver on the same network.
 2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
 3. Anything red on the next `gh run list` — repair first.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — this push
-(unit D) must be green on CI. The 2026-10-26 feedback round is then
-fully landed; the next driver is the user's device test.
+(the AirPlay unit) must be green on CI. The 2026-10-26 feedback round
+is then fully landed; the next driver is the user's device test.
 
 ## Session handover (2026-10-23, second session)
 

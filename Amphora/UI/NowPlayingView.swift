@@ -1,5 +1,6 @@
 import PandoraCore
 import SwiftUI
+import UIKit
 
 /// Full-screen player, Apple-Music-shaped: large rounded artwork, a
 /// left-aligned title block with the stream quality beside it, a thin
@@ -37,6 +38,13 @@ struct NowPlayingView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     actionsMenu
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    AirPlayRoutePicker(
+                        tint: UIColor(theme.colors.accent.color),
+                        activeTint: UIColor(theme.colors.accent.color)
+                    )
+                    .frame(width: 44, height: 44)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -121,6 +129,7 @@ struct NowPlayingView: View {
                     VStack(spacing: 20) {
                         artwork(for: track)
                         trackHeader(track)
+                        routeIndicator
                         scrubber
                     }
                     .padding(.top, 8)
@@ -221,6 +230,26 @@ struct NowPlayingView: View {
         default: encoding = variant.encoding.uppercased()
         }
         return "\(variant.bitrate) kbps · \(encoding)"
+    }
+
+    /// "Living Room" — where the audio is actually going, whenever that
+    /// is not the phone's own speaker. Shows the user that the AirPlay
+    /// handover really happened instead of leaving the music silent on
+    /// the device.
+    @ViewBuilder
+    private var routeIndicator: some View {
+        if let name = store.player.outputRouteName {
+            Label(
+                name,
+                systemImage: store.player.isAirPlayActive ? "airplayvideo" : "speaker.wave.2.fill"
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(theme.colors.accent.color)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Theme.playerSurface))
+            .accessibilityLabel("Playing on \(name)")
+        }
     }
 
     private var scrubber: some View {

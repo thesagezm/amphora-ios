@@ -19,6 +19,10 @@ final class NowPlayingService {
     private weak var player: PlayerService?
     private var timeObserver: Any?
     private var artworkTask: Task<Void, Never>?
+    /// The track the lock screen is currently showing — used to keep
+    /// the artwork in place when the info is re-published for another
+    /// reason (an output-route change) rather than for a new track.
+    private var publishedTrackToken: String?
 
     init(player: PlayerService) {
         self.player = player
@@ -27,6 +31,9 @@ final class NowPlayingService {
         }
         player.onPlaybackStateChanged.append { [weak self] in
             self?.updatePlaybackState()
+        }
+        player.onRouteChanged.append { [weak self] in
+            self?.republishNowPlaying()
         }
         updateNowPlaying(for: player.currentTrack)
         configureRemoteCommands()
@@ -38,6 +45,7 @@ final class NowPlayingService {
         let center = MPNowPlayingInfoCenter.default()
         guard let track else {
             center.nowPlayingInfo = nil
+            publishedTrackToken = nil
             return
         }
         var info: [String: Any] = [
@@ -49,8 +57,23 @@ final class NowPlayingService {
             MPNowPlayingInfoPropertyPlaybackRate: player?.isPlaying == true ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
         ]
+        // Same track as the one already on the lock screen: carry the
+        // artwork over so re-publishing never blanks the cover.
+        if publishedTrackToken == track.trackToken,
+           let artwork = center.nowPlayingInfo?[MPMediaItemPropertyArtwork] {
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+        publishedTrackToken = track.trackToken
         center.nowPlayingInfo = info
         loadArtwork(for: track)
+    }
+
+    /// Re-publishes the now-playing info after the output route changed.
+    /// A receiver that just joined — or came back — needs the title and
+    /// the artwork to show what is playing.
+    private func republishNowPlaying() {
+        guard let track = player?.currentTrack else { return }
+        updateNowPlaying(for: track)
     }
 
     /// Album art for the lock screen. It comes from the shared artwork
