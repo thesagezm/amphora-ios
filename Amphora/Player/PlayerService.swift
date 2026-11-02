@@ -299,6 +299,9 @@ final class PlayerService {
               let url = URL(string: stream) else { return nil }
         let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 30
+        // AirPlay: the item may be handed to an external receiver.
+        // This is the default, stated here so the intent is explicit.
+        item.allowsExternalPlayback = true
         return item
     }
 

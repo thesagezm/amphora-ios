@@ -1,5 +1,6 @@
 import PandoraCore
 import SwiftUI
+import UIKit
 
 /// Compact player card floating above the tab bar while something plays:
 /// rounded surface, a progress hairline along its top edge, artwork,
@@ -7,6 +8,11 @@ import SwiftUI
 /// `MainTabView` (one instance for the whole shell), so tab switches
 /// never tear it down — the card itself only reports taps through
 /// `onOpen`.
+///
+/// The card also carries the AirPlay route picker, so the output can be
+/// switched from any screen without opening the full player, and it
+/// names the device the audio is playing on whenever that is not the
+/// phone's own speaker.
 struct MiniPlayer: View {
     @Environment(AppStore.self) private var store
     let onOpen: () -> Void
@@ -31,10 +37,21 @@ struct MiniPlayer: View {
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        Text(track?.artist ?? "")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            if store.player.outputRouteName != nil {
+                                Image(systemName: RouteSymbol.name(isAirPlay: store.player.isAirPlayActive))
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.accent)
+                            }
+                            Text(caption)
+                                .font(.caption2)
+                                .foregroundStyle(
+                                    store.player.outputRouteName == nil
+                                        ? Color.secondary
+                                        : Theme.accent
+                                )
+                                .lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 0)
                 }
@@ -42,6 +59,13 @@ struct MiniPlayer: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open now playing")
+
+            AirPlayRoutePicker(
+                tint: UIColor.secondaryLabel,
+                activeTint: UIColor(Theme.accent)
+            )
+            .frame(width: 44, height: 44)
+            .accessibilityLabel("AirPlay")
 
             Button {
                 Haptics.light()
@@ -92,6 +116,13 @@ struct MiniPlayer: View {
     private var artwork: some View {
         CachedArtwork(urlString: track?.artworkUrl, cornerRadius: Theme.radiusS + 2)
             .frame(width: 44, height: 44)
+    }
+
+    /// The card's second line: the artist normally, the name of the
+    /// device the music is playing on while the audio is routed
+    /// somewhere else.
+    private var caption: String {
+        store.player.outputRouteName ?? track?.artist ?? ""
     }
 }
 

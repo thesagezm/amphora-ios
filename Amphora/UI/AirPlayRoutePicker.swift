@@ -33,3 +33,13 @@ struct AirPlayRoutePicker: UIViewRepresentable {
         uiView.activeTintColor = activeTint
     }
 }
+
+/// The SF Symbol that matches the route the audio is going to.
+enum RouteSymbol {
+    /// AirPlay receivers get the AirPlay glyph; any other external
+    /// device (a Bluetooth speaker, a pair of headphones) gets a
+    /// speaker glyph.
+    static func name(isAirPlay: Bool) -> String {
+        isAirPlay ? "airplayvideo" : "speaker.wave.2.fill"
+    }
+}

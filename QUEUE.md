@@ -165,11 +165,25 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: AirPlay support):** the user's explicit request
-("add support for airplay to the app"). AGENTS.md lists "AirPlay
+**(this push — app unit: AirPlay in the mini player):** the follow-up
+to the AirPlay unit below (same request). The route picker now lives in
+the **mini player** as well, so the output can be switched from any
+screen without opening the full player; the mini player's second line
+shows the name of the device the music is playing on (the artist when
+the audio is on the phone), with the route glyph beside it. The idle
+picker is tinted with the secondary label colour and turns accent when
+a route is active — the same state the system's own control shows.
+`AVPlayerItem.allowsExternalPlayback` is now set explicitly on every
+item (the default, stated so the intent survives a future change).
+The AirPlay symbol name lives in one place (`RouteSymbol`) shared by
+the full player and the mini player.
+
+**(previous push — app unit: AirPlay support):** the user's explicit
+request ("add support for airplay to the app"). AGENTS.md lists "AirPlay
 refinements" as a stretch item, but the user asked for it directly, so
 it is in scope; the app target only — `PandoraCore` is untouched (259/259
-still green).
+still green). CI on that push: **Core Tests ✅ / iOS Build ✅**
+(41410940609 / 41410940614).
 
 - **The audio session now allows the route to be shared**
   (`PlayerService.configureAudioSession`): `setCategory(.playback,

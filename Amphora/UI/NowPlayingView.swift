@@ -241,7 +241,7 @@ struct NowPlayingView: View {
         if let name = store.player.outputRouteName {
             Label(
                 name,
-                systemImage: store.player.isAirPlayActive ? "airplayvideo" : "speaker.wave.2.fill"
+                systemImage: RouteSymbol.name(isAirPlay: store.player.isAirPlayActive)
             )
             .font(.caption.weight(.semibold))
             .foregroundStyle(theme.colors.accent.color)
