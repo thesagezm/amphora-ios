@@ -183,7 +183,46 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit R4: the Radio tab):** the Shortwave port's UI.
+**(this push — app unit R5: custom stations by URL):** the radio
+milestone's last unit — the user can add any direct stream URL as a
+station (Shortwave's "add by URL").
+
+- **Form sheet** — `Amphora/UI/RadioStationFormSheet.swift` (new):
+  name + stream-URL fields, Save disabled until valid (non-empty name;
+  URL parses with an http/https scheme — what AVPlayer streams), the
+  same add/edit form (a nil `existing` = add). Opened from the Radio
+  tab's toolbar **+** (add) or a custom row's Edit context menu.
+  Validation is local; saving is synchronous — no network — so the
+  sheet dismisses on Save. No .m3u/.pls URL-following (out of scope;
+  the footer tells the user to copy the inner link).
+- **Persistence** — `Preferences.radioCustomStations` (device-local,
+  survives sign-out like favorites/recents). Custom entries reuse
+  `RadioStation` with a generated UUID — playable through the R3
+  path with zero core changes.
+- **`AppStore`** — `radioCustomStations` + `isRadioCustom(_:)`, intents
+  `.addRadioCustomStation` / `.updateRadioCustomStation` /
+  `.deleteRadioCustomStation`. An edit carries the new identity into
+  favorites/recents and the playing snapshot (the stream keeps playing
+  until restarted; a restart picks the new URL). A delete removes it
+  everywhere and stops playback if it was playing. Custom stations
+  skip the directory click ping (they aren't in the directory).
+- **Radio tab root** — a "My Stations" section above "Recently
+  Played"; rows play/toggle/star exactly like directory rows, with
+  Edit/Delete on the context menu.
+
+Local checks: all four touched files parse-clean in Docker;
+`RadioController.swift` type-checked clean last push (unchanged).
+PandoraCore untouched (272/272 stands). App target compiles on CI
+only — verify both workflows on the next `gh run list`.
+
+**Radio milestone complete pending the device test.** Test list:
+Radio tab → recents/favorites/discover → Popular rows → tap = music
+within ~2s → star persists across relaunch → search finds stations →
++ adds a custom URL station (play, edit, delete) → starting a Pandora
+station stops radio and vice versa → skip button stops the stream →
+sleep timer pauses radio.
+
+**(previous push — app unit R4: the Radio tab):** the Shortwave port's UI.
 `Amphora/UI/RadioView.swift` (new) is the second tab
 (`antenna.radiowaves.left.and.right`, between Home and Settings in
 `MainTabView`); `Amphora/Store/RadioController.swift` (new) owns every
@@ -218,8 +257,8 @@ Local checks: `RadioController.swift` **type-checks** clean in Docker
 (`swiftc -swift-version 6` against the built PandoraCore module + an
 `AppLog` stub — the strong local check from the CrashReporter rounds);
 all four touched files parse-clean. PandoraCore untouched this push
-(R2's 272/272 and its green CI runs stand). App target compiles on CI
-only — verify both workflows on the next `gh run list`.
+(R2's 272/272 and its green CI runs stand). **CI confirmed green on
+this push** (Core Tests ✅ + iOS Build ✅, runs 42390856873/42390856833).
 
 **Device expectation**: Radio tab with recents/favorites/discover →
 tap Popular → rows → tap a station → music within ~2s, star persists
@@ -1531,17 +1570,14 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 0. **Radio milestone (R units, user request 2026-11-07 — port
-   Shortwave):** R1 Recents → toolbar button ✅ · R2 PandoraCore
-   radio-browser client + fixture tests ✅ · R3 playback glue ✅ ·
-   R4 Radio tab UI ✅ (this push) · **R5 NEXT — custom stations by
-   URL** (add / edit / delete: a form taking any stream URL — name +
-   URL, persisted like favorites, playable through the same
-   `playLiveStream` path; maybe an "Add Station…" toolbar button on the
-   Radio tab and a context-menu row on custom entries).
-1. **User device test of this round's IPAs** — the gating item (light
-   mode, history ratings, lyrics fallbacks, romanization, AirPlay). The
-   romanized panel needs a non-Latin song to check (e.g. a K-pop track);
-   AirPlay needs a receiver on the same network.
+   Shortwave): COMPLETE, pending the device test.** R1 Recents →
+   toolbar button ✅ · R2 radio-browser client + tests ✅ · R3
+   playback glue ✅ · R4 Radio tab UI ✅ (CI green) · R5 custom
+   stations by URL ✅ (this push).
+1. **User device test of the next IPA** — the gating item: the radio
+   flow (test list in In Flight / Last Push) *and* the older pending
+   round (light mode, history ratings, lyrics fallbacks,
+   romanization, AirPlay; AirPlay needs a receiver on the network).
 2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.

@@ -52,6 +52,10 @@ final class AppStore {
         case toggleRadioFavorite(RadioStation)
         case removeRadioRecent(RadioStation)
         case clearRadioRecents
+        /// A custom station from a raw stream URL (validated in the form).
+        case addRadioCustomStation(name: String, url: String)
+        case updateRadioCustomStation(RadioStation, name: String, url: String)
+        case deleteRadioCustomStation(RadioStation)
         case authenticateLastFm(username: String, password: String)
         case signOutLastFm
         case setScrobblingEnabled(Bool)
@@ -120,6 +124,8 @@ final class AppStore {
     private(set) var radioFavorites: [RadioStation] = []
     /// Recently played radio stations, most recent first.
     private(set) var radioRecents: [RadioStation] = []
+    /// User-added custom stations (name + raw stream URL), device-local.
+    private(set) var radioCustomStations: [RadioStation] = []
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
     /// Lyrics for the current track (nil while loading, before the first
@@ -225,6 +231,7 @@ final class AppStore {
         self.history = historyStore.load()
         self.radioFavorites = preferences.radioFavorites
         self.radioRecents = preferences.radioRecents
+        self.radioCustomStations = preferences.radioCustomStations
         // A sleep timer survives a relaunch: restore it and resume the
         // countdown if its deadline is still ahead.
         let storedTimer = preferences.sleepTimer
@@ -396,6 +403,12 @@ final class AppStore {
             radioRecents = []
             preferences.radioRecents = radioRecents
             preferencesStore.save(preferences)
+        case .addRadioCustomStation(let name, let url):
+            addRadioCustomStation(name: name, url: url)
+        case .updateRadioCustomStation(let station, let name, let url):
+            updateRadioCustomStation(station, name: name, url: url)
+        case .deleteRadioCustomStation(let station):
+            deleteRadioCustomStation(station)
         case .authenticateLastFm(let username, let password):
             Task { await scrobbler.authenticate(username: username, password: password) }
         case .signOutLastFm:
@@ -435,9 +448,12 @@ final class AppStore {
         recordRadioRecent(station)
         player.playLiveStream(track: Track.radioTrack(for: station))
         // Directory click counter (Shortwave parity) — best-effort,
-        // never blocks playback.
-        let uuid = station.uuid
-        Task { await radioClient.registerClick(uuid: uuid) }
+        // never blocks playback. Custom stations aren't in the
+        // directory, so there is nothing to count.
+        if !isRadioCustom(station) {
+            let uuid = station.uuid
+            Task { await radioClient.registerClick(uuid: uuid) }
+        }
     }
 
     /// Stops radio playback and forgets the station.
@@ -464,6 +480,72 @@ final class AppStore {
     /// True when the station is starred — row state for the Radio tab.
     func isRadioFavorite(_ station: RadioStation) -> Bool {
         radioFavorites.contains { $0.uuid == station.uuid }
+    }
+
+    // MARK: Custom radio stations (radio R5)
+
+    /// True when the station is one the user added by URL (not a
+    /// directory entry) — drives the Radio tab's edit/delete menus and
+    /// the click-ping skip.
+    func isRadioCustom(_ station: RadioStation) -> Bool {
+        radioCustomStations.contains { $0.uuid == station.uuid }
+    }
+
+    /// Saves a custom station (name + raw stream URL). The form sheet
+    /// validates both; the store just persists. Saving is synchronous —
+    /// no network — so the sheet dismisses immediately.
+    private func addRadioCustomStation(name: String, url: String) {
+        let station = RadioStation(
+            uuid: UUID().uuidString.lowercased(),
+            name: name,
+            streamURL: url
+        )
+        radioCustomStations.append(station)
+        preferences.radioCustomStations = radioCustomStations
+        preferencesStore.save(preferences)
+        AppLog.info("radio: added custom station \"\(name)\"", .network)
+    }
+
+    /// Applies a form edit: same uuid, new name/URL. The user's other
+    /// lists and the playing snapshot follow the new identity (the
+    /// stream keeps playing until restarted — a restart picks the new URL).
+    private func updateRadioCustomStation(_ station: RadioStation, name: String, url: String) {
+        guard let index = radioCustomStations.firstIndex(where: { $0.uuid == station.uuid }) else { return }
+        let updated = RadioStation(uuid: station.uuid, name: name, streamURL: url)
+        radioCustomStations[index] = updated
+        if let favorite = radioFavorites.firstIndex(where: { $0.uuid == updated.uuid }) {
+            radioFavorites[favorite] = updated
+            preferences.radioFavorites = radioFavorites
+        }
+        if let recent = radioRecents.firstIndex(where: { $0.uuid == updated.uuid }) {
+            radioRecents[recent] = updated
+            preferences.radioRecents = radioRecents
+        }
+        if currentRadioStation?.uuid == updated.uuid {
+            currentRadioStation = updated
+        }
+        preferences.radioCustomStations = radioCustomStations
+        preferencesStore.save(preferences)
+    }
+
+    /// Deletes a custom station everywhere: the list, favorites and
+    /// recents (it is gone, so stale entries would 404), and playback
+    /// if it was the one playing.
+    private func deleteRadioCustomStation(_ station: RadioStation) {
+        radioCustomStations.removeAll { $0.uuid == station.uuid }
+        preferences.radioCustomStations = radioCustomStations
+        if radioFavorites.contains(where: { $0.uuid == station.uuid }) {
+            radioFavorites.removeAll { $0.uuid == station.uuid }
+            preferences.radioFavorites = radioFavorites
+        }
+        if radioRecents.contains(where: { $0.uuid == station.uuid }) {
+            radioRecents.removeAll { $0.uuid == station.uuid }
+            preferences.radioRecents = radioRecents
+        }
+        preferencesStore.save(preferences)
+        if currentRadioStation?.uuid == station.uuid {
+            stopRadio()
+        }
     }
 
     /// Moves a station to the top of the recents list (deduped), keeping

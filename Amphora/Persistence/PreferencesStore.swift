@@ -27,6 +27,8 @@ struct Preferences: Codable, Equatable {
     var radioFavorites: [RadioStation] = []
     /// Recently played radio stations, most recent first.
     var radioRecents: [RadioStation] = []
+    /// User-added custom stations (a name + a raw stream URL), device-local.
+    var radioCustomStations: [RadioStation] = []
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.

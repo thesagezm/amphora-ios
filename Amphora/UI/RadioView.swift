@@ -10,6 +10,9 @@ import SwiftUI
 struct RadioView: View {
     @Environment(AppStore.self) private var store
 
+    @State private var isAddingStation = false
+    @State private var editingStation: RadioStation?
+
     private var radio: RadioController { store.radio }
 
     var body: some View {
@@ -22,6 +25,22 @@ struct RadioView: View {
         }
         .navigationTitle("Radio")
         .searchable(text: searchBinding, prompt: "Search radio stations")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isAddingStation = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add custom station")
+            }
+        }
+        .sheet(isPresented: $isAddingStation) {
+            RadioStationFormSheet(existing: nil)
+        }
+        .sheet(item: $editingStation) { station in
+            RadioStationFormSheet(existing: station)
+        }
     }
 
     private var searchBinding: Binding<String> {
@@ -35,6 +54,28 @@ struct RadioView: View {
 
     private var homeList: some View {
         List {
+            // Custom stations the user added by URL — editable and
+            // deletable via the row's context menu.
+            if !store.radioCustomStations.isEmpty {
+                Section("My Stations") {
+                    ForEach(store.radioCustomStations) { station in
+                        stationButton(station)
+                            .amphoraCardRow(tinted: isCurrent(station))
+                            .contextMenu {
+                                Button {
+                                    editingStation = station
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    store.send(.deleteRadioCustomStation(station))
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
+                }
+            }
             if !store.radioRecents.isEmpty {
                 Section {
                     ForEach(store.radioRecents) { station in
