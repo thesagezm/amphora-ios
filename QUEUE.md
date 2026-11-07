@@ -255,6 +255,14 @@ tests (`testEveryRequestAsksForJSON`,
 `testFormatParameterIsExcludedFromSignature`) would have caught the
 original bug and run on CI.
 
+**Repair push (`b02b803`):** the first push's Core Tests run was red on
+a test-file edit slip — the new test block replaced the `// MARK:
+Error mapping` header *including* the `func
+testErrorCodesMapToTypedErrors() async {` declaration line, leaving
+its body orphaned (CI: "extraneous '}' at top level",
+"expected 'func' keyword"). The declaration is restored; iOS Build was
+already green on the Last.fm commit (`7cf6503`, run 42417743667).
+
 **Device expectation**: Settings → Last.fm → enter real credentials →
 Connect now succeeds (previously always failed with "Last.fm sent an
 unexpected response"); "Signed in as <name>" + status line + profile
