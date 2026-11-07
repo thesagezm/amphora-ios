@@ -318,6 +318,8 @@ final class LastFmTests: XCTestCase {
     }
 
     // MARK: - Error mapping
+
+    func testErrorCodesMapToTypedErrors() async {
         func error(for code: Int) async -> LastFmError {
             let transport = MockLastFmTransport(responses: [
                 ok(#"{"error":\#(code),"message":"m"}"#)
