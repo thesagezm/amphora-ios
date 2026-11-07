@@ -69,10 +69,15 @@ final class AppStore {
     /// Playback engine. Owns the player, the audio session and the
     /// now-playing track; it never talks to the network.
     let player: PlayerService
-    /// The internet-radio directory client (radio-browser.info). Only
-    /// the click ping runs from here — directory fetches belong to the
-    /// Radio tab's controller (R4).
+    /// The internet-radio directory client (radio-browser.info). The
+    /// play-click ping runs from here; all directory *fetches* for the
+    /// Radio tab go through `radio` — one shared client, so the mirror
+    /// rotation sees the same servers from both sides.
     private let radioClient = RadioBrowserClient()
+    /// The Radio tab's discovery state (radio milestone R4): search /
+    /// popular / country / tag lists. Owned here so it survives tab
+    /// switches; composed with the shared directory client above.
+    let radio: RadioController
     /// Lock-screen / Control Center integration (now playing info +
     /// remote transport commands).
     private let nowPlaying: NowPlayingService
@@ -212,6 +217,7 @@ final class AppStore {
         self.lyricsRomanizer = lyricsRomanizer
         let player = PlayerService()
         self.player = player
+        self.radio = RadioController(client: radioClient)
         self.nowPlaying = NowPlayingService(player: player)
         let scrobbler = Scrobbler()
         self.scrobbler = scrobbler

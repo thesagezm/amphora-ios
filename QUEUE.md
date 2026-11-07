@@ -183,7 +183,50 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit R3: radio plays through the existing player):**
+**(this push — app unit R4: the Radio tab):** the Shortwave port's UI.
+`Amphora/UI/RadioView.swift` (new) is the second tab
+(`antenna.radiowaves.left.and.right`, between Home and Settings in
+`MainTabView`); `Amphora/Store/RadioController.swift` (new) owns every
+directory fetch — no networking in SwiftUI views (AGENTS.md) — and is
+composed by `AppStore` as `store.radio` (state survives tab switches;
+it shares the store's `RadioBrowserClient`, so mirror rotation and the
+click ping see the same servers).
+
+- **Root ("Radio")**: "Recently Played" section (swipe-remove per row,
+  header "Clear" button), "Favorites" section (A–Z, as the store
+  orders it), and a "Discover" section — Popular / Countries / Tags as
+  accent-tiled `NavigationLink` rows (the browse-sheet language).
+  Tapping a station row plays it via `.playRadioStation` (tapping the
+  playing station toggles — store behavior from R3); the playing
+  station's card washes in the accent and shows the speaker glyph.
+- **Star toggle** on every station row (nested button, own tap and own
+  VoiceOver element — the row uses `.contain`, not `.combine`) →
+  `.toggleRadioFavorite` with haptics.
+- **Search**: the tab root is `.searchable`; non-empty text debounces
+  400 ms in the controller (never hammer the directory) then swaps the
+  root for results; clearing returns to the home. Results use the same
+  rows and the same accent-tint playing state.
+- **Discovery lists**: Popular / one country / one tag push a shared
+  `RadioResultsView` (loading / error + Retry / empty / card rows);
+  Countries and Tags push catalog lists (name + station count), each
+  fetched once per session (same caching as the genre browse sheet)
+  with typed error copy from the R2 client.
+- R5 (custom stations by URL, add/edit/delete) is the radio milestone's
+  remaining unit.
+
+Local checks: `RadioController.swift` **type-checks** clean in Docker
+(`swiftc -swift-version 6` against the built PandoraCore module + an
+`AppLog` stub — the strong local check from the CrashReporter rounds);
+all four touched files parse-clean. PandoraCore untouched this push
+(R2's 272/272 and its green CI runs stand). App target compiles on CI
+only — verify both workflows on the next `gh run list`.
+
+**Device expectation**: Radio tab with recents/favorites/discover →
+tap Popular → rows → tap a station → music within ~2s, star persists
+across relaunch, search finds stations live, starting a Pandora
+station stops radio and vice versa.
+
+**(previous push — app unit R3: radio plays through the existing player):**
 the glue between the R2 directory client and playback. Nothing new in
 the UI yet (that is R4) — but radio is playable end-to-end from state:
 
@@ -1489,19 +1532,12 @@ toolbar) → Copy → paste.
 
 0. **Radio milestone (R units, user request 2026-11-07 — port
    Shortwave):** R1 Recents → toolbar button ✅ · R2 PandoraCore
-   radio-browser client + fixture tests ✅ · R3 playback glue ✅ (this
-   push) · **R4 NEXT — Radio tab UI**: new `Amphora/UI/RadioView.swift`
-   (search / popular / country / tag discovery via `RadioBrowserClient`,
-   station rows with favicon + caption + star toggle, "Recently
-   played" on top, favorites section, loading/error/empty states in
-   the existing `Theme` system) wired into `MainTabView` as the second
-   tab (`antenna.radiowaves.left.and.right`); the store already
-   exposes everything the tab needs (`AppStore.player`,
-   `currentRadioStation`, `radioFavorites`, `radioRecents`,
-   `isRadioFavorite(_:)`, the intents). Directory fetches should go
-   through a small `@Observable RadioController` composed by AppStore
-   or owned by the view — no networking in SwiftUI views (AGENTS.md).
-   · R5 custom stations by URL (add/edit/delete).
+   radio-browser client + fixture tests ✅ · R3 playback glue ✅ ·
+   R4 Radio tab UI ✅ (this push) · **R5 NEXT — custom stations by
+   URL** (add / edit / delete: a form taking any stream URL — name +
+   URL, persisted like favorites, playable through the same
+   `playLiveStream` path; maybe an "Add Station…" toolbar button on the
+   Radio tab and a context-menu row on custom entries).
 1. **User device test of this round's IPAs** — the gating item (light
    mode, history ratings, lyrics fallbacks, romanization, AirPlay). The
    romanized panel needs a non-Latin song to check (e.g. a K-pop track);
