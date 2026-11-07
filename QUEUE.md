@@ -14,6 +14,14 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
+**2026-11-07 request (this session's driver):** "add local/internet
+radio to the app as the second tab — basically port Shortwave (Linux)
+to this app; the recents tab can become a button along with adding a
+station and sorting". Tracked as the **R units** below (radio-browser
+directory in PandoraCore, playback through the existing PlayerService,
+Home toolbar gains the Recents button beside Add + Sort). R1 (Recents
+→ toolbar button) is in this push; R2–R5 follow.
+
 **2026-11-02 request:** "add support for airplay to the app" → **the
 AirPlay unit landed** (see In Flight / Last Push).
 
@@ -175,7 +183,26 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit: the AirPlay handover gets out of the system's
+**(this push — app unit R1: Recents loses its tab, Home gains the
+toolbar button):** the user's 2026-11-07 restructure. `MainTabView` is
+now Home | Settings (the Radio tab lands in R4). `StationsView`'s
+toolbar gains a **clock button** (Recents + bookmarks) beside the
+existing **+** (add station) and **reorder** buttons — exactly the
+three the user named. The old `RecentsView` (history + bookmarks
+behind the segmented pill) is unchanged and now opens as a full sheet
+with a Done button. No PandoraCore changes.
+
+Local checks: PandoraCore 259/259 in Docker (the host toolchain is
+gone from PATH — core tests run via `docker run -u 1000:1000 -v
+…/PandoraCore:/pkg -w /pkg swift:6.0 swift test`; the stale root-owned
+`.build` was reset once via a root container to fix a build-tool
+crash). App target compiles on CI only.
+
+**Device expectation**: two tabs (Home, Settings); the clock button on
+Home opens Recents + bookmarks; history rating and bookmarks still
+work inside the sheet.
+
+**(previous push — app unit: the AirPlay handover gets out of the system's
 way and resumes its pause):** the user's device report on the
 audio-only path: "selecting the tv to be the audio output for just the
 music … its pausing the playback instead". Both previous approaches are
@@ -1389,6 +1416,13 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
+0. **Radio milestone (R units, user request 2026-11-07 — port
+   Shortwave):** R1 Recents → toolbar button ✅ (this push) · R2
+   PandoraCore radio-browser client + fixture tests · R3 playback glue
+   (synthetic live Track through PlayerService, skip→stop, no
+   lyrics/scrobble/history on radio) · R4 Radio tab UI (search /
+   popular / country / tag, favorites, recents) · R5 custom stations
+   by URL (add/edit/delete).
 1. **User device test of this round's IPAs** — the gating item (light
    mode, history ratings, lyrics fallbacks, romanization, AirPlay). The
    romanized panel needs a non-Latin song to check (e.g. a K-pop track);

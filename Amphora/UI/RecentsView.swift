@@ -1,9 +1,9 @@
 import PandoraCore
 import SwiftUI
 
-/// The Recents tab: the local play history and the user's bookmarks
-/// share one screen behind a soft segmented pill. Bookmarks lost their
-/// own tab (user request 2026-10-24) — this keeps them one tap away.
+/// Recents + bookmarks, opened from the Home tab's toolbar button
+/// (user request 2026-11-07 — the tab itself is gone). The two share
+/// one screen behind a soft segmented pill.
 struct RecentsView: View {
     @Environment(AppStore.self) private var store
 

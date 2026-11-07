@@ -17,6 +17,7 @@ struct StationsView: View {
     @State private var isAddingStation = false
     @State private var isBrowsingStations = false
     @State private var isEditingOrder = false
+    @State private var isShowingRecents = false
 
     var body: some View {
         Group {
@@ -34,6 +35,14 @@ struct StationsView: View {
         }
         .navigationTitle("Home")
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isShowingRecents = true
+                } label: {
+                    Image(systemName: "clock")
+                }
+                .accessibilityLabel("Recents and bookmarks")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     isAddingStation = true
@@ -54,6 +63,19 @@ struct StationsView: View {
         .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
         .sheet(isPresented: $isAddingStation) {
             AddStationView()
+        }
+        // Recents + bookmarks lost their tab (user request 2026-11-07);
+        // they ride here as a sheet instead.
+        .sheet(isPresented: $isShowingRecents) {
+            NavigationStack {
+                RecentsView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { isShowingRecents = false }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
         }
         .sheet(isPresented: $isBrowsingStations) {
             BrowseStationsSheet()

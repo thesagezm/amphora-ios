@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The signed-in shell: Home (stations), Recents (history + bookmarks
-/// behind one segmented control) and Settings — bookmarks no longer
-/// earn a tab of their own (user request 2026-10-24) — plus the
-/// persistent mini-player.
+/// The signed-in shell: Home (stations) and Settings. Recents lost its
+/// tab (user request 2026-11-07) — history and bookmarks now open from
+/// a Home toolbar button — and a Radio tab is on the way (Shortwave
+/// port, QUEUE R4). The persistent mini-player rides along.
 ///
 /// The mini-player rides **each tab's content** as a bottom
 /// `safeAreaInset`, while the full-player sheet is owned **here** — one
@@ -28,14 +28,6 @@ struct MainTabView: View {
             }
             .tabItem {
                 Label("Home", systemImage: "music.note.house")
-            }
-            .miniPlayer { isShowingNowPlaying = true }
-
-            NavigationStack {
-                RecentsView()
-            }
-            .tabItem {
-                Label("Recents", systemImage: "clock")
             }
             .miniPlayer { isShowingNowPlaying = true }
 
