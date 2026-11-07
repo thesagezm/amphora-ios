@@ -285,6 +285,14 @@ public struct LastFmClient: Sendable {
     // MARK: Internals (test seams)
 
     func post(parameters: [String: String]) async throws -> Data {
+        // Last.fm replies in **XML** unless the request explicitly asks
+        // for JSON — and this client only decodes JSON. The parameter
+        // must ride on every call; it is excluded from the signature
+        // (authspec), so adding it here does not disturb `api_sig`.
+        // Verified live 2026-11-07: the same signed request returns
+        // `<lfm …>` XML without it and JSON with it.
+        var parameters = parameters
+        parameters["format"] = "json"
         let form = Self.percentEncodedForm(parameters)
         let response: LastFmHTTPResponse
         do {

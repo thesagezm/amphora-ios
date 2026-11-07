@@ -228,6 +228,14 @@ final class AppStore {
         let scrobbler = Scrobbler()
         self.scrobbler = scrobbler
         scrobbler.isEnabled = preferences.scrobblingEnabled
+        // The scrobbler flips its own enable flag on sign-in, sign-out
+        // and session expiry — persist every one of those flips, or a
+        // fresh sign-in would be forgotten on the next launch.
+        scrobbler.onEnabledChanged = { [weak self] enabled in
+            guard let self else { return }
+            self.preferences.scrobblingEnabled = enabled
+            self.preferencesStore.save(self.preferences)
+        }
         self.history = historyStore.load()
         self.radioFavorites = preferences.radioFavorites
         self.radioRecents = preferences.radioRecents
@@ -412,9 +420,8 @@ final class AppStore {
         case .authenticateLastFm(let username, let password):
             Task { await scrobbler.authenticate(username: username, password: password) }
         case .signOutLastFm:
+            // signOut fires onEnabledChanged(false), which persists.
             scrobbler.signOut()
-            preferences.scrobblingEnabled = false
-            preferencesStore.save(preferences)
         case .setScrobblingEnabled(let enabled):
             scrobbler.isEnabled = enabled
             preferences.scrobblingEnabled = enabled

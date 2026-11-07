@@ -220,6 +220,27 @@ private struct LastFmSettings: View {
             }
             .font(.footnote)
             .amphoraCardRow()
+            if let activity = store.scrobbler.lastActivity {
+                Label {
+                    Text(activity)
+                        .font(.footnote)
+                        .foregroundStyle(store.scrobbler.lastActivityIsError ? .yellow : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: store.scrobbler.lastActivityIsError
+                        ? "exclamationmark.triangle.fill"
+                        : "checkmark.circle.fill")
+                        .foregroundStyle(store.scrobbler.lastActivityIsError ? .yellow : Theme.accentText)
+                }
+                .font(.footnote)
+                .amphoraCardRow()
+            }
+            if let profileURL = URL(string: "https://www.last.fm/user/\(name)") {
+                Link(destination: profileURL) {
+                    Label("Open Last.fm Profile", systemImage: "safari")
+                }
+                .amphoraCardRow()
+            }
             Button(role: .destructive) {
                 store.send(.signOutLastFm)
                 password = ""

@@ -277,9 +277,47 @@ final class LastFmTests: XCTestCase {
         }
     }
 
-    // MARK: - Error mapping
+    // MARK: - Response format (live-verified 2026-11-07)
 
-    func testErrorCodesMapToTypedErrors() async {
+    /// Last.fm replies in XML unless `format=json` is sent — and the
+    /// client only decodes JSON. Every call must ask for JSON; a fixture
+    /// transport returning JSON regardless would hide its absence, so
+    /// assert the parameter is on the wire for all three methods.
+    func testEveryRequestAsksForJSON() async throws {
+        let transport = MockLastFmTransport(responses: [
+            ok(#"{"session":{"name":"n","key":"K","subscriber":0}}"#),
+            ok(#"{"nowplaying":{}}"#),
+            ok(#"{"scrobbles":{}}"#)
+        ])
+        let client = makeClient(transport)
+        _ = try await client.authenticate(username: "u", password: "p")
+        try await client.updateNowPlaying(sessionKey: "K", artist: "A", track: "T")
+        try await client.scrobble(sessionKey: "K", artist: "A", track: "T", timestamp: 1)
+
+        XCTAssertEqual(transport.requests.count, 3)
+        for request in transport.requests {
+            XCTAssertEqual(
+                formFields(of: request.form)["format"], "json",
+                "every Last.fm call must ask for JSON; the default reply is XML"
+            )
+        }
+    }
+
+    /// `format=json` is added after signing and is excluded from the
+    /// signature, so the api_sig stays valid with it present.
+    func testFormatParameterIsExcludedFromSignature() async throws {
+        let transport = MockLastFmTransport(responses: [
+            ok(#"{"nowplaying":{}}"#)
+        ])
+        try await makeClient(transport).updateNowPlaying(
+            sessionKey: "K", artist: "A", track: "T")
+        let fields = formFields(of: transport.requests[0].form)
+        var signed = fields
+        let sent = signed.removeValue(forKey: "api_sig")
+        XCTAssertEqual(sent, LastFmSigning.signature(signed, secret: LastFmClient.apiSecret))
+    }
+
+    // MARK: - Error mapping
         func error(for code: Int) async -> LastFmError {
             let transport = MockLastFmTransport(responses: [
                 ok(#"{"error":\#(code),"message":"m"}"#)

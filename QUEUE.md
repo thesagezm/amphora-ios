@@ -14,7 +14,42 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
-**2026-11-07 request (this session's driver):** "add local/internet
+**2026-11-07 GUI round (this session's driver):** "improve the gui of
+the app… add and make the settings work and useful (last fm doesnt
+work)… no artwork for radiostations?… the playback controls and player
+dont look sophisticated… improve the gui". Four asks, mapped to units:
+
+1. **Last.fm doesn't work** → **Unit 1 (this push)**. Root cause found
+   and **verified live**: the client never sent `format=json`, so
+   Last.fm replied in **XML** (the default) while the client only
+   decodes JSON → every call failed as `.malformed` ("Last.fm sent an
+   unexpected response"). Live probe 2026-11-07: the same signed
+   `auth.getMobileSession` POST returns `<lfm …>` XML without the
+   parameter and JSON with it. All 28 fixture tests stubbed JSON, so
+   they never caught it. Second bug: a fresh sign-in set
+   `scrobbler.isEnabled = true` in memory only — the preference was
+   never persisted, so scrobbling was off again after relaunch.
+2. **Radio station artwork missing** → **Unit 2 (next)**. Causes found
+   this session: (a) `ArtworkCache.normalizedURL` force-upgrades every
+   URL to HTTPS and `candidateURLs` only ever emits HTTPS variants, so
+   radio favicons on HTTP-only hosts (common in radio-browser) fail
+   both candidates; ATS also blocks cleartext. (b) Many stations have
+   no favicon at all → the plain antenna glyph reads as "no artwork".
+   (c) Favicons are often 16×16, so even loaded ones look bad scaled
+   to fill. Fix plan: ATS media/arbitrary-load exception for internet
+   radio (streams + favicons), try the raw HTTP URL as a last-resort
+   candidate (the code comment claims the raw URL is tried but the code
+   upgrades it too — fix that), and a generated monogram/gradient tile
+   when a station has no favicon (better than the bare antenna glyph,
+   and better than a 16×16 favicon blown up to full-player size).
+3. **Player doesn't look sophisticated** → **Unit 3**: transport/layout
+   refinement, volume control, radio-specific controls (live badge,
+   hide rating/back-15 on live streams).
+4. **Settings useful + general GUI polish** → Unit 4 (and Unit 1's
+   scrobble status line + Last.fm profile link already add useful
+   Settings content).
+
+**2026-11-07 request (prior session's driver):** "add local/internet
 radio to the app as the second tab — basically port Shortwave (Linux)
 to this app; the recents tab can become a button along with adding a
 station and sorting". Tracked as the **R units** below (radio-browser
@@ -183,7 +218,52 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit R5: custom stations by URL):** the radio
+**(this push — Unit 1 of the GUI round: Last.fm actually works + useful
+Settings status):** the user's "last fm doesnt work", root-caused and
+fixed, with the fix verified against the live Last.fm endpoint.
+
+- **Core (`LastFmClient.post`)** — every request now sends
+  `format=json`. This is *the* bug behind "last fm doesnt work":
+  without it Last.fm replies in XML, and the JSON-only decode made
+  every call fail as `.malformed`. The parameter is added after signing
+  and is excluded from `api_sig` (authspec), so signatures stay valid.
+  Two regression tests (`testEveryRequestAsksForJSON`,
+  `testFormatParameterIsExcludedFromSignature`) assert the parameter is
+  on the wire for all three methods and excluded from the signature —
+  these fail without the fix.
+- **`Scrobbler`** — new `lastActivity` / `lastActivityIsError` for a
+  Settings status line: "Now playing on Last.fm: <track>" at track
+  start, "Scrobbled: <track>" on a successful scrobble, and the typed
+  error on failure (scrobble failures still never interrupt playback;
+  they now *show* instead of only logging). Sign-in sets a "Signed in.
+  Play a track to scrobble." hint; sign-out clears the status.
+- **Enable-persistence bug fixed** — new `Scrobbler.onEnabledChanged`
+  callback, fired on sign-in (enables), sign-out and session-expiry
+  (disable). `AppStore` persists `preferences.scrobblingEnabled` from
+  it. Previously a fresh sign-in enabled scrobbling only in memory and
+  the stored preference read back as `false` on the next launch.
+- **Settings** — signed-in Last.fm section now shows the live status
+  line (last scrobble / now-playing / error, icon tinted to match) and
+  an "Open Last.fm Profile" link (safely unwrapped URL — no force
+  unwrap). Sign-out path simplified to rely on the callback.
+
+Local verification: **not run this session** — the host has no Swift
+toolchain and the Docker test run was declined by the user. Core Tests
+and the iOS Build ride CI on this push (fire-and-continue). The
+protocol fix itself is verified by the live probe above; the two new
+tests (`testEveryRequestAsksForJSON`,
+`testFormatParameterIsExcludedFromSignature`) would have caught the
+original bug and run on CI.
+
+**Device expectation**: Settings → Last.fm → enter real credentials →
+Connect now succeeds (previously always failed with "Last.fm sent an
+unexpected response"); "Signed in as <name>" + status line + profile
+link appear; play a track past halfway → the status line shows
+"Scrobbled: <title>" and the track appears on the Last.fm profile;
+toggle persists across relaunch. If it still fails, the status line
+and Diagnostics log now show the exact Last.fm error.
+
+**(previous push — app unit R5: custom stations by URL):** the radio
 milestone's last unit — the user can add any direct stream URL as a
 station (Shortwave's "add by URL").
 
@@ -1569,25 +1649,66 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-0. **Radio milestone (R units, user request 2026-11-07 — port
-   Shortwave): COMPLETE, pending the device test.** R1 Recents →
-   toolbar button ✅ · R2 radio-browser client + tests ✅ · R3
-   playback glue ✅ · R4 Radio tab UI ✅ (CI green) · R5 custom
-   stations by URL ✅ (this push).
-1. **User device test of the next IPA** — the gating item: the radio
-   flow (test list in In Flight / Last Push) *and* the older pending
-   round (light mode, history ratings, lyrics fallbacks,
-   romanization, AirPlay; AirPlay needs a receiver on the network).
+0. **GUI round (user request 2026-11-07 — this session's driver):**
+   Unit 1 Last.fm fix ✅ (this push) → **Unit 2 radio artwork** (next)
+   → **Unit 3 sophisticated player** → Unit 4 Settings/GUI polish.
+   Unit details and root causes are in User Feedback Pending at the
+   top; Unit 2's plan is spelled out there (ATS exception for radio,
+   HTTP favicon fallback candidate, generated monogram tiles).
+1. **User device test of the next IPA** — Last.fm first (Settings →
+   Last.fm → Connect with real credentials; it must now succeed and
+   show the live scrobble status line), then the radio flow (R1–R5,
+   test list in In Flight / Last Push) and the older pending round
+   (light mode, history ratings, lyrics fallbacks, romanization,
+   AirPlay).
 2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
 3. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — the AirPlay
-handover-resume push must be green on CI. The next driver is the
-user's device test: audio-only AirPlay to the TV must move the music
-without pausing (if it still fails, the Diagnostics report's
-`output route:` line decides the next step).
+**FIRST ACTION next session:** `gh run list --limit 5` — this push's
+Core Tests + iOS Build must be green (the local test run was skipped
+this session, so CI is the first real check). Then **Unit 2: radio
+station artwork** (plan in User Feedback Pending item 2): ATS
+exception for internet-radio media/artwork, HTTP-favicon last-resort
+candidate in `ArtworkCache.candidateURLs`, and a generated monogram/
+gradient tile for stations with no favicon. Push each unit separately.
+
+## Session handover (2026-11-07, GUI round — Last.fm unit)
+
+**State:** Unit 1 (Last.fm fix + Settings status) pushed; working tree
+clean after push. Local verification NOT run (no host toolchain;
+Docker declined) — Core Tests + iOS Build ride CI. The Last.fm fix is
+verified by a live protocol probe, not by a device test.
+
+**Handover for the next session — three units remain in the GUI round:**
+
+- **Unit 2 (radio artwork) is next.** Root causes already diagnosed
+  (User Feedback Pending item 2): `ArtworkCache.candidateURLs` only
+  ever emits HTTPS candidates (the comment claims the raw URL is tried
+  as-is, but `upgradedToHTTPS` is applied to it too), so HTTP-only
+  radio favicons never load; ATS blocks cleartext anyway. Fix:
+  `INFOPLIST_KEY_NSAppTransportSecurity` exception for internet-radio
+  media loads (`NSAllowsArbitraryLoadsInMedia`, scoped to media) plus
+  a raw-HTTP last-resort candidate in `candidateURLs`, and a generated
+  monogram/gradient tile view for stations with no favicon (rows, mini
+  player, full player). Watch the 16×16-favicon-blown-up problem: at
+  full-player size prefer the monogram tile over a tiny favicon.
+- **Unit 3 (player sophistication)**: refine the transport (previous/
+  back-15, larger play, next), add a volume slider, and give live radio
+  its own controls (LIVE badge instead of a dead scrubber, hide thumbs
+  and back-15 on live streams — `FeedbackBar` currently renders for
+  radio tracks, which would fire rating intents at a synthetic token).
+- **Unit 4 (Settings usefulness + general GUI polish)** — Unit 1
+  already added the Last.fm status line + profile link; more useful
+  settings (audio-quality preference, history management) only if the
+  user asks; keep scope tight.
+- **Verification constraint this session:** no host Swift toolchain;
+  the user declined the Docker test run. Tests ride CI. If Docker is
+  acceptable next session, the loop is
+  `docker run --rm -u 1000:1000 -v "$PWD/PandoraCore:/pkg" -w /pkg swift:6.0 swift test`.
+
+## Session handover (2026-10-25, public release session)
 
 ## Session handover (2026-10-23, second session)
 

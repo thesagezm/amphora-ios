@@ -44,10 +44,25 @@ final class Scrobbler {
     /// Master switch, persisted via `AppStore`'s preferences. Only
     /// meaningful while signed in.
     var isEnabled = false
+    /// Fires when the scrobbler itself flips the enable flag (sign-in
+    /// enables it, a rejected session key or sign-out disables it).
+    /// `AppStore` persists the preference here — without it, a fresh
+    /// sign-in enabled scrobbling only in memory and the preference
+    /// read back on the next launch was still `false`.
+    var onEnabledChanged: ((Bool) -> Void)?
     /// True while an `auth.getMobileSession` round trip is in flight.
     private(set) var isAuthenticating = false
     /// The last authentication failure, for the Settings sheet.
     private(set) var authError: String?
+
+    /// What the scrobbler last did, for the Settings status line —
+    /// "Now playing: …" / "Scrobbled …" / the last error. Without this
+    /// the user cannot tell a working connection from a silently
+    /// failing one (scrobble failures deliberately never interrupt
+    /// playback, so the Settings row is the only place they surface).
+    private(set) var lastActivity: String?
+    /// True when `lastActivity` is an error rather than a success.
+    private(set) var lastActivityIsError = false
 
     init(keychain: KeychainStore = KeychainStore()) {
         self.keychain = keychain
@@ -77,6 +92,9 @@ final class Scrobbler {
             try keychain.set(data, for: Self.keychainAccount)
             authState = .signedIn(username: session.username)
             isEnabled = true
+            onEnabledChanged?(true)
+            lastActivity = "Signed in. Play a track to scrobble."
+            lastActivityIsError = false
             AppLog.info("last.fm: signed in as \(session.username)")
         } catch {
             AppLog.error("last.fm: sign-in failed (\(String(describing: error)))")
@@ -89,7 +107,10 @@ final class Scrobbler {
         try? keychain.remove(Self.keychainAccount)
         authState = .signedOut
         isEnabled = false
+        onEnabledChanged?(false)
         authError = nil
+        lastActivity = nil
+        lastActivityIsError = false
         AppLog.info("last.fm: signed out")
     }
 
@@ -111,6 +132,8 @@ final class Scrobbler {
                     album: track.album,
                     duration: TimeInterval(track.duration)
                 )
+                self.lastActivity = "Now playing on Last.fm: \(track.title)"
+                self.lastActivityIsError = false
             } catch {
                 self.handle(error, while: track.title)
             }
@@ -149,6 +172,8 @@ final class Scrobbler {
                     timestamp: timestamp,
                     duration: duration
                 )
+                self.lastActivity = "Scrobbled: \(track.title)"
+                self.lastActivityIsError = false
             } catch {
                 self.handle(error, while: track.title)
             }
@@ -179,9 +204,14 @@ final class Scrobbler {
             AppLog.error("last.fm: session key rejected — scrobbling paused")
             authState = .needsAuth(message: "Last.fm session ended. Sign in again.")
             isEnabled = false
+            onEnabledChanged?(false)
             try? keychain.remove(Self.keychainAccount)
+            lastActivity = "Last.fm session ended. Sign in again."
+            lastActivityIsError = true
             return
         }
+        lastActivity = "Last.fm error on \"\(title)\": \(Self.userMessage(for: error))"
+        lastActivityIsError = true
         AppLog.error("last.fm: update failed for \"\(title)\": \(String(describing: error))", .playback)
     }
 
