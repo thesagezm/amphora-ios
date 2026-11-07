@@ -44,6 +44,43 @@ private extension Dictionary where Key == String, Value == AnyJSON {
     }
 }
 
+// MARK: - Playback bridge
+
+/// Bridges the directory onto the player's Pandora-shaped `Track` —
+/// a live stream is a track with no duration and no rating. The
+/// `radio.` token prefix marks synthetic tracks so the app can guard
+/// lyrics, scrobbling, history and rating around them.
+extension Track {
+    /// True when this track was synthesized for a live radio stream —
+    /// it has no Pandora song behind it.
+    public var isRadio: Bool { trackToken.hasPrefix("radio.") }
+
+    /// The synthetic live-stream track for one directory station:
+    /// title = station name, artist = its caption (country · codec ·
+    /// bitrate), artwork = the station's favicon, duration = 0 (live).
+    /// The stream URL rides as the single (highest-quality) variant —
+    /// that is where the player looks for what to open.
+    public static func radioTrack(for station: RadioStation) -> Track {
+        Track(
+            trackToken: "radio.\(station.uuid)",
+            title: station.name,
+            artist: station.caption,
+            album: "",
+            artworkUrl: station.faviconURL,
+            duration: 0,
+            stationId: station.uuid,
+            variants: [
+                AudioVariant(
+                    quality: .highQuality,
+                    encoding: "radio",
+                    bitrate: station.bitrate,
+                    url: station.streamURL
+                )
+            ]
+        )
+    }
+}
+
 // MARK: - Models
 
 /// One directory station. Built from a `/json/stations/…` entry;

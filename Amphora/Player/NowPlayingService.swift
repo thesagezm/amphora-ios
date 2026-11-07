@@ -52,11 +52,17 @@ final class NowPlayingService {
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist,
             MPMediaItemPropertyAlbumTitle: track.album,
-            MPMediaItemPropertyPlaybackDuration: TimeInterval(track.duration),
             MPNowPlayingInfoPropertyElapsedPlaybackTime: player?.elapsed ?? 0,
             MPNowPlayingInfoPropertyPlaybackRate: player?.isPlaying == true ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
         ]
+        // A live radio stream has no length — declare it live instead of
+        // advertising a zero duration.
+        if track.isRadio {
+            info[MPNowPlayingInfoPropertyIsLiveStream] = true
+        } else {
+            info[MPMediaItemPropertyPlaybackDuration] = TimeInterval(track.duration)
+        }
         // Same track as the one already on the lock screen: carry the
         // artwork over so re-publishing never blanks the cover.
         if publishedTrackToken == track.trackToken,

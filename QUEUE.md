@@ -183,7 +183,50 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — core unit R2: the radio-browser directory client):**
+**(this push — app unit R3: radio plays through the existing player):**
+the glue between the R2 directory client and playback. Nothing new in
+the UI yet (that is R4) — but radio is playable end-to-end from state:
+
+- **`Track.radioTrack(for:)`** (PandoraCore bridge): a directory
+  station becomes a synthetic live track — `trackToken =
+  "radio.<uuid>"`, title = station name, artist = caption, artwork =
+  favicon, **duration = 0**, and the stream URL riding as the single
+  (highQuality) variant — the player reads `streamURL` from the
+  variants, so without it the item would refuse to build (caught by
+  the new test). `Track.isRadio` marks synthetic tracks by prefix.
+- **`PlayerService.playLiveStream(track:)`**: one slot, no prefetch
+  (there is no "next"), duration 0 — the scrubber reads it as live
+  and disables itself. Audio session, AirPlay, interruption handling
+  all inherited unchanged.
+- **`NowPlayingService`**: live tracks get
+  `MPNowPlayingInfoPropertyIsLiveStream` instead of a zero duration.
+- **`AppStore`**: `currentRadioStation` (mutually exclusive with
+  `currentStation` — starting one stops the other) plus intents
+  `.playRadioStation` / `.stopRadio` / `.toggleRadioFavorite` /
+  `.removeRadioRecent` / `.clearRadioRecents`. Favorites (A–Z,
+  Shortwave-style) and recents (newest first, capped at 20) persist
+  in `Preferences`. The directory click ping fires best-effort on
+  play. `skipToNext` **stops** radio (no next track) and the
+  remote-command path is covered by the queue-empty branch in
+  `onTrackChanged`. Radio tracks are excluded from: history,
+  lyrics, scrobbling (now-playing + scrobble), rating, sleep-song,
+  bookmarks. Note: favorites/recents live in `AppStore`, not a
+  separate `RadioController` — the intent pattern already had the
+  persistence and playback wiring; splitting it would have meant two
+  sources of truth.
+- Device-local radio data survives sign-out (same rule as history).
+
+Local checks: PandoraCore **272/272** in Docker; the four touched app
+files parse-clean (`swiftc -parse`). App target compiles on CI only.
+**CI note**: R2 runs for `8ccff94` were in flight when R3 was pushed —
+check both on the next `gh run list`.
+
+**Device expectation (after R4's tab exists)**: tap a station → audio
+within ~2s, lock screen shows the station name + live indicator, skip
+button stops the stream, star persists across relaunch, starting a
+Pandora station stops radio and vice versa, sleep timer pauses radio.
+
+**(previous push — core unit R2: the radio-browser directory client):**
 PandoraCore gained `RadioBrowser.swift` — the community directory
 behind GNOME Shortwave (radio-browser.info: free, keyless, GET-only
 JSON, mirrored across independent servers). Contents:
@@ -1445,12 +1488,20 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 0. **Radio milestone (R units, user request 2026-11-07 — port
-   Shortwave):** R1 Recents → toolbar button ✅ (this push) · R2
-   PandoraCore radio-browser client + fixture tests · R3 playback glue
-   (synthetic live Track through PlayerService, skip→stop, no
-   lyrics/scrobble/history on radio) · R4 Radio tab UI (search /
-   popular / country / tag, favorites, recents) · R5 custom stations
-   by URL (add/edit/delete). R1 ✅ · R2 ✅ (this push).
+   Shortwave):** R1 Recents → toolbar button ✅ · R2 PandoraCore
+   radio-browser client + fixture tests ✅ · R3 playback glue ✅ (this
+   push) · **R4 NEXT — Radio tab UI**: new `Amphora/UI/RadioView.swift`
+   (search / popular / country / tag discovery via `RadioBrowserClient`,
+   station rows with favicon + caption + star toggle, "Recently
+   played" on top, favorites section, loading/error/empty states in
+   the existing `Theme` system) wired into `MainTabView` as the second
+   tab (`antenna.radiowaves.left.and.right`); the store already
+   exposes everything the tab needs (`AppStore.player`,
+   `currentRadioStation`, `radioFavorites`, `radioRecents`,
+   `isRadioFavorite(_:)`, the intents). Directory fetches should go
+   through a small `@Observable RadioController` composed by AppStore
+   or owned by the view — no networking in SwiftUI views (AGENTS.md).
+   · R5 custom stations by URL (add/edit/delete).
 1. **User device test of this round's IPAs** — the gating item (light
    mode, history ratings, lyrics fallbacks, romanization, AirPlay). The
    romanized panel needs a non-Latin song to check (e.g. a K-pop track);

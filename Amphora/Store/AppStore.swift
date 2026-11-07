@@ -47,6 +47,11 @@ final class AppStore {
         case setSleepTimer(SleepTimer)
         case cancelSleepTimer
         case moveStation(from: Int, to: Int)
+        case playRadioStation(RadioStation)
+        case stopRadio
+        case toggleRadioFavorite(RadioStation)
+        case removeRadioRecent(RadioStation)
+        case clearRadioRecents
         case authenticateLastFm(username: String, password: String)
         case signOutLastFm
         case setScrobblingEnabled(Bool)
@@ -64,6 +69,10 @@ final class AppStore {
     /// Playback engine. Owns the player, the audio session and the
     /// now-playing track; it never talks to the network.
     let player: PlayerService
+    /// The internet-radio directory client (radio-browser.info). Only
+    /// the click ping runs from here — directory fetches belong to the
+    /// Radio tab's controller (R4).
+    private let radioClient = RadioBrowserClient()
     /// Lock-screen / Control Center integration (now playing info +
     /// remote transport commands).
     private let nowPlaying: NowPlayingService
@@ -98,6 +107,14 @@ final class AppStore {
     private(set) var isLoadingGenres = false
     /// The station whose playlist is playing (nil before the first play).
     private(set) var currentStation: Station?
+    /// The radio station whose live stream is playing (nil unless radio
+    /// owns the player). Mutually exclusive with `currentStation` —
+    /// starting one stops the other.
+    private(set) var currentRadioStation: RadioStation?
+    /// Starred radio stations, device-local (Shortwave's favorites).
+    private(set) var radioFavorites: [RadioStation] = []
+    /// Recently played radio stations, most recent first.
+    private(set) var radioRecents: [RadioStation] = []
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
     /// Lyrics for the current track (nil while loading, before the first
@@ -200,6 +217,8 @@ final class AppStore {
         self.scrobbler = scrobbler
         scrobbler.isEnabled = preferences.scrobblingEnabled
         self.history = historyStore.load()
+        self.radioFavorites = preferences.radioFavorites
+        self.radioRecents = preferences.radioRecents
         // A sleep timer survives a relaunch: restore it and resume the
         // countdown if its deadline is still ahead.
         let storedTimer = preferences.sleepTimer
@@ -228,12 +247,19 @@ final class AppStore {
             }
             self.currentFeedbackId = nil
             self.currentRating = Self.feedbackRating(for: track?.rating)
-            // Record the play in the local history (ads are not songs).
-            // The station token rides along so the Recents list can rate
-            // the track later — the rating belongs to that station.
-            if let track, !track.isAdvertisement {
+            // Record the play in the local history (ads are not songs,
+            // and neither is a live radio stream). The station token
+            // rides along so the Recents list can rate the track later
+            // — the rating belongs to that station.
+            if let track, !track.isAdvertisement, !track.isRadio {
                 self.history.record(track, stationToken: currentStation?.token)
                 self.historyStore.save(self.history)
+            }
+            // A radio station that lost its player slot (remote-command
+            // skip emptied the single-item queue) is no longer playing.
+            if track == nil, currentRadioStation != nil {
+                currentRadioStation = nil
+                lyrics = nil
             }
             // An advertisement that plays must be resolved + registered
             // (pydora `AdItem.prepare_playback`) — best-effort, never
@@ -243,13 +269,15 @@ final class AppStore {
             if self.sleepTimer.mode == .endOfTrack, track != nil {
                 self.fireSleepTimer()
             }
-            // Lyrics follow the current track; the per-track cache makes
-            // repeat listens free.
+            // Lyrics follow the current track (never for radio — the
+            // loadLyrics guard clears any state from a Pandora track);
+            // the per-track cache makes repeat listens free.
             self.loadLyrics(for: track)
-            // Last.fm: profile "now playing" at track start. The scrobble
-            // itself fires from `onTrackFinished` (the pithos rule needs
-            // the reached position of the outgoing track).
-            if let track {
+            // Last.fm: profile "now playing" at track start (radio has
+            // no songs to scrobble). The scrobble itself fires from
+            // `onTrackFinished` (the pithos rule needs the reached
+            // position of the outgoing track).
+            if let track, !track.isRadio {
                 self.trackStartedAt = Date()
                 self.scrobbler.nowPlaying(track)
             }
@@ -258,6 +286,8 @@ final class AppStore {
         // moment — pithos evaluates its rule at song-ended.
         player.onTrackFinished.append { [weak self] track, reachedPosition in
             guard let self else { return }
+            // A live stream earns no scrobble — there is no song.
+            guard !track.isRadio else { return }
             self.scrobbler.scrobbleIfEarned(
                 track: track,
                 reachedPosition: reachedPosition,
@@ -308,6 +338,13 @@ final class AppStore {
                 lastErrorMessage = "Advertisements can't be skipped."
                 return
             }
+            // Radio has no next track — "next" stops the stream (the
+            // lock-screen command goes through PlayerService's queue,
+            // whose emptying is handled in `onTrackChanged`).
+            if currentRadioStation != nil {
+                stopRadio()
+                return
+            }
             player.skipToNext()
         case .refreshLyrics:
             loadLyrics(for: player.currentTrack, force: true)
@@ -339,6 +376,20 @@ final class AppStore {
             setSleepTimer(.off)
         case .moveStation(let source, let destination):
             moveStation(from: source, to: destination)
+        case .playRadioStation(let station):
+            Task { await playRadio(station) }
+        case .stopRadio:
+            stopRadio()
+        case .toggleRadioFavorite(let station):
+            toggleRadioFavorite(station)
+        case .removeRadioRecent(let station):
+            radioRecents.removeAll { $0.uuid == station.uuid }
+            preferences.radioRecents = radioRecents
+            preferencesStore.save(preferences)
+        case .clearRadioRecents:
+            radioRecents = []
+            preferences.radioRecents = radioRecents
+            preferencesStore.save(preferences)
         case .authenticateLastFm(let username, let password):
             Task { await scrobbler.authenticate(username: username, password: password) }
         case .signOutLastFm:
@@ -354,6 +405,71 @@ final class AppStore {
         case .dismissError:
             lastErrorMessage = nil
         }
+    }
+
+    // MARK: Radio (internet radio, the Shortwave port)
+
+    /// Plays one directory station's live stream. Tapping the station
+    /// that is already playing toggles playback instead of restarting.
+    /// Starting radio stops Pandora playback and vice versa — the
+    /// player is singular.
+    private func playRadio(_ station: RadioStation) async {
+        if currentRadioStation?.uuid == station.uuid, player.currentTrack != nil {
+            player.togglePlayback()
+            return
+        }
+        AppLog.info("radio: playing \"\(station.name)\"", .playback)
+        currentRadioStation = station
+        currentStation = nil
+        queuedTrackTokens = []
+        prefetchRetryAttempts = 0
+        prefetchRetryTask?.cancel()
+        stationModes = nil
+        modesStationId = nil
+        recordRadioRecent(station)
+        player.playLiveStream(track: Track.radioTrack(for: station))
+        // Directory click counter (Shortwave parity) — best-effort,
+        // never blocks playback.
+        let uuid = station.uuid
+        Task { await radioClient.registerClick(uuid: uuid) }
+    }
+
+    /// Stops radio playback and forgets the station.
+    private func stopRadio() {
+        guard currentRadioStation != nil else { return }
+        AppLog.info("radio: stopped", .playback)
+        currentRadioStation = nil
+        lyrics = nil
+        player.stop()
+    }
+
+    /// Stars or unstars a station (device-local favorites).
+    private func toggleRadioFavorite(_ station: RadioStation) {
+        if let index = radioFavorites.firstIndex(where: { $0.uuid == station.uuid }) {
+            radioFavorites.remove(at: index)
+        } else {
+            radioFavorites.insert(station, at: 0)
+        }
+        radioFavorites.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        preferences.radioFavorites = radioFavorites
+        preferencesStore.save(preferences)
+    }
+
+    /// True when the station is starred — row state for the Radio tab.
+    func isRadioFavorite(_ station: RadioStation) -> Bool {
+        radioFavorites.contains { $0.uuid == station.uuid }
+    }
+
+    /// Moves a station to the top of the recents list (deduped), keeping
+    /// the list bounded like Shortwave's.
+    private func recordRadioRecent(_ station: RadioStation) {
+        radioRecents.removeAll { $0.uuid == station.uuid }
+        radioRecents.insert(station, at: 0)
+        if radioRecents.count > 20 {
+            radioRecents.removeLast(radioRecents.count - 20)
+        }
+        preferences.radioRecents = radioRecents
+        preferencesStore.save(preferences)
     }
 
     // MARK: Sign out
@@ -657,7 +773,7 @@ final class AppStore {
         translationTask = nil
         romanizationTask?.cancel()
         romanizationTask = nil
-        guard let track, !track.isAdvertisement else {
+        guard let track, !track.isAdvertisement, !track.isRadio else {
             lyrics = nil
             isLoadingLyrics = false
             return
@@ -940,7 +1056,7 @@ final class AppStore {
     /// pithos' `Song.rate`.
     private func rateCurrentTrack(_ rating: FeedbackRating) async {
         guard let track = player.currentTrack, rating != .none,
-              !track.isAdvertisement else { return }
+              !track.isAdvertisement, !track.isRadio else { return }
         guard let station = currentStation else { return }
         lastErrorMessage = nil
         do {
@@ -966,7 +1082,7 @@ final class AppStore {
     /// Remove the rating on the current track (thumbs up/down → unrated).
     private func removeCurrentRating() async {
         guard let feedbackId = currentFeedbackId,
-              let station = currentStation else { return }
+              let station = currentStation, currentRadioStation == nil else { return }
         lastErrorMessage = nil
         do {
             try await session.deleteFeedback(
@@ -1018,7 +1134,7 @@ final class AppStore {
     }
 
     /// Hide the current track for a few hours (`user.sleepSong`).
-    private func sleepCurrentTrack() async {        guard let track = player.currentTrack, !track.isAdvertisement else { return }
+    private func sleepCurrentTrack() async {        guard let track = player.currentTrack, !track.isAdvertisement, !track.isRadio else { return }
         lastErrorMessage = nil
         do {
             try await session.sleepSong(trackToken: track.trackToken)
@@ -1030,7 +1146,7 @@ final class AppStore {
 
     /// Bookmark the current song (`bookmark.addSongBookmark`).
     private func bookmarkCurrentSong() async {
-        guard let track = player.currentTrack, !track.isAdvertisement else { return }
+        guard let track = player.currentTrack, !track.isAdvertisement, !track.isRadio else { return }
         lastErrorMessage = nil
         do {
             try await session.addSongBookmark(trackToken: track.trackToken)
@@ -1043,7 +1159,7 @@ final class AppStore {
 
     /// Bookmark the current artist (`bookmark.addArtistBookmark`).
     private func bookmarkCurrentArtist() async {
-        guard let track = player.currentTrack, !track.isAdvertisement else { return }
+        guard let track = player.currentTrack, !track.isAdvertisement, !track.isRadio else { return }
         lastErrorMessage = nil
         do {
             try await session.addArtistBookmark(trackToken: track.trackToken)

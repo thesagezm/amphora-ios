@@ -164,6 +164,28 @@ final class PlayerService {
         requestMoreTracksIfNeeded()
     }
 
+    /// Starts a live radio stream: one slot, nothing behind it — there
+    /// is no "next" to prefetch, and the track's duration is 0 (the
+    /// scrubber reads it as live and disables itself).
+    func playLiveStream(track: Track) {
+        finishOutgoingTrack()
+        resetQueue()
+        guard let item = makeItem(for: track) else {
+            fail("That stream isn't playable right now.")
+            return
+        }
+        slots = [Slot(track: track, item: item)]
+        player.insert(item, after: nil)
+        currentTrack = track
+        elapsed = 0
+        duration = 0
+        errorMessage = nil
+        activateAudioSession()
+        player.play()
+        state = .playing
+        wantsToPlay = true
+    }
+
     /// Appends tracks to the queue (a freshly fetched playlist). Items are
     /// buffered by AVFoundation while the current track plays.
     func enqueue(_ tracks: [Track]) {

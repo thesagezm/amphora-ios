@@ -258,4 +258,38 @@ final class RadioBrowserTests: XCTestCase {
         let url = try XCTUnwrap(transport.requestedURLs.first)
         XCTAssertTrue(url.contains("/json/url/11111111-1111-1111-1111-111111111111"))
     }
+
+    // MARK: Playback bridge
+
+    func testRadioTrackCarriesStationFactsAndLiveDuration() {
+        let station = RadioStation(
+            uuid: "abc-123",
+            name: "Jazz Radio",
+            streamURL: "http://example.com/stream.mp3",
+            faviconURL: "http://example.com/icon.png",
+            country: "Germany",
+            codec: "MP3",
+            bitrate: 128
+        )
+        let track = Track.radioTrack(for: station)
+        XCTAssertEqual(track.trackToken, "radio.abc-123")
+        XCTAssertEqual(track.title, "Jazz Radio")
+        XCTAssertEqual(track.artist, "Germany · MP3 · 128 kbps")
+        XCTAssertEqual(track.artworkUrl, "http://example.com/icon.png")
+        XCTAssertEqual(track.duration, 0)
+        XCTAssertEqual(track.rating, .none)
+        XCTAssertTrue(track.isRadio)
+        XCTAssertEqual(track.streamURL, "http://example.com/stream.mp3")
+    }
+
+    func testIsRadioDistinguishesPandoraTracks() {
+        XCTAssertFalse(Track(
+            trackToken: "T0001", title: "Song", artist: "Artist",
+            album: "", duration: 180, stationId: "S1"
+        ).isRadio)
+        XCTAssertFalse(Track(
+            trackToken: "ad.TOKEN", title: "Ad", artist: "",
+            album: "", duration: 30, stationId: "S1", isAdvertisement: true
+        ).isRadio)
+    }
 }

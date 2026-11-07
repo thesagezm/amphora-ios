@@ -23,6 +23,10 @@ struct Preferences: Codable, Equatable {
     /// Whether scrobbling to Last.fm is enabled (only meaningful while a
     /// Last.fm session key exists in the Keychain).
     var scrobblingEnabled = false
+    /// Starred radio stations (Shortwave's favorites), device-local.
+    var radioFavorites: [RadioStation] = []
+    /// Recently played radio stations, most recent first.
+    var radioRecents: [RadioStation] = []
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.
