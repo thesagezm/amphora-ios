@@ -183,7 +183,35 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — app unit R1: Recents loses its tab, Home gains the
+**(this push — core unit R2: the radio-browser directory client):**
+PandoraCore gained `RadioBrowser.swift` — the community directory
+behind GNOME Shortwave (radio-browser.info: free, keyless, GET-only
+JSON, mirrored across independent servers). Contents:
+
+- **Models**: `RadioStation` (uuid, name, resolved stream URL,
+  favicon, tags, country/code, language, codec, bitrate, votes,
+  clicks, plus a `caption` helper for list rows), `RadioCountry`,
+  `RadioTag`. Malformed directory entries are skipped, never fatal;
+  an empty `url_resolved` falls back to the submitted `url`.
+- **`RadioBrowserClient`** (actor): search by name, top-voted, by
+  country code, by tag, countries/tags lists (largest first), and the
+  click-counter ping Shortwave also sends on play (`registerClick`,
+  best-effort). An injected `RadioBrowserTransport` keeps tests
+  network-free; `RadioURLSessionTransport` sends the User-Agent the
+  API asks clients to identify themselves with.
+- **Mirror rotation**: on a mirror's failure the call immediately
+  tries the next one, and the rotation remembers only *failures* —
+  a mirror that answered stays first until it stops answering. All
+  mirrors failing surfaces the last typed error
+  (`RadioBrowserError.httpStatus/networkFailure/badResponse`).
+
+11 new tests (fixtures mirror the real wire shapes): decode + skip,
+garbage body, caption, countries/tags decode, query assembly
+(`order=votes`, `hidebroken`, percent-encoded paths), empty-query
+skips the network, dead-mirror rotation, dead mirror not retried
+first, all-down typed error, click ping. Local: **270/270** in Docker.
+
+**(previous push — app unit R1: Recents loses its tab, Home gains the
 toolbar button):** the user's 2026-11-07 restructure. `MainTabView` is
 now Home | Settings (the Radio tab lands in R4). `StationsView`'s
 toolbar gains a **clock button** (Recents + bookmarks) beside the
@@ -1422,7 +1450,7 @@ toolbar) → Copy → paste.
    (synthetic live Track through PlayerService, skip→stop, no
    lyrics/scrobble/history on radio) · R4 Radio tab UI (search /
    popular / country / tag, favorites, recents) · R5 custom stations
-   by URL (add/edit/delete).
+   by URL (add/edit/delete). R1 ✅ · R2 ✅ (this push).
 1. **User device test of this round's IPAs** — the gating item (light
    mode, history ratings, lyrics fallbacks, romanization, AirPlay). The
    romanized panel needs a non-Latin song to check (e.g. a K-pop track);
