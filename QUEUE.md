@@ -218,9 +218,16 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit 1 of the GUI round: Last.fm actually works + useful
-Settings status):** the user's "last fm doesnt work", root-caused and
-fixed, with the fix verified against the live Last.fm endpoint.
+**(in progress — Unit 2 of the GUI round: radio artwork):** the work was
+interrupted by a context handover. **One file exists, uncommitted at the
+time of writing** — `PandoraCore/Sources/PandoraCore/ArtworkURL.swift`
+(new; see the session handover at the bottom of this file for its exact
+contents and what still has to be done). Nothing else in the tree is
+modified; the app-side work has **not** been started.
+
+**(previous push — Unit 1 of the GUI round: Last.fm actually works +
+useful Settings status):** the user's "last fm doesnt work", root-caused
+and fixed, with the fix verified against the live Last.fm endpoint.
 
 - **Core (`LastFmClient.post`)** — every request now sends
   `format=json`. This is *the* bug behind "last fm doesnt work":
@@ -1674,13 +1681,107 @@ toolbar) → Copy → paste.
    Diagnostics log decides the next step.
 3. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — this push's
-Core Tests + iOS Build must be green (the local test run was skipped
-this session, so CI is the first real check). Then **Unit 2: radio
-station artwork** (plan in User Feedback Pending item 2): ATS
-exception for internet-radio media/artwork, HTTP-favicon last-resort
-candidate in `ArtworkCache.candidateURLs`, and a generated monogram/
-gradient tile for stations with no favicon. Push each unit separately.
+**FIRST ACTION next session:** `gh run list --limit 5` — confirm the
+repair push is still green, then **finish Unit 2: radio station
+artwork** (details in the 2026-11-08 session handover at the bottom of
+this file). One new file is already written:
+`PandoraCore/Sources/PandoraCore/ArtworkURL.swift` — the HTTP favicon
+fallback candidate logic. It needs its unit tests, then wiring into
+`ArtworkCache.candidateURLs`, the ATS exception in `project.yml`, and
+the generated monogram tile.
+
+## Session handover (2026-11-08, GUI round — Unit 2 started, interrupted)
+
+**State:** the session was cut short by a context handover mid-unit.
+Working tree has **one new uncommitted file** and nothing else changed:
+
+- `PandoraCore/Sources/PandoraCore/ArtworkURL.swift` (new, untracked)
+  — `ArtworkURLCandidates.candidates(for:)`: the HTTPS-preferred URL
+  first, then **the raw URL with its scheme preserved** (`http://` stays
+  `http://`) as the last-resort candidate. Pure Foundation, no UI, so it
+  belongs in the core package (and the Android port surface).
+  `httpsPreferredURL(from:)` and `rawURL(from:)` are the two halves.
+
+**Verified this session (do not re-derive):**
+
+1. **The raw-HTTP bug is real.** `ArtworkCache.candidateURLs` calls
+   `normalizedURL` (which force-sets `components.scheme = "https"`) and
+   then `upgradedToHTTPS(direct)` — so every candidate is HTTPS and the
+   raw HTTP URL is *never* tried, exactly as the handover said. The
+   file's own comment ("the raw URL is tried as-is") is false.
+2. **ATS key precedence (Apple's docs, fetched):** `NSAllowsArbitraryLoads`
+   is **ignored on iOS 10+** if the plist also contains
+   `NSAllowsArbitraryLoadsForMedia`, `NSAllowsArbitraryLoadsInWebContent`
+   or `NSAllowsLocalNetworking`. So the correct shape is:
+   `NSAllowsArbitraryLoads = true` **alone** (it covers every domain,
+   including the media and URLSession loads), and **do not** also set
+   `NSAllowsArbitraryLoadsInMedia` — adding it would silently disable
+   the general exception. `NSAllowsArbitraryLoadsInMedia` alone covers
+   AVFoundation media loads only, **not** `URLSession` image loads, so
+   it would NOT unblock the favicons.
+3. **Live radio-browser data** (`de1.api.radio-browser.info`,
+   `/json/stations/topclick/8`): favicons are a mix — `https://` for most
+   (armisa.it, francetvinfo.fr, duckduckgo.com, mangoradio.de,
+   icecast.anon.fm), one **`http://`** (cdn-profiles.tunein.com), and
+   one station with **no favicon at all**. So both the HTTP fallback and
+   the generated tile are needed, not just one.
+4. **No Swift toolchain on this host** (`swift` not found). Docker is
+   installed but the user declined the Docker test run last session —
+   treat local `PandoraCore` tests as unavailable unless the user says
+   otherwise; Core Tests ride CI.
+
+**Still to do (Unit 2):**
+
+1. **Tests for `ArtworkURLCandidates`** — new
+   `PandoraCore/Tests/PandoraCoreTests/ArtworkURLTests.swift`: HTTP raw
+   URL yields two candidates (`https://` first, `http://` second);
+   HTTPS raw URL yields one; scheme-less yields one (`https://`);
+   spaces are percent-encoded; empty string yields none. These are
+   pure-function tests — they belong in the core package and run in CI.
+2. **Wire it into `ArtworkCache`** — replace the body of
+   `ArtworkCache.candidateURLs(for:)` with
+   `ArtworkURLCandidates.candidates(for:)`; keep the disk/memory cache
+   keyed on the first candidate as today. Delete the now-duplicated
+   `normalizedURL`/`upgradedToHTTPS` helpers and fix the file's header
+   comment (it currently claims the raw URL is tried as-is).
+   **Note:** the ATS exception in `project.yml` must land *before or
+   with* this, otherwise the HTTP candidate is blocked by ATS anyway.
+3. **ATS exception in `project.yml`** — the target currently uses
+   `GENERATE_INFOPLIST_FILE: YES` with `INFOPLIST_KEY_*` settings, and
+   `INFOPLIST_KEY_` build settings cannot express a nested dictionary
+   (`NSAppTransportSecurity` is a dict). Options: switch the target to
+   an explicit `info:` block / `Info.plist` file via XcodeGen's `info:`
+   property (XcodeGen writes it and sets `INFOPLIST_FILE`), or keep the
+   generated plist and inject the dict another way. **Verify the chosen
+   route actually produces the nested dictionary** — a flat
+   `INFOPLIST_KEY_` string will not work. The value must end up as:
+   `NSAppTransportSecurity → NSAllowsArbitraryLoads = true` and nothing
+   else (see precedence point 2).
+4. **Generated monogram/gradient tile** — for stations with no favicon
+   (and for favicons that are 16×16 blown up to full-player size).
+   Suggested shape: a `RadioStationArtwork` SwiftUI view in
+   `Amphora/UI/` that renders initials over a deterministic gradient
+   derived from the station name (hash → hue), used by the radio row
+   (`RadioStationRow`), the mini player and the full player when the
+   favicon is missing or too small. `Track.radioTrack(for:)` already
+   carries the station name as the track title and the favicon as the
+   artwork URL, so the player paths can key off `track.isRadio`.
+   The full player should prefer the tile over a tiny favicon; the row
+   can show the favicon when it exists and fall back to the tile.
+5. **Lock screen** (`NowPlayingService.loadArtwork`) loads via
+   `ArtworkCache.image(for:)` — with the HTTP candidate + ATS in place it
+   picks up HTTP favicons automatically. Consider whether the lock
+   screen should also fall back to a generated tile (probably yes, for
+   stations with no favicon).
+6. Update `QUEUE.md` (this section + User Feedback Pending item 2 +
+   Pending Queue) in the same commit, push, and **continue to Unit 3**
+   (sophisticated player) without waiting on CI.
+
+**Constraints to carry over:** no subagents (project working style);
+never wait on a build — push and continue; `PandoraCore` stays UI-free;
+`project.yml` and app sources are ours, but `.github/workflows/*` need
+user approval; no version bumps; no credentials or tokens in the repo
+(it is public).
 
 ## Session handover (2026-11-07, GUI round — Last.fm unit)
 
