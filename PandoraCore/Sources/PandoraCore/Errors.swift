@@ -176,4 +176,14 @@ public enum PlaylistError: Error, Sendable, Equatable {
     /// `PLAYLIST_END` (the playlist ran out) and
     /// `DAILY_SKIP_LIMIT_REACHED` (an explicit skip was refused).
     case skipLimitReached(playlistEnded: Bool)
+
+    /// `true` when the server reported that the playlist simply ran out
+    /// (`PLAYLIST_END`) rather than refusing an explicit skip
+    /// (`DAILY_SKIP_LIMIT_REACHED`).
+    public var playlistEnded: Bool {
+        switch self {
+        case .skipLimitReached(let ended):
+            return ended
+        }
+    }
 }

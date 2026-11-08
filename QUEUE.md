@@ -268,6 +268,14 @@ filter on → Home shows the "Explicit content is filtered" caption under
 the browse row, and Settings → Account reads "Explicit Content:
 Filtered"; with the filter off, neither appears.
 
+**Repair (this push, on top of the skip-limit push):** the skip-limit
+push's iOS Build was red on one line —
+`value of type 'PlaylistError' has no member 'playlistEnded'`: an enum
+with an associated value has no such member, the value has to be
+unwrapped. `PlaylistError.playlistEnded` is now a computed property
+(`switch self { case .skipLimitReached(let ended): … }`) with a test
+for it — **315/315 green** locally after the repair.
+
 **(previous push — skip-limit awareness, the last unimplemented AGENTS.md
 requirement):** "Respect skip limits and rate limits. Never hammer the
 API" + "skip-limit awareness shown in UI" — the feature set asked for

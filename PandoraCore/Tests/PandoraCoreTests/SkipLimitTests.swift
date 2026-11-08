@@ -138,6 +138,11 @@ final class SkipLimitTests: XCTestCase {
         }
     }
 
+    func testPlaylistEndedAccessorDistinguishesTheTwoSignals() {
+        XCTAssertTrue(PlaylistError.skipLimitReached(playlistEnded: true).playlistEnded)
+        XCTAssertFalse(PlaylistError.skipLimitReached(playlistEnded: false).playlistEnded)
+    }
+
     func testOtherPlaylistFaultsStayAPandoraAPIError() async throws {
         let transport = MockTransport(responses: [
             fail(code: 1039, message: "Too many playlist requests")
