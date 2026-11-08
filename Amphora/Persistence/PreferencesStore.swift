@@ -29,6 +29,12 @@ struct Preferences: Codable, Equatable {
     var radioRecents: [RadioStation] = []
     /// User-added custom stations (a name + a raw stream URL), device-local.
     var radioCustomStations: [RadioStation] = []
+    /// The app's playback volume (0...1). Optional on purpose: a
+    /// preferences file written before this key existed must still
+    /// decode — a missing key is an error for a synthesized `Decodable`,
+    /// and that error would silently reset every other preference.
+    /// `nil` means "full volume".
+    var playbackVolume: Float? = nil
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.

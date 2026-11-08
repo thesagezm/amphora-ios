@@ -28,6 +28,7 @@ final class AppStore {
         case playStation(Station)
         case togglePlayback
         case skipToNext
+        case setPlaybackVolume(Float)
         case refreshLyrics
         /// nil = the currently playing station (player path); a station
         /// value tunes from the list without touching playback.
@@ -240,6 +241,9 @@ final class AppStore {
         self.radioFavorites = preferences.radioFavorites
         self.radioRecents = preferences.radioRecents
         self.radioCustomStations = preferences.radioCustomStations
+        // The playback volume survives a relaunch. `nil` (a file written
+        // before the key existed) means full volume.
+        player.setVolume(preferences.playbackVolume ?? 1)
         // A sleep timer survives a relaunch: restore it and resume the
         // countdown if its deadline is still ahead.
         let storedTimer = preferences.sleepTimer
@@ -352,6 +356,13 @@ final class AppStore {
             Task { await play(station) }
         case .togglePlayback:
             player.togglePlayback()
+        case .setPlaybackVolume(let volume):
+            // The slider moves the level live; this intent is the one
+            // that remembers it (the view sends it when the drag ends,
+            // so the disk is written once per gesture, not per frame).
+            player.setVolume(volume)
+            preferences.playbackVolume = volume
+            preferencesStore.save(preferences)
         case .skipToNext:
             // pydora: "Cannot skip advertisements" — the impression plays out.
             if player.currentTrack?.isAdvertisement == true {

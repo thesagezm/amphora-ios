@@ -225,7 +225,32 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit 3 of the GUI round: the sophisticated player):** the
+**(this push — Unit 4 slice: the playback volume survives a relaunch):**
+the volume slider Unit 3 added forgot its level on the next launch.
+
+- **`Preferences.playbackVolume`** — an **optional** `Float?` on
+  purpose: a preferences file written before this key existed must
+  still decode (a missing key is an error for a synthesized
+  `Decodable`, and that error would silently reset every other
+  preference). `nil` means full volume.
+- **`AppStore`** — the stored level is applied to the player at launch
+  (`player.setVolume(preferences.playbackVolume ?? 1)`), and the new
+  intent `.setPlaybackVolume(_:)` applies it live and writes it to
+  disk.
+- **The slider writes once per gesture, not per frame** — the view
+  keeps the dragged value in `@State` (`draftVolume`) and applies it
+  live to the player; the intent (and the disk write) fires from the
+  slider's `onEditingChanged` when the drag ends.
+
+Local verification: **not run this session** — the host has no Swift
+toolchain and the Docker test run was declined by the user. Core Tests
+and the iOS Build ride CI on this push (fire-and-continue).
+
+**Device expectation**: full player → drag the volume slider → the
+music's level follows live → close the app, reopen it → the slider is
+still where it was left.
+
+**(previous push — Unit 3 of the GUI round: the sophisticated player):** the
 user's "the playback controls and player dont look sophisticated".
 
 - **The transport was rebuilt** (`NowPlayingView.transport(for:)`): the
@@ -1792,16 +1817,14 @@ toolbar) → Copy → paste.
 2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
-3. **Persist the playback volume** — the slider works but forgets the
-   level on the next launch. `Preferences` is Codable; a new key must
-   be optional (or given a default the decoder can use) so an older
-   preferences file still decodes.
+3. **Persist the playback volume** — ✅ landed in the push above (the
+   slider's level now survives a relaunch).
 4. Anything red on the next `gh run list` — repair first.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — confirm the
-Unit 2 and Unit 3 pushes are green on both workflows (the Unit 2 CI
-state was never checked this session), then **start Unit 4: Settings
-usefulness + general GUI polish**.
+Unit 2, Unit 3 and the volume-persistence pushes are green on both
+workflows (the Unit 2 CI state was never checked this session), then
+**continue Unit 4: Settings usefulness + general GUI polish**.
 
 ## Session handover (2026-11-08, GUI round — Unit 3 landed)
 
@@ -1836,8 +1859,7 @@ user's fourth ask: "add and make the settings work and useful"). Unit
 what is left is scope-dependent: the user has not named the settings
 they want. Sensible candidates, in order of value:
 
-1. **Persisting the playback volume** (Pending Queue item 3) — a
-   setting the user can actually feel.
+1. ~~**Persisting the playback volume**~~ — ✅ landed (the push above).
 2. **History management** — clear the play history (the app has
    history but no way to wipe it from the UI).
 3. **Audio quality** — Pandora already serves the best variant the

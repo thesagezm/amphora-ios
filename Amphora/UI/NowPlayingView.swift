@@ -22,6 +22,9 @@ struct NowPlayingView: View {
     @State private var isShowingTuning = false
     @State private var isShowingLyrics = false
     @State private var isShowingUpNext = false
+    /// The volume while the slider is being dragged. The level is
+    /// applied live, but it is only written to disk when the drag ends.
+    @State private var draftVolume: Double?
 
     var body: some View {
         NavigationStack {
@@ -197,6 +200,10 @@ struct NowPlayingView: View {
     /// The app's playback volume. `AVPlayer.volume` scales what
     /// Amphora outputs — the phone's own system volume is untouched, so
     /// this slider never fights the hardware buttons.
+    ///
+    /// The level moves live while the finger is down and is written to
+    /// disk once, when the drag ends — saving on every frame would
+    /// hammer the file system for nothing.
     private var volumeControl: some View {
         HStack(spacing: 10) {
             Image(systemName: "speaker.fill")
@@ -205,10 +212,20 @@ struct NowPlayingView: View {
                 .accessibilityHidden(true)
             Slider(
                 value: Binding(
-                    get: { Double(store.player.volume) },
-                    set: { store.player.setVolume(Float($0)) }
+                    get: { draftVolume ?? Double(store.player.volume) },
+                    set: { newValue in
+                        draftVolume = newValue
+                        store.player.setVolume(Float(newValue))
+                    }
                 ),
-                in: 0...1
+                in: 0...1,
+                onEditingChanged: { isEditing in
+                    guard !isEditing else { return }
+                    if let draftVolume {
+                        store.send(.setPlaybackVolume(Float(draftVolume)))
+                    }
+                    draftVolume = nil
+                }
             )
             .tint(theme.colors.accent.color)
             .accessibilityLabel("Volume")
