@@ -157,7 +157,8 @@ struct StationsView: View {
                     StationRow(
                         station: station,
                         isCurrent: isCurrent,
-                        isPlaying: isCurrent && store.player.isPlaying
+                        isPlaying: isCurrent && store.player.isPlaying,
+                        isSkipLimited: store.isSkipLimited(station)
                     )
                 }
                 .buttonStyle(.plain)
@@ -359,6 +360,9 @@ private struct StationRow: View {
     let station: Station
     var isCurrent = false
     var isPlaying = false
+    /// The station hit Pandora's daily skip limit — the row says so
+    /// instead of the user wondering why it stopped playing.
+    var isSkipLimited = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -398,9 +402,7 @@ private struct StationRow: View {
         .padding(.vertical, 4)
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            isCurrent ? "\(station.name), currently playing" : station.name
-        )
+        .accessibilityLabel(rowAccessibilityLabel)
     }
 
     private var artwork: some View {
@@ -409,9 +411,20 @@ private struct StationRow: View {
     }
 
     private var badgeCaption: String? {
+        if isSkipLimited { return "Skip limit reached" }
         if station.isQuickMix { return "Quick mix" }
         if station.isThumbprint { return "Thumbprint station" }
         return nil
+    }
+
+    /// What VoiceOver reads for the row: the name, whether it is the one
+    /// playing, and the skip-limit state when there is one.
+    private var rowAccessibilityLabel: String {
+        var label = isCurrent ? "\(station.name), currently playing" : station.name
+        if isSkipLimited {
+            label += ", Pandora's daily skip limit reached"
+        }
+        return label
     }
 }
 

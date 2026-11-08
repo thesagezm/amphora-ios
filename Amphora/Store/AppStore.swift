@@ -134,6 +134,13 @@ final class AppStore {
     private(set) var radioCustomStations: [RadioStation] = []
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
+    /// The station whose playlist hit Pandora's daily skip limit (nil
+    /// when no limit is active).
+    ///
+    /// The limit lives on Pandora's side and resets with their counter;
+    /// the app only reports it and stops asking for more tracks (AGENTS.md:
+    /// "Respect skip limits and rate limits. Never hammer the API.").
+    private(set) var skipLimitStationId: String?
     /// Lyrics for the current track (nil while loading, before the first
     /// play, or when nothing could be fetched).
     private(set) var lyrics: Lyrics?
@@ -605,6 +612,7 @@ final class AppStore {
         genreCategories = nil
         currentStation = nil
         stationModes = nil
+        skipLimitStationId = nil
         modesStationId = nil
         lyrics = nil
         lyricsCache = [:]
@@ -688,6 +696,42 @@ final class AppStore {
         if let currentStation { return currentStation }
         guard let id = preferences.lastStationId else { return nil }
         return stations.first { $0.id == id }
+    }
+
+    // MARK: Skip limit
+
+    /// `true` when Pandora's daily skip limit stopped the current
+    /// station. The player shows it; the station list marks the row.
+    var isSkipLimitReached: Bool {
+        guard let skipLimitStationId else { return false }
+        return currentStation?.id == skipLimitStationId
+    }
+
+    /// The user-facing explanation of the skip limit.
+    var skipLimitMessage: String {
+        "Pandora's daily skip limit was reached for this station. Try again later."
+    }
+
+    /// `true` when the given station is the one that hit the limit.
+    func isSkipLimited(_ station: Station) -> Bool {
+        skipLimitStationId == station.id
+    }
+
+    /// Records Pandora's refusal to hand out more tracks: the limit is
+    /// reported to the user and the app stops asking for this station —
+    /// no prefetch, no retry. The playback that is already queued keeps
+    /// playing.
+    private func handleSkipLimit(_ error: PlaylistError, station: Station) {
+        skipLimitStationId = station.id
+        lastErrorMessage = "Pandora's daily skip limit was reached for \"\(station.name)\". Try again later."
+        prefetchRetryTask?.cancel()
+        prefetchRetryTask = nil
+        AppLog.info(
+            "skip limit reached for \"\(station.name)\" "
+                + "(\(error.playlistEnded ? "playlist end" : "skip refused")) "
+                + "— not requesting more tracks",
+            .playback
+        )
     }
 
     // MARK: Stations
@@ -783,7 +827,15 @@ final class AppStore {
             prefetchRetryTask?.cancel()
             preferences.lastStationId = station.id
             preferencesStore.save(preferences)
+            // The station plays again — the limit (if there was one) is
+            // gone.
+            if skipLimitStationId == station.id {
+                skipLimitStationId = nil
+            }
             player.play(track: first, prefetching: playable.dropFirst().first)
+        } catch let error as PlaylistError {
+            // Pandora's daily skip limit: report it and stop asking.
+            handleSkipLimit(error, station: station)
         } catch {
             AppLog.error("playlist for \"\(station.name)\" failed: \(String(describing: error))", .playback)
             record(error)
@@ -811,6 +863,10 @@ final class AppStore {
                 prefetchRetryAttempts = 0
                 prefetchRetryTask?.cancel()
                 player.enqueue(fresh)
+            } catch let error as PlaylistError {
+                // The daily skip limit: the server refuses more tracks.
+                // Retrying would only hammer it — report and stop.
+                handleSkipLimit(error, station: station)
             } catch {
                 // A failed prefetch is not fatal — the current track keeps
                 // playing. One backed-off retry follows; a network blip
@@ -1128,6 +1184,8 @@ final class AppStore {
             prefetchRetryAttempts = 0
             prefetchRetryTask?.cancel()
             player.play(track: first, prefetching: playable.dropFirst().first)
+        } catch let error as PlaylistError {
+            handleSkipLimit(error, station: station)
         } catch {
             AppLog.error("restart after tuning failed: \(String(describing: error))", .playback)
             record(error)
@@ -1433,6 +1491,9 @@ final class AppStore {
     private static func userMessage(for error: Error) -> String {
         if let error = error as? PandoraAPIError {
             return error.localizedDescription
+        }
+        if error as? PlaylistError != nil {
+            return "Pandora's daily skip limit was reached. Try again later."
         }
         if let error = error as? PandoraTransportError {
             return "Couldn't reach Pandora (\(error.reason)). Check your connection."

@@ -176,6 +176,7 @@ struct NowPlayingView: View {
         VStack(spacing: 18) {
             adBadge(track)
             liveBadge(track)
+            skipLimitBadge
             transport(for: track)
             volumeControl
             if !track.isAdvertisement && !track.isRadio {
@@ -373,6 +374,28 @@ struct NowPlayingView: View {
     private func liveBadge(_ track: Track) -> some View {
         if track.isRadio {
             LiveBadge()
+        }
+    }
+
+    /// Pandora's daily skip limit stopped the playlist for this station.
+    /// The badge says why no more tracks are coming — the server refuses
+    /// to hand them out until the limit resets.
+    @ViewBuilder
+    private var skipLimitBadge: some View {
+        if store.isSkipLimitReached {
+            VStack(spacing: 6) {
+                Text("SKIP LIMIT")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.yellow)
+                    .tracking(3)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.yellow.opacity(0.12), in: Capsule())
+                Text(store.skipLimitMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
     }
 

@@ -225,7 +225,52 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit 4 slice 2: Settings manage the data they own):**
+**(this push — skip-limit awareness, the last unimplemented AGENTS.md
+requirement):** "Respect skip limits and rate limits. Never hammer the
+API" + "skip-limit awareness shown in UI" — the feature set asked for
+it, the code never had it.
+
+- **The protocol, derived and verified** — Pandora signals the limit by
+  **fault message**, not by a numeric code: the legacy error-code table
+  has no entry for it. The reference is Elpis
+  (`Libs/PandoraSharp/Station.cs:232`), which compares the exception
+  message against `"PLAYLIST_END"` and `"DAILY_SKIP_LIMIT_REACHED"` and
+  treats the first as "skip limit reached"; pithos has no special case
+  at all (its `json_call` raises `ApiError` with the server's message),
+  and pianobar's changelog knows the same token.
+- **Core (`PandoraAPIError`)** — `isSkipLimitReached` /
+  `isPlaylistEnd` match the server's message (case-insensitive,
+  whitespace-tolerant, and tolerant of a message that carries the token
+  plus a sentence). The messages themselves are named constants
+  (`playlistEndMessage`, `dailySkipLimitMessage`).
+- **Core (`PlaylistError`)** — a new typed error:
+  `.skipLimitReached(playlistEnded:)`. `SessionManager.getPlaylist`
+  maps the fault to it, so the app can tell "the server refuses more
+  tracks" apart from "the network is down" — the two need opposite
+  reactions (stop asking vs. retry later).
+- **App (`AppStore`)** — `skipLimitStationId` remembers which station
+  hit the limit; `handleSkipLimit` reports it and **cancels the prefetch
+  retry**: no prefetch, no retry, no hammering (the three playlist
+  paths — first play, prefetch, restart-after-tuning — all route
+  through it). A successful play of the same station clears the flag.
+- **UI** — the full player shows a yellow **SKIP LIMIT** capsule with
+  the explanation under it; the station row on Home reads "Skip limit
+  reached" (and VoiceOver says "Pandora's daily skip limit reached").
+
+Local verification: **PandoraCore 307/307 green in Docker** (298 + 9
+new tests — the message detection, the typed mapping of both server
+signals, that other faults stay `PandoraAPIError`, and that the request
+is made exactly once); the four touched app files are parse-clean.
+The app target compiles on CI only.
+
+**Device expectation**: play a station until Pandora's daily skip limit
+is reached (the queue dries up) → the player shows the SKIP LIMIT badge
+and the row on Home is marked; the Diagnostics log shows "skip limit
+reached for … — not requesting more tracks"; no further playlist
+requests are made for that station (the log line appears once, not on a
+retry loop).
+
+**(previous push — Unit 4 slice 2: Settings manage the data they own):**
 the user's "add and make the settings work and useful". Unit 1 already
 added the live Last.fm status line; this slice adds the **Library**
 section — the two kinds of data the app keeps on the device, and a way

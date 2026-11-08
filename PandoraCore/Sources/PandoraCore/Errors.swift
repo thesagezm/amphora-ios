@@ -75,6 +75,41 @@ public struct PandoraAPIError: Error, Sendable, Equatable, Codable {
     /// `true` when the session token must be refreshed (re-login + retry).
     public var isSessionExpired: Bool { code == Code.invalidAuthToken.rawValue }
 
+    // MARK: - Skip limit
+
+    /// Pandora's fault message when a station's playlist simply ran out
+    /// (Elpis `Libs/PandoraSharp/Station.cs:232` compares the exception
+    /// message against this literal).
+    public static let playlistEndMessage = "PLAYLIST_END"
+
+    /// Pandora's fault message when the daily skip limit was reached and
+    /// an explicit skip was refused (same reference).
+    public static let dailySkipLimitMessage = "DAILY_SKIP_LIMIT_REACHED"
+
+    /// `true` when the fault means Pandora's daily skip limit stopped
+    /// the playlist.
+    ///
+    /// The legacy API signals this by **message**, not by a numeric
+    /// fault code — the code table above has no entry for it, which is
+    /// why it is matched on the server's text. The comparison is
+    /// case-insensitive and tolerates surrounding whitespace; a message
+    /// that merely contains the token counts too (the server may append
+    /// a sentence).
+    public var isSkipLimitReached: Bool {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return text.contains(Self.playlistEndMessage)
+            || text.contains(Self.dailySkipLimitMessage)
+    }
+
+    /// `true` when the fault is the playlist running out
+    /// (`PLAYLIST_END`) rather than an explicit skip being refused
+    /// (`DAILY_SKIP_LIMIT_REACHED`). Elpis treats the playlist-end fault
+    /// as "skip limit reached" too — both stop the stream of tracks.
+    public var isPlaylistEnd: Bool {
+        message.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            .contains(Self.playlistEndMessage)
+    }
+
     /// `true` when credentials were rejected — do not retry automatically.
     public var isInvalidCredentials: Bool {
         code == Code.invalidLogin.rawValue
@@ -126,4 +161,19 @@ public struct PandoraTransportError: Error, Sendable, Equatable {
 public struct PandoraMalformedResponseError: Error, Sendable, Equatable {
     public let detail: String
     public init(detail: String) { self.detail = detail }
+}
+
+/// A playlist request Pandora refused for a station-specific reason.
+public enum PlaylistError: Error, Sendable, Equatable {
+    /// Pandora's daily skip limit was reached for the station: the
+    /// server stops handing out tracks until the limit resets.
+    ///
+    /// This is **not** a transport failure and must not be retried in a
+    /// loop — AGENTS.md: "Respect skip limits and rate limits. Never
+    /// hammer the API."
+    ///
+    /// `playlistEnded` tells the two server signals apart:
+    /// `PLAYLIST_END` (the playlist ran out) and
+    /// `DAILY_SKIP_LIMIT_REACHED` (an explicit skip was refused).
+    case skipLimitReached(playlistEnded: Bool)
 }

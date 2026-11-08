@@ -398,16 +398,28 @@ public actor SessionManager {
     /// Fetch a station's playlist (pithos `Station.get_playlist`).
     /// Requests track lengths and both extra stream formats so the client
     /// can always pick the highest available quality (see `Track.variants`).
+    ///
+    /// Pandora refuses to hand out more tracks once the account's daily
+    /// skip limit is reached. The server signals that by fault **message**
+    /// — `PLAYLIST_END` / `DAILY_SKIP_LIMIT_REACHED` (Elpis
+    /// `Station.cs:232`) — so it is mapped to a typed
+    /// `PlaylistError.skipLimitReached` here. The caller can then tell
+    /// the user what happened and stop asking, instead of retrying a
+    /// request the server will keep refusing.
     public func getPlaylist(for station: Station) async throws -> Playlist {
-        let result = try await authenticatedRequest(
-            PandoraAPI.Method.getPlaylist,
-            parameters: [
-                "stationToken": .string(station.token),
-                "includeTrackLength": .bool(true),
-                "additionalAudioUrl": .string(PandoraAPI.additionalAudioURLs)
-            ]
-        )
-        return Playlist(tracks: Track.tracks(from: result), fetchedAt: now())
+        do {
+            let result = try await authenticatedRequest(
+                PandoraAPI.Method.getPlaylist,
+                parameters: [
+                    "stationToken": .string(station.token),
+                    "includeTrackLength": .bool(true),
+                    "additionalAudioUrl": .string(PandoraAPI.additionalAudioURLs)
+                ]
+            )
+            return Playlist(tracks: Track.tracks(from: result), fetchedAt: now())
+        } catch let error as PandoraAPIError where error.isSkipLimitReached {
+            throw PlaylistError.skipLimitReached(playlistEnded: error.isPlaylistEnd)
+        }
     }
 
     // MARK: Advertisements
