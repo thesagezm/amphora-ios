@@ -19,11 +19,16 @@
 //    right after playback starts was enough to get the process killed.
 //    Every image is decoded straight to a capped pixel size with ImageIO;
 //    no full-size bitmap is ever built.
-//  - **Plain HTTP is upgraded to HTTPS, with a fallback.** Pandora's
-//    artwork URLs are sometimes `http://` (ATS blocks cleartext) or
-//    scheme-less. The normalized HTTPS URL is tried first; if it fails,
-//    the raw URL is tried as-is. Every attempt is logged with the HTTP
-//    status so a missing artwork is diagnosable from the log.
+//  - **Every URL is tried in more than one form.** Pandora's artwork
+//    URLs are sometimes scheme-less, and an internet-radio station's
+//    favicon often lives on a host that serves nothing but plain HTTP.
+//    The candidate list comes from `ArtworkURLCandidates` (PandoraCore):
+//    the HTTPS-preferred form first, the URL exactly as it was given
+//    second — so an HTTP-only favicon is actually attempted over HTTP.
+//    (Before this, the "raw" URL was upgraded to HTTPS as well, which
+//    made the fallback a no-op and left those stations without art.)
+//    Every attempt is logged with the HTTP status so a missing artwork
+//    is diagnosable from the log.
 //  - **Disk file names are a SHA-256 digest**, not the base64 URL. A raw
 //    base64 name can exceed the file-system name limit for long signed
 //    image URLs (Amazon URLs carry a long `?token=`), which made every
@@ -33,6 +38,7 @@
 import CryptoKit
 import Foundation
 import ImageIO
+import PandoraCore
 import UIKit
 
 /// Two-tier artwork cache: an in-memory NSCache of decoded images plus a
@@ -170,71 +176,15 @@ actor ArtworkCache {
 
     // MARK: - URL handling
 
-    /// The URLs to try, best first: the normalized HTTPS form of the raw
-    /// string, then the raw string itself when it is a distinct usable
-    /// URL (normalization may have re-encoded something a CDN rejects).
-    static func candidateURLs(for raw: String) -> [URL] {
-        var seen = Set<String>()
-        var urls: [URL] = []
-        func add(_ url: URL?) {
-            guard let url, !seen.contains(url.absoluteString) else { return }
-            seen.insert(url.absoluteString)
-            urls.append(url)
-        }
-        add(normalizedURL(from: raw))
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.lowercased().hasPrefix("http"), let direct = URL(string: trimmed) {
-            add(upgradedToHTTPS(direct))
-        }
-        return urls
-    }
-
-    /// Turns a raw artwork URL string into a usable `URL`:
+    /// The URLs to try, best first: the HTTPS-preferred form of the raw
+    /// string, then the string exactly as it was given (scheme
+    /// preserved) — the last-resort candidate for radio favicons on
+    /// hosts that serve nothing but cleartext.
     ///
-    /// - a missing scheme becomes `https://` (Pandora's `albumArtUrl`
-    ///   values are not always absolute);
-    /// - `http://` becomes `https://` — cleartext HTTP is blocked by ATS,
-    ///   and every Pandora artwork host serves TLS;
-    /// - characters a URL parser rejects (spaces, quotes) are
-    ///   percent-encoded instead of making the whole URL unusable.
-    static func normalizedURL(from raw: String) -> URL? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let withScheme: String
-        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
-            withScheme = trimmed
-        } else {
-            withScheme = "https://" + trimmed
-        }
-        guard var components = URLComponents(string: withScheme) else {
-            // The string contains characters `URLComponents` rejects
-            // (spaces are the common one) — encode them and retry.
-            let allowed = CharacterSet.urlHostAllowed
-                .union(.urlPathAllowed)
-                .union(.urlQueryAllowed)
-                .union(.urlFragmentAllowed)
-                .subtracting(CharacterSet(charactersIn: " "))
-            guard let encoded = withScheme.addingPercentEncoding(withAllowedCharacters: allowed),
-                  var retry = URLComponents(string: encoded) else { return nil }
-            retry.scheme = "https"
-            return retry.url
-        }
-        components.scheme = "https"
-        if let host = components.host, host.isEmpty {
-            return nil
-        }
-        return components.url
-    }
-
-    /// Upgrades `http://` to `https://` — cleartext HTTP is blocked by
-    /// ATS, and every Pandora artwork host serves TLS.
-    static func upgradedToHTTPS(_ url: URL) -> URL {
-        guard url.scheme?.lowercased() == "http",
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url
-        }
-        components.scheme = "https"
-        return components.url ?? url
+    /// The list itself lives in `PandoraCore` (`ArtworkURLCandidates`),
+    /// so every Amphora port builds the same candidates.
+    static func candidateURLs(for raw: String) -> [URL] {
+        ArtworkURLCandidates.candidates(for: raw)
     }
 
     // MARK: - Disk tier

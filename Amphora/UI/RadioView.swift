@@ -448,10 +448,14 @@ private struct RadioStationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            CachedArtwork(
-                urlString: station.faviconURL,
+            // The station's real favicon when it exists and is big
+            // enough for this slot; otherwise the generated monogram
+            // tile — a bare antenna glyph read as "no artwork".
+            RadioStationArtwork(
+                stationName: station.name,
+                faviconURL: station.faviconURL,
                 cornerRadius: Theme.radiusS,
-                fallbackSystemImage: "antenna.radiowaves.left.and.right"
+                minimumArtworkPixels: 64
             )
             .frame(width: 44, height: 44)
 

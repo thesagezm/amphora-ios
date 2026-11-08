@@ -113,9 +113,24 @@ struct MiniPlayer: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// A radio stream has no album art — it has a favicon, which is
+    /// usually a 16×16 icon or missing entirely. The generated station
+    /// tile covers both cases.
+    @ViewBuilder
     private var artwork: some View {
-        CachedArtwork(urlString: track?.artworkUrl, cornerRadius: Theme.radiusS + 2)
-            .frame(width: 44, height: 44)
+        Group {
+            if let track, track.isRadio {
+                RadioStationArtwork(
+                    stationName: track.title,
+                    faviconURL: track.artworkUrl,
+                    cornerRadius: Theme.radiusS + 2,
+                    minimumArtworkPixels: 64
+                )
+            } else {
+                CachedArtwork(urlString: track?.artworkUrl, cornerRadius: Theme.radiusS + 2)
+            }
+        }
+        .frame(width: 44, height: 44)
     }
 
     /// The card's second line: the artist normally, the name of the

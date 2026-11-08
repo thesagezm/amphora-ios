@@ -172,11 +172,25 @@ struct NowPlayingView: View {
     }
 
     private func artwork(for track: Track) -> some View {
-        CachedArtwork(
-            urlString: track.artworkUrl,
-            cornerRadius: Theme.radiusArtwork,
-            fallbackSystemImage: "music.note"
-        )
+        Group {
+            if track.isRadio {
+                // At cover size a tiny favicon is worse than the
+                // generated station tile, so the tile wins unless the
+                // station really has a big logo.
+                RadioStationArtwork(
+                    stationName: track.title,
+                    faviconURL: track.artworkUrl,
+                    cornerRadius: Theme.radiusArtwork,
+                    minimumArtworkPixels: 200
+                )
+            } else {
+                CachedArtwork(
+                    urlString: track.artworkUrl,
+                    cornerRadius: Theme.radiusArtwork,
+                    fallbackSystemImage: "music.note"
+                )
+            }
+        }
         .aspectRatio(1, contentMode: .fit)
         .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
         .shadow(color: theme.colors.accent.color.opacity(0.18), radius: 40, y: 8)

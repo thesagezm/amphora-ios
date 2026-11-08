@@ -29,19 +29,19 @@ dont look sophisticated… improve the gui". Four asks, mapped to units:
    they never caught it. Second bug: a fresh sign-in set
    `scrobbler.isEnabled = true` in memory only — the preference was
    never persisted, so scrobbling was off again after relaunch.
-2. **Radio station artwork missing** → **Unit 2 (next)**. Causes found
-   this session: (a) `ArtworkCache.normalizedURL` force-upgrades every
-   URL to HTTPS and `candidateURLs` only ever emits HTTPS variants, so
-   radio favicons on HTTP-only hosts (common in radio-browser) fail
-   both candidates; ATS also blocks cleartext. (b) Many stations have
-   no favicon at all → the plain antenna glyph reads as "no artwork".
-   (c) Favicons are often 16×16, so even loaded ones look bad scaled
-   to fill. Fix plan: ATS media/arbitrary-load exception for internet
-   radio (streams + favicons), try the raw HTTP URL as a last-resort
-   candidate (the code comment claims the raw URL is tried but the code
-   upgrades it too — fix that), and a generated monogram/gradient tile
-   when a station has no favicon (better than the bare antenna glyph,
-   and better than a 16×16 favicon blown up to full-player size).
+2. **Radio station artwork missing** → **Unit 2 landed** (this push).
+   Causes found in the previous session: (a) `ArtworkCache.normalizedURL`
+   force-upgraded every URL to HTTPS and `candidateURLs` only ever emitted
+   HTTPS variants, so radio favicons on HTTP-only hosts (common in
+   radio-browser) failed both candidates; ATS also blocked cleartext.
+   (b) Many stations have no favicon at all → the plain antenna glyph read
+   as "no artwork". (c) Favicons are often 16×16, so even loaded ones
+   looked bad scaled to fill. What landed: the raw HTTP URL is now a real
+   last-resort candidate (`ArtworkURLCandidates` in PandoraCore, 17 new
+   tests), the ATS exception now covers both the streams and the
+   URLSession favicon loads, and every station without usable artwork
+   gets a generated monogram/gradient tile (rows, mini player, full
+   player, lock screen). Detail in In Flight / Last Push.
 3. **Player doesn't look sophisticated** → **Unit 3**: transport/layout
    refinement, volume control, radio-specific controls (live badge,
    hide rating/back-15 on live streams).
@@ -218,12 +218,65 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(in progress — Unit 2 of the GUI round: radio artwork):** the work was
-interrupted by a context handover. **One file exists, uncommitted at the
-time of writing** — `PandoraCore/Sources/PandoraCore/ArtworkURL.swift`
-(new; see the session handover at the bottom of this file for its exact
-contents and what still has to be done). Nothing else in the tree is
-modified; the app-side work has **not** been started.
+**(this push — Unit 2 of the GUI round: radio station artwork):** the
+user's "no artwork for radiostations?" — three causes, three fixes.
+
+- **The raw HTTP URL was never tried** (`ArtworkCache.candidateURLs`
+  force-upgraded every candidate to HTTPS, so the "raw URL as-is"
+  fallback its own comment promised was a no-op).
+  `PandoraCore/Sources/PandoraCore/ArtworkURL.swift` now owns the
+  candidate list: the HTTPS-preferred, percent-encoded form first and
+  the URL **exactly as given** second (`http://` stays `http://`) — the
+  last-resort candidate for favicons on hosts that serve nothing but
+  cleartext. `ArtworkCache.candidateURLs` delegates to it; the
+  duplicated `normalizedURL` / `upgradedToHTTPS` helpers are gone and
+  the file's header comment no longer lies. The percent sign is now
+  allowed in the encoding path, so an already-escaped signed CDN URL
+  (`%2F`, `%20`) is not encoded twice.
+  **17 new tests** (`ArtworkURLTests`): HTTP raw → two candidates
+  (https first, http second), HTTPS raw → one, scheme-less → one,
+  spaces percent-encoded, empty/whitespace → none, case/whitespace
+  normalization, and the two halves on their own.
+- **ATS blocked the cleartext loads.** The target now ships an explicit
+  `Amphora/Info.plist` (`project.yml`: `INFOPLIST_FILE` +
+  `GENERATE_INFOPLIST_FILE: NO`, the plist excluded from the sources)
+  because `INFOPLIST_KEY_*` build settings cannot express a nested
+  dictionary — they would have written the key as a flat string and the
+  exception would silently do nothing. The plist carries
+  `NSAppTransportSecurity → NSAllowsArbitraryLoads = true` **alone**:
+  on iOS 10+ that key is ignored when
+  `NSAllowsArbitraryLoadsForMedia` / `…InWebContent` /
+  `…LocalNetworking` is also present, and `NSAllowsArbitraryLoadsInMedia`
+  on its own covers AVFoundation media but **not** the URLSession image
+  loads the favicons need. One key, both paths unblocked (the shape was
+  verified by parsing the plist, not by eye). The generated plist's
+  other keys (display name, version, launch screen, orientations,
+  background audio mode, local-network usage string, scene manifest)
+  were carried over by hand.
+- **Stations without artwork get a generated tile.**
+  `PandoraCore/Rources/PandoraCore/RadioStationIdentity.swift` (new,
+  pure logic, 8 tests) derives the monogram and a **deterministic**
+  hue from the station name — FNV-1a over the UTF-8 bytes, because
+  Swift's `hashValue` is seeded per process and would recolor every
+  station on every launch. `Amphora/UI/RadioStationArtwork.swift` (new)
+  draws the gradient tile and shows the real favicon only when it is
+  big enough for the slot: 64 px for the 44 pt radio row and the mini
+  player, 200 px for the full player's cover, 120 px on the lock screen.
+  Wired into `RadioStationRow`, `MiniPlayer`, `NowPlayingView.artwork`
+  and `NowPlayingService.loadArtwork` (which now falls back to the
+  drawn tile). A 16×16 favicon blown up to cover size is gone — the
+  station's initials are shown instead.
+  The antenna glyph is no longer the station's "artwork".
+
+Local verification: **not run this session** — the host has no Swift
+toolchain and the Docker test run was declined by the user. Core Tests
+and the iOS Build ride CI on this push (fire-and-continue).
+
+**Device expectation**: Radio tab → any station row shows a gradient
+tile with the station's initials (or its real logo when it has a big
+one); tap it → the mini player and the full player show the same tile
+at full size; the lock screen shows the tile as the cover; a station
+whose favicon is plain HTTP now loads its logo instead of the tile.
 
 **(previous push — Unit 1 of the GUI round: Last.fm actually works +
 useful Settings status):** the user's "last fm doesnt work", root-caused
@@ -1665,32 +1718,90 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 0. **GUI round (user request 2026-11-07 — this session's driver):**
-   Unit 1 Last.fm fix ✅ (this push) → **Unit 2 radio artwork** (next)
-   → **Unit 3 sophisticated player** → Unit 4 Settings/GUI polish.
+   Unit 1 Last.fm fix ✅ → **Unit 2 radio artwork ✅ (this push)** →
+   **Unit 3 sophisticated player** (next) → Unit 4 Settings/GUI polish.
    Unit details and root causes are in User Feedback Pending at the
-   top; Unit 2's plan is spelled out there (ATS exception for radio,
-   HTTP favicon fallback candidate, generated monogram tiles).
-1. **User device test of the next IPA** — Last.fm first (Settings →
-   Last.fm → Connect with real credentials; it must now succeed and
-   show the live scrobble status line), then the radio flow (R1–R5,
-   test list in In Flight / Last Push) and the older pending round
-   (light mode, history ratings, lyrics fallbacks, romanization,
-   AirPlay).
+   top. Unit 3's scope: refined transport, a volume slider, a LIVE
+   badge for radio streams, and the radio-specific control rules
+   (`FeedbackBar` currently renders for radio tracks and would fire
+   rating intents at a synthetic token; back-15 is dead on a live
+   stream too).
+1. **User device test of the next IPA** — radio artwork first (every
+   station row shows a monogram tile or its real logo; the full player
+   and the lock screen show the same), then Last.fm (Settings → Last.fm
+   → Connect with real credentials; it must now succeed and show the
+   live scrobble status line), then the radio flow (R1–R5, test list in
+   In Flight / Last Push) and the older pending round (light mode,
+   history ratings, lyrics fallbacks, romanization, AirPlay).
 2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
 3. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — confirm the
-repair push is still green, then **finish Unit 2: radio station
-artwork** (details in the 2026-11-08 session handover at the bottom of
-this file). One new file is already written:
-`PandoraCore/Sources/PandoraCore/ArtworkURL.swift` — the HTTP favicon
-fallback candidate logic. It needs its unit tests, then wiring into
-`ArtworkCache.candidateURLs`, the ATS exception in `project.yml`, and
-the generated monogram tile.
+**FIRST ACTION next session:** `gh run list --limit 5` — confirm this
+push is green on both workflows, then **start Unit 3: the sophisticated
+player** (details in the 2026-11-08 handover below).
+
+## Session handover (2026-11-08, GUI round — Unit 2 landed)
+
+**State:** Unit 2 (radio station artwork) is complete and pushed; the
+working tree is clean. Local verification was **not** run — the host has
+no Swift toolchain and the Docker test run was declined by the user —
+so Core Tests + iOS Build ride CI. Check the runs before starting the
+next unit.
+
+**What Unit 2 changed (do not re-derive):**
+
+- `PandoraCore/Sources/PandoraCore/ArtworkURL.swift` —
+  `ArtworkURLCandidates.candidates(for:)` (HTTPS first, raw URL with
+  the scheme preserved second). 17 tests in
+  `PandoraCore/Tests/PandoraCoreTests/ArtworkURLTests.swift`.
+- `PandoraCore/Sources/PandoraCore/RadioStationIdentity.swift` (new) —
+  the monogram + the deterministic hue (FNV-1a; `hashValue` is seeded
+  per process and must not be used). 8 tests in
+  `RadioStationIdentityTests.swift`.
+- `Amphora/Persistence/ArtworkCache.swift` — `candidateURLs` now
+  delegates to the core helper; the duplicated `normalizedURL` /
+  `upgradedToHTTPS` helpers are deleted.
+- `Amphora/Info.plist` (new) + `project.yml` — the target no longer
+  generates its Info.plist; the explicit plist carries
+  `NSAppTransportSecurity → NSAllowsArbitraryLoads = true` alone.
+  **Trap for the memory:** `INFOPLIST_KEY_*` cannot express a nested
+  dictionary, so the generated-plist route can never carry an ATS
+  exception. If the plist ever needs a new key, add it to
+  `Amphora/Info.plist`, not to `project.yml`.
+- `Amphora/UI/RadioStationArtwork.swift` (new) — the generated tile
+  (SwiftUI) plus `RadioStationArtworkRenderer.tileImage` (UIKit, for
+  the lock screen). Wired into `RadioView`'s row, `MiniPlayer`,
+  `NowPlayingView.artwork(for:)` and `NowPlayingService.loadArtwork`.
+  The favicon is only shown when it is big enough for the slot
+  (64 px rows / 200 px full player / 120 px lock screen).
+
+**Unit 3 is next — the sophisticated player.** Scope (from User
+Feedback Pending item 3):
+
+1. Refined transport: the play/pause button, back-15 and next should
+   feel like the controls of a real music app (sizes, spacing, the
+   press response, the scrubber's relationship to the artwork).
+2. A **volume slider** in the full player.
+3. **Radio-specific controls**: a LIVE badge instead of a dead
+   zero-duration scrubber, and **hide the thumbs and back-15 on live
+   streams** — `FeedbackBar` currently renders for radio tracks and
+   would fire rating intents at a synthetic `radio.<uuid>` token, and
+   back-15 does nothing on a stream that has no timeline.
+4. Keep the unit small: one surface, then push and continue.
+
+**Constraints to carry over:** no subagents (project working style);
+never wait on a build — push and continue; `PandoraCore` stays UI-free;
+`project.yml` and app sources are ours, but `.github/workflows/*` need
+user approval; no version bumps; no credentials or tokens in the repo
+(it is public).
 
 ## Session handover (2026-11-08, GUI round — Unit 2 started, interrupted)
+
+> **Superseded** by the newer 2026-11-08 handover above: Unit 2 was
+> finished and pushed. Kept for the record (the findings below are the
+> ones the unit was built on).
 
 **State:** the session was cut short by a context handover mid-unit.
 Working tree has **one new uncommitted file** and nothing else changed:

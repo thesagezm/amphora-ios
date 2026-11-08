@@ -26,6 +26,10 @@ targets:
     platform: iOS
     sources:
       - path: Amphora
+        excludes:
+          # The Info.plist is the target's Info.plist (INFOPLIST_FILE),
+          # never a bundled resource.
+          - "Info.plist"
     dependencies:
       - package: PandoraCore
         product: PandoraCore
@@ -33,22 +37,18 @@ targets:
       base:
         PRODUCT_NAME: Amphora
         PRODUCT_BUNDLE_IDENTIFIER: dev.personal.amphora
-        INFOPLIST_KEY_CFBundleDisplayName: Amphora
-        INFOPLIST_KEY_CFBundleShortVersionString: "0.1.0"
-        INFOPLIST_KEY_CFBundleVersion: "1"
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UIBackgroundModes: audio
-        # AirPlay receivers are found over the local network (Bonjour);
-        # iOS 14+ requires this string, or the route picker shows no
-        # devices at all.
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Amphora looks for AirPlay speakers and displays on your local network so you can listen to music on them."
+        # An explicit Info.plist instead of the generated one: the ATS
+        # exception for internet radio is a NESTED dictionary
+        # (NSAppTransportSecurity → NSAllowsArbitraryLoads) and the
+        # INFOPLIST_KEY_* build settings cannot express a dictionary —
+        # they would write the key as a flat string and the exception
+        # would silently do nothing.
+        INFOPLIST_FILE: Amphora/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_EMIT_LOC_STRINGS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        GENERATE_INFOPLIST_FILE: YES
         SUPPORTS_MACCATALYST: NO
         SWIFT_STRICT_CONCURRENCY: complete
 

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Amphora</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<!-- App Transport Security.
+	     Internet radio is served from wherever the station runs: many
+	     streams and favicons are plain HTTP on hosts that have no TLS
+	     at all. NSAllowsArbitraryLoads is the only key that unblocks
+	     both (AVFoundation media loads AND the URLSession image loads
+	     the artwork cache uses) — on iOS 10+ it is IGNORED when
+	     NSAllowsArbitraryLoadsForMedia / NSAllowsArbitraryLoadsInWebContent
+	     / NSAllowsLocalNetworking is also present, and
+	     NSAllowsArbitraryLoadsInMedia on its own covers media only,
+	     never URLSession images. So: this key alone, nothing else. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<!-- AirPlay receivers are found over the local network (Bonjour);
+	     iOS 14+ requires this string, or the route picker shows no
+	     devices at all. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Amphora looks for AirPlay speakers and displays on your local network so you can listen to music on them.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>

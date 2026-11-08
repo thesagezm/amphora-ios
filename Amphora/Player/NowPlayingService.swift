@@ -89,6 +89,10 @@ final class NowPlayingService {
     /// `Data` crosses the boundary so the Swift 6 concurrency rules stay
     /// satisfied.
     private func loadArtwork(for track: Track) {
+        if track.isRadio {
+            loadRadioArtwork(for: track)
+            return
+        }
         guard let urlString = track.artworkUrl else {
             AppLog.debug("lock screen: track has no artwork URL", .playback)
             return
@@ -96,6 +100,34 @@ final class NowPlayingService {
         artworkTask?.cancel()
         artworkTask = Task { [weak self] in
             let image = await ArtworkCache.shared.image(for: urlString)
+            guard !Task.isCancelled else { return }
+            self?.applyArtwork(image)
+        }
+    }
+
+    /// A radio station has no album art — it has a favicon, and often
+    /// none at all. The lock screen falls back to the generated station
+    /// tile (the same monogram gradient the in-app player draws), and
+    /// only uses the favicon when it is big enough to look right at
+    /// lock-screen size.
+    private func loadRadioArtwork(for track: Track) {
+        artworkTask?.cancel()
+        artworkTask = Task { [weak self] in
+            var image: UIImage?
+            if let urlString = track.artworkUrl {
+                let loaded = await ArtworkCache.shared.image(for: urlString)
+                if let loaded,
+                   loaded.size.width >= RadioStationArtwork.lockScreenMinimumPixels,
+                   loaded.size.height >= RadioStationArtwork.lockScreenMinimumPixels {
+                    image = loaded
+                }
+            }
+            if image == nil {
+                image = RadioStationArtworkRenderer.tileImage(
+                    for: track.title,
+                    size: CGSize(width: 600, height: 600)
+                )
+            }
             guard !Task.isCancelled else { return }
             self?.applyArtwork(image)
         }

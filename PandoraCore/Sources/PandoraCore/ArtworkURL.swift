@@ -114,12 +114,16 @@ public enum ArtworkURLCandidates {
     }
 
     /// Host + path + query + fragment characters, minus the space that
-    /// makes `URLComponents` reject the string outright.
+    /// makes `URLComponents` reject the string outright. The percent
+    /// sign is allowed explicitly so an already-escaped URL (`%20`,
+    /// `%2F` — signed CDN paths carry them) is not encoded a second
+    /// time when the space-repair path runs.
     private static let allowedCharacters: CharacterSet = {
         CharacterSet.urlHostAllowed
             .union(.urlPathAllowed)
             .union(.urlQueryAllowed)
             .union(.urlFragmentAllowed)
+            .union(CharacterSet(charactersIn: "%"))
             .subtracting(CharacterSet(charactersIn: " "))
     }()
 }
