@@ -283,6 +283,17 @@ struct NowPlayingView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
+                // The station the track came from (AGENTS.md's Now
+                // Playing list: artwork, title, artist, station,
+                // progress, skips). A radio stream's title *is* the
+                // station name, so the line is skipped there.
+                if !track.isRadio, let stationName = store.currentStation?.name {
+                    Text(stationName)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityLabel("Playing on \(stationName)")
+                }
             }
             Spacer(minLength: 0)
             if let quality = qualityDescription(for: track) {

@@ -225,7 +225,15 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — the GUI polish pass: every list row now reacts to a
+**(this push — the station name on the Now Playing screen):** the last
+item from AGENTS.md's Now Playing list ("artwork, title, artist,
+**station**, progress, skips") that the screen did not have — the
+header showed title, artist, album and the quality chip, but never the
+station the track came from. The line sits under the album, in the
+secondary colour, and VoiceOver reads it as "Playing on <station>". A
+radio stream is skipped there (its title *is* the station name).
+
+**(previous push — the GUI polish pass: every list row now reacts to a
 touch):** the user's "improve the gui of the app". The audit found a
 concrete, systematic gap rather than a taste question: **every list row
 in the app was a `.plain` button, so no row reacted to a touch at all.**
