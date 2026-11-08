@@ -217,4 +217,39 @@ actor ArtworkCache {
         guard let cgImage = image.cgImage else { return 0 }
         return cgImage.bytesPerRow * cgImage.height
     }
+
+    // MARK: - Housekeeping
+
+    /// How many bytes the disk tier occupies. Reported in Settings so the
+    /// user can see what the cache costs before clearing it.
+    func diskUsage() -> Int {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        ) else { return 0 }
+        return contents.reduce(into: 0) { total, url in
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            total += size
+        }
+    }
+
+    /// Empties both tiers: the decoded images and the cached bytes on
+    /// disk. In-flight downloads are cancelled, so the next request for
+    /// an image fetches it again. Nothing else in the app depends on the
+    /// cache — it is a pure accelerator.
+    func clear() {
+        memory.removeAllObjects()
+        for task in inFlight.values {
+            task.cancel()
+        }
+        inFlight.removeAll()
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else { return }
+        for url in contents {
+            try? FileManager.default.removeItem(at: url)
+        }
+        AppLog.info("artwork cache cleared", .artwork)
+    }
 }

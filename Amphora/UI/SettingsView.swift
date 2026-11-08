@@ -1,3 +1,4 @@
+import Foundation
 import PandoraCore
 import SwiftUI
 
@@ -11,11 +12,13 @@ struct SettingsView: View {
     private var theme: ThemeController { ThemeController.shared }
 
     @State private var isConfirmingSignOut = false
+    @State private var isConfirmingClearHistory = false
 
     var body: some View {
         List {
             appearanceSection
             lastFmSection
+            librarySection
             supportSection
             aboutSection
             accountSection
@@ -24,6 +27,20 @@ struct SettingsView: View {
         .amphoraListBackground()
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Settings")
+        .onAppear {
+            Task { await store.refreshArtworkCacheSize() }
+        }
+        .alert(
+            "Clear play history?",
+            isPresented: $isConfirmingClearHistory
+        ) {
+            Button("Clear History", role: .destructive) {
+                store.send(.clearHistory)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The recently played list on this device is emptied. Your Pandora account and its listening data are not affected.")
+        }
         .confirmationDialog(
             "Sign out of Pandora?",
             isPresented: $isConfirmingSignOut,
@@ -101,6 +118,62 @@ struct SettingsView: View {
                     + "or four minutes — whichever comes first."
             )
         }
+    }
+
+    // MARK: Library
+
+    private var librarySection: some View {
+        Section {
+            historyRow
+            artworkCacheRow
+        } header: {
+            sectionHeader("Library", icon: "externaldrive")
+        } footer: {
+            Text("Both live on this device only — clearing them never changes your Pandora account.")
+        }
+    }
+
+    private var historyRow: some View {
+        Button(role: .destructive) {
+            isConfirmingClearHistory = true
+        } label: {
+            HStack {
+                Label("Clear Play History", systemImage: "clock.arrow.circlepath")
+                Spacer()
+                Text(historySummary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .amphoraCardRow()
+        .disabled(store.history.isEmpty)
+    }
+
+    private var artworkCacheRow: some View {
+        Button {
+            store.send(.clearArtworkCache)
+        } label: {
+            HStack {
+                Label("Clear Artwork Cache", systemImage: "photo.stack")
+                Spacer()
+                Text(cacheSummary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .amphoraCardRow()
+        .disabled(store.artworkCacheBytes == 0)
+    }
+
+    private var historySummary: String {
+        let count = store.history.count
+        return count == 0 ? "Empty" : "\(count) \(count == 1 ? "play" : "plays")"
+    }
+
+    private var cacheSummary: String {
+        let bytes = store.artworkCacheBytes
+        if bytes == 0 { return "Empty" }
+        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
     // MARK: Support / About / Account

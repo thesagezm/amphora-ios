@@ -61,6 +61,11 @@ final class AppStore {
         case signOutLastFm
         case setScrobblingEnabled(Bool)
         case signOutPandora
+        /// Wipe the local play history (device-local; Pandora's own
+        /// listening data is untouched).
+        case clearHistory
+        /// Empty the artwork cache (memory + disk) and refresh its size.
+        case clearArtworkCache
         case dismissError
     }
 
@@ -173,6 +178,9 @@ final class AppStore {
     private(set) var isLoadingBookmarks = false
     /// Local playback history ("recently played"), newest first.
     private(set) var history: PlayHistory = PlayHistory()
+    /// How many bytes the artwork cache occupies on disk. Read for the
+    /// Settings row; refreshed after the cache is cleared.
+    private(set) var artworkCacheBytes: Int = 0
     /// The sleep timer (off by default).
     private(set) var sleepTimer: SleepTimer = .off
     /// Live status text for the sleep timer ("12 min left", "End of
@@ -439,6 +447,10 @@ final class AppStore {
             preferencesStore.save(preferences)
         case .signOutPandora:
             signOut()
+        case .clearHistory:
+            clearHistory()
+        case .clearArtworkCache:
+            Task { await clearArtworkCache() }
         case .dismissError:
             lastErrorMessage = nil
         }
@@ -599,6 +611,31 @@ final class AppStore {
         queuedTrackTokens = []
         lastErrorMessage = nil
         confirmationMessage = nil
+    }
+
+    // MARK: Local data (Settings → Library)
+
+    /// Wipes the local play history. This is device-local data: Pandora's
+    /// own listening history and the account are untouched, and the
+    /// Recents list simply starts empty again.
+    private func clearHistory() {
+        history = PlayHistory()
+        historyStore.save(history)
+        AppLog.info("play history cleared", .app)
+    }
+
+    /// Empties the artwork cache (both tiers) and refreshes the size the
+    /// Settings row shows. Artwork is re-downloaded the next time a
+    /// screen shows it.
+    private func clearArtworkCache() async {
+        await ArtworkCache.shared.clear()
+        artworkCacheBytes = await ArtworkCache.shared.diskUsage()
+    }
+
+    /// Reads the artwork cache's size on disk — the Settings row shows
+    /// it so the user knows what clearing it would reclaim.
+    func refreshArtworkCacheSize() async {
+        artworkCacheBytes = await ArtworkCache.shared.diskUsage()
     }
 
     // MARK: Auth

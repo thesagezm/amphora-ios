@@ -225,7 +225,40 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit 4 slice: the playback volume survives a relaunch):**
+**(this push — Unit 4 slice 2: Settings manage the data they own):**
+the user's "add and make the settings work and useful". Unit 1 already
+added the live Last.fm status line; this slice adds the **Library**
+section — the two kinds of data the app keeps on the device, and a way
+to wipe each one.
+
+- **`ArtworkCache.clear()` + `diskUsage()`** (app target) — empties both
+  tiers (decoded images in memory, bytes on disk) and cancels in-flight
+  downloads; `diskUsage()` reports what the disk tier occupies. The
+  cache is a pure accelerator, so clearing it is safe: artwork is
+  downloaded again the next time a screen shows it.
+- **`AppStore`** — two intents: `.clearHistory` (wipes the local play
+  history — Pandora's own listening data and the account are untouched)
+  and `.clearArtworkCache` (clears the cache, then refreshes the size).
+  `refreshArtworkCacheSize()` is called when Settings appears, so the
+  row shows the real number rather than a guess.
+- **`SettingsView`** — a new **Library** section: "Clear Play History"
+  (with the play count, disabled when the history is empty, behind a
+  confirmation alert) and "Clear Artwork Cache" (with the cache size on
+  disk, disabled when it is empty). Both rows say what is local-only in
+  the section footer.
+
+Local verification: the **host has no Swift toolchain, but the
+`swift:6.0` Docker image is present**, so `PandoraCore` runs locally
+again (**298/298 green**, 3.4 s) and the three touched app files are
+parse-clean (`swiftc -parse -swift-version 6`). The app target itself
+still compiles on CI only (fire-and-continue).
+
+**Device expectation**: Settings → Library → "Clear Play History" shows
+the number of plays and asks to confirm; the Recents sheet is empty
+afterwards. "Clear Artwork Cache" shows the cache size and empties it;
+station and song artwork still shows (it is downloaded again).
+
+**(previous push — Unit 4 slice: the playback volume survives a relaunch):**
 the volume slider Unit 3 added forgot its level on the next launch.
 
 - **`Preferences.playbackVolume`** — an **optional** `Float?` on
@@ -1808,9 +1841,10 @@ toolbar) → Copy → paste.
 
 0. **GUI round (user request 2026-11-07 — this session's driver):**
    Unit 1 Last.fm fix ✅ → **Unit 2 radio artwork ✅** →
-   **Unit 3 sophisticated player ✅ (this push)** → **Unit 4
-   Settings/GUI polish** (next). Unit details and root causes are in
-   User Feedback Pending at the top.
+   **Unit 3 sophisticated player ✅** → **Unit 4 Settings/GUI polish**
+   (in progress: volume persistence ✅, Settings data management ✅
+   (this push); general GUI polish pass next). Unit details and root
+   causes are in User Feedback Pending at the top.
 1. **User device test of the next IPA** — the player first (transport,
    volume slider, LIVE badge, radio controls), then radio artwork
    (every station row shows a monogram tile or its real logo; the full
@@ -1823,14 +1857,36 @@ toolbar) → Copy → paste.
 2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
-3. **Persist the playback volume** — ✅ landed in the push above (the
-   slider's level now survives a relaunch).
-4. Anything red on the next `gh run list` — repair first.
+3. **Persist the playback volume** — ✅ landed (the slider's level now
+   survives a relaunch).
+4. **Skip-limit awareness** — AGENTS.md asks for it ("Respect skip
+   limits and rate limits"; "skip-limit awareness shown in UI") and it
+   was never implemented. The protocol is derived and verified (Elpis
+   `Station.cs:232`): the server signals it by **fault message** on
+   `station.getPlaylist` — `PLAYLIST_END` or
+   `DAILY_SKIP_LIMIT_REACHED` (pithos has no special case; the fault
+   message is the signal). Next unit: a typed core error + an app
+   message + no prefetch hammering while the limit is reached.
+5. **Explicit-content indicator** — AGENTS.md asks for an
+   explicit-content badge, but the project's own Protocol Notes record
+   that explicit content is an **account-level** filter
+   (`user.getSettings` → `isExplicitContentFilterEnabled`), not a
+   per-track flag — so a per-station badge has no protocol source. The
+   honest UI is an account-level badge ("Explicit content filtered")
+   on Home. Verify `user.getSettings`'s shape against a reference
+   first (pydora) before coding.
+6. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — confirm the
-volume-persistence push's iOS Build (run 42521649244) went green (the
-other pushes are already verified), then **continue Unit 4: Settings
-usefulness + general GUI polish**.
+**FIRST ACTION next session:** `gh run list --limit 5` — confirm this
+push's Core Tests + iOS Build, then **continue with item 4 (skip-limit
+awareness)**.
+
+**Local verification is available again**: the `swift:6.0` Docker image
+is on this host, so `cd PandoraCore && docker run --rm -u 1000:1000 -v
+"$PWD:/pkg" -w /pkg swift:6.0 swift test` runs the core suite in
+seconds (298/298 green at this push). App-target files can be
+parse-checked with `swiftc -parse`; type errors still only surface on
+CI.
 
 ## Session handover (2026-11-08, GUI round — Unit 3 landed)
 
