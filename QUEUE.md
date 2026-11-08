@@ -246,6 +246,12 @@ Local verification: **not run this session** — the host has no Swift
 toolchain and the Docker test run was declined by the user. Core Tests
 and the iOS Build ride CI on this push (fire-and-continue).
 
+**CI state at the end of the session:** Unit 2 (`d83c98d`) ✅ Core
+Tests 42484879520 + iOS Build 42484879521 · Unit 3 (`dc0ace3`) ✅ Core
+Tests 42519050000 + iOS Build 42519049995 · this push (`be12caa`) ✅
+Core Tests 42521649254, iOS Build 42521649244 **in flight** (not
+waited on — check it next session).
+
 **Device expectation**: full player → drag the volume slider → the
 music's level follows live → close the app, reopen it → the slider is
 still where it was left.
@@ -1822,18 +1828,19 @@ toolbar) → Copy → paste.
 4. Anything red on the next `gh run list` — repair first.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — confirm the
-Unit 2, Unit 3 and the volume-persistence pushes are green on both
-workflows (the Unit 2 CI state was never checked this session), then
-**continue Unit 4: Settings usefulness + general GUI polish**.
+volume-persistence push's iOS Build (run 42521649244) went green (the
+other pushes are already verified), then **continue Unit 4: Settings
+usefulness + general GUI polish**.
 
 ## Session handover (2026-11-08, GUI round — Unit 3 landed)
 
 **State:** Units 2 (radio artwork) and 3 (sophisticated player) are
-complete and pushed; the working tree is clean. Local verification was
-**not** run — the host has no Swift toolchain and the Docker test run
-was declined by the user — so Core Tests + iOS Build ride CI. **The CI
-state of the Unit 2 push was never checked** (the check was declined
-mid-session): check both workflows before starting the next unit.
+complete and pushed, plus the volume-persistence slice; the working
+tree is clean. Local verification was **not** run — the host has no
+Swift toolchain and the Docker test run was declined by the user — so
+Core Tests + iOS Build ride CI. **CI: Unit 2 ✅, Unit 3 ✅, the
+volume push ✅ Core Tests / iOS Build in flight at the end of the
+session** — check that one first next session.
 
 **What Unit 3 changed (do not re-derive):**
 
