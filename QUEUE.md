@@ -1978,11 +1978,11 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 0. **GUI round (user request 2026-11-07 — this session's driver):**
-   Unit 1 Last.fm fix ✅ → **Unit 2 radio artwork ✅** →
-   **Unit 3 sophisticated player ✅** → **Unit 4 Settings/GUI polish**
-   (in progress: volume persistence ✅, Settings data management ✅
-   (this push); general GUI polish pass next). Unit details and root
-   causes are in User Feedback Pending at the top.
+   Unit 1 Last.fm fix ✅ → Unit 2 radio artwork ✅ → Unit 3
+   sophisticated player ✅ → **Unit 4 Settings/GUI polish ✅**
+   (volume persistence, Settings data management, the list press
+   feedback, the station name in the Now Playing header). Unit details
+   and root causes are in User Feedback Pending at the top.
 1. **User device test of the next IPA** — the player first (transport,
    volume slider, LIVE badge, radio controls), then radio artwork
    (every station row shows a monogram tile or its real logo; the full
@@ -1997,34 +1997,53 @@ toolbar) → Copy → paste.
    Diagnostics log decides the next step.
 3. **Persist the playback volume** — ✅ landed (the slider's level now
    survives a relaunch).
-4. **Skip-limit awareness** — AGENTS.md asks for it ("Respect skip
-   limits and rate limits"; "skip-limit awareness shown in UI") and it
-   was never implemented. The protocol is derived and verified (Elpis
-   `Station.cs:232`): the server signals it by **fault message** on
-   `station.getPlaylist` — `PLAYLIST_END` or
-   `DAILY_SKIP_LIMIT_REACHED` (pithos has no special case; the fault
-   message is the signal). Next unit: a typed core error + an app
-   message + no prefetch hammering while the limit is reached.
-5. **Explicit-content indicator** — AGENTS.md asks for an
-   explicit-content badge, but the project's own Protocol Notes record
-   that explicit content is an **account-level** filter
-   (`user.getSettings` → `isExplicitContentFilterEnabled`), not a
-   per-track flag — so a per-station badge has no protocol source. The
-   honest UI is an account-level badge ("Explicit content filtered")
-   on Home. Verify `user.getSettings`'s shape against a reference
-   first (pydora) before coding.
+4. **Skip-limit awareness** — ✅ landed (typed core error, a SKIP LIMIT
+   badge in the player, the station row marked, and no prefetch
+   hammering while the limit is reached).
+5. **Explicit-content indicator** — ✅ landed at the only level the
+   protocol supports (an account-level badge, since the legacy API has
+   no per-track explicit flag).
 6. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — confirm this
-push's Core Tests + iOS Build, then **continue with item 4 (skip-limit
-awareness)**.
+**FIRST ACTION next session:** `gh run list --limit 5` — confirm the
+GUI-polish and Now-Playing pushes are green, then **install the IPA on
+the phone** and run the device-test checklist below.
+
+**CI state at the end of this session:** Unit A (`8f066a6`) ✅ Core
+Tests 42527855898 + iOS Build 42527855907 · the skip-limit push was
+red on the iOS Build (`4e1aa1f`, one type error) and the explicit-
+content push inherited it (`8cc40ed`) — **both are covered by the
+repair push (`4dd965d`), which is ✅ green** (Core Tests 42531317700 +
+iOS Build 42531317702) · the GUI-polish push (`473bc78`) and the
+Now-Playing push (`399a7f4`) were in flight at handover.
 
 **Local verification is available again**: the `swift:6.0` Docker image
 is on this host, so `cd PandoraCore && docker run --rm -u 1000:1000 -v
 "$PWD:/pkg" -w /pkg swift:6.0 swift test` runs the core suite in
-seconds (298/298 green at this push). App-target files can be
-parse-checked with `swiftc -parse`; type errors still only surface on
-CI.
+seconds (**315/315 green** at the end of this session — 298 before it,
++9 skip-limit, +7 user-settings, +1 repair test). App-target files can
+be parse-checked with `swiftc -parse -swift-version 6`; type errors
+still only surface on CI.
+
+**Device-test checklist for this session's units:**
+
+- **Settings → Library**: "Clear Play History" shows the number of
+  plays and asks to confirm; the Recents sheet is empty afterwards.
+  "Clear Artwork Cache" shows the cache size on disk; station and song
+  artwork still appears (it is downloaded again).
+- **Skip limit**: hard to reproduce on demand — it needs the account's
+  daily skips to run out. If the Diagnostics log shows "skip limit
+  reached for … — not requesting more tracks", the SKIP LIMIT badge
+  must be in the player and the row on Home must read "Skip limit
+  reached", and the log line must appear **once** (no retry loop).
+- **Explicit content**: sign in with an account that has the filter on
+  → Home shows "Explicit content is filtered for this account." under
+  the browse row, and Settings → Account reads "Explicit Content:
+  Filtered".
+- **GUI polish**: tap a station row on Home, a radio row, a browse row
+  → the card dips and springs back. The Sign In button and the accent
+  swatches dip like the transport buttons.
+- **Now Playing**: the station name sits under the album in the header.
 
 ## Session handover (2026-11-08, GUI round — Unit 3 landed)
 
