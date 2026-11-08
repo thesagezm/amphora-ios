@@ -59,6 +59,14 @@ final class PlayerService {
     /// a device wired to the phone.
     private(set) var isAirPlayActive: Bool = false
 
+    /// The app's playback volume (0...1). `AVPlayer.volume` scales what
+    /// this app outputs — it does **not** change the phone's system
+    /// volume, so the player can offer its own level without fighting
+    /// the hardware buttons.
+    private(set) var volume: Float = 1 {
+        didSet { player.volume = volume }
+    }
+
     var isPlaying: Bool { state == .playing || state == .buffering }
 
     /// Tracks queued behind the current one, most immediate first — the
@@ -256,6 +264,11 @@ final class PlayerService {
         case .idle:
             break
         }
+    }
+
+    /// Sets the app's playback volume, clamped to 0...1.
+    func setVolume(_ value: Float) {
+        volume = min(max(value, 0), 1)
     }
 
     /// Jumps forward in the current track (remote command).
@@ -641,6 +654,9 @@ final class PlayerService {
         player = AVQueuePlayer()
         player.automaticallyWaitsToMinimizeStalling = true
         player.allowsExternalPlayback = true
+        // The fresh player starts at full volume — restore the level
+        // the user had set.
+        player.volume = volume
         observeTimeControl()
         startTimeObserver()
         slots = []

@@ -47,12 +47,16 @@ struct NowPlayingView: View {
                     .frame(width: 44, height: 44)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isShowingLyrics.toggle()
-                    } label: {
-                        Image(systemName: isShowingLyrics ? "quote.bubble.fill" : "quote.bubble")
+                    // A radio stream has no song behind it — there are
+                    // no lyrics to show.
+                    if !isRadioStream {
+                        Button {
+                            isShowingLyrics.toggle()
+                        } label: {
+                            Image(systemName: isShowingLyrics ? "quote.bubble.fill" : "quote.bubble")
+                        }
+                        .accessibilityLabel(isShowingLyrics ? "Hide lyrics" : "Show lyrics")
                     }
-                    .accessibilityLabel(isShowingLyrics ? "Hide lyrics" : "Show lyrics")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -71,6 +75,10 @@ struct NowPlayingView: View {
     /// Every secondary action in one Apple-Music-style place. This is
     /// also the app's only sleep-timer surface entry — the duplicate
     /// moon icon on the main surface is gone.
+    ///
+    /// A radio stream has no song behind it, so the song-level actions
+    /// (tuning a Pandora station, bookmarking the song or the artist,
+    /// hiding the song) would all be no-ops — they are not offered.
     private var actionsMenu: some View {
         Menu {
             Button {
@@ -83,36 +91,41 @@ struct NowPlayingView: View {
                     systemImage: "moon.zzz"
                 )
             }
-            Button {
-                isShowingTuning = true
-            } label: {
-                Label("Tune Station…", systemImage: "slider.horizontal.3")
-            }
-            Divider()
-            Button {
-                Haptics.light()
-                store.send(.bookmarkCurrentSong)
-            } label: {
-                Label("Bookmark Song", systemImage: "bookmark")
-            }
-            Button {
-                Haptics.light()
-                store.send(.bookmarkCurrentArtist)
-            } label: {
-                Label("Bookmark Artist", systemImage: "person.crop.circle.badge.plus")
-            }
-            Divider()
-            Button {
-                Haptics.light()
-                store.send(.sleepCurrentTrack)
-            } label: {
-                Label("Hide This Song", systemImage: "ear.slash")
+            if !isRadioStream {
+                Button {
+                    isShowingTuning = true
+                } label: {
+                    Label("Tune Station…", systemImage: "slider.horizontal.3")
+                }
+                Divider()
+                Button {
+                    Haptics.light()
+                    store.send(.bookmarkCurrentSong)
+                } label: {
+                    Label("Bookmark Song", systemImage: "bookmark")
+                }
+                Button {
+                    Haptics.light()
+                    store.send(.bookmarkCurrentArtist)
+                } label: {
+                    Label("Bookmark Artist", systemImage: "person.crop.circle.badge.plus")
+                }
+                Divider()
+                Button {
+                    Haptics.light()
+                    store.send(.sleepCurrentTrack)
+                } label: {
+                    Label("Hide This Song", systemImage: "ear.slash")
+                }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("More actions")
     }
+
+    /// `true` while a live radio stream is the current track.
+    private var isRadioStream: Bool { store.player.currentTrack?.isRadio == true }
 
     @ViewBuilder
     private var content: some View {
@@ -131,7 +144,12 @@ struct NowPlayingView: View {
                         artwork(for: track)
                         trackHeader(track)
                         routeIndicator
-                        scrubber
+                        // A live stream has no timeline — a dead
+                        // zero-length scrubber would only look broken.
+                        // The LIVE badge takes its place.
+                        if !track.isRadio {
+                            scrubber
+                        }
                     }
                     .padding(.top, 8)
                 }
@@ -149,13 +167,18 @@ struct NowPlayingView: View {
         }
     }
 
-    /// Everything below the artwork/lyrics region: ad badge, transport,
-    /// feedback, up next, confirmations, errors.
+    /// Everything below the artwork/lyrics region: ad badge, LIVE badge,
+    /// transport, volume, feedback, up next, confirmations, errors.
     private func fixedControls(for track: Track) -> some View {
         VStack(spacing: 18) {
             adBadge(track)
-            transport
-            if !track.isAdvertisement {
+            liveBadge(track)
+            transport(for: track)
+            volumeControl
+            if !track.isAdvertisement && !track.isRadio {
+                // A radio stream is not a song: there is nothing to
+                // rate — the thumbs would fire at a synthetic
+                // `radio.<uuid>` token.
                 FeedbackBar(accent: theme.colors.accent)
             }
             upNext
@@ -169,6 +192,32 @@ struct NowPlayingView: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
+    }
+
+    /// The app's playback volume. `AVPlayer.volume` scales what
+    /// Amphora outputs — the phone's own system volume is untouched, so
+    /// this slider never fights the hardware buttons.
+    private var volumeControl: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.fill")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Slider(
+                value: Binding(
+                    get: { Double(store.player.volume) },
+                    set: { store.player.setVolume(Float($0)) }
+                ),
+                in: 0...1
+            )
+            .tint(theme.colors.accent.color)
+            .accessibilityLabel("Volume")
+            Image(systemName: "speaker.wave.3.fill")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 4)
     }
 
     private func artwork(for track: Track) -> some View {
@@ -301,31 +350,46 @@ struct NowPlayingView: View {
         }
     }
 
+    /// The LIVE badge of a radio stream — the counterpart of the
+    /// advertisement badge: it says what the slot is.
+    @ViewBuilder
+    private func liveBadge(_ track: Track) -> some View {
+        if track.isRadio {
+            LiveBadge()
+        }
+    }
+
     /// Plain bold glyphs, no filled circles — the transport Apple Music
     /// uses, with the artwork accent reserved for the scrubber and
     /// ratings.
-    private var transport: some View {
-        HStack(spacing: 44) {
-            Button {
-                Haptics.light()
-                store.player.skipBackward(by: 15)
-            } label: {
-                Image(systemName: "gobackward.15")
-                    .font(.title2.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .frame(width: 52, height: 52)
+    ///
+    /// A live radio stream has no timeline: the back-15 button is gone
+    /// (there is nowhere to go back to) and the trailing button stops
+    /// the stream instead of skipping it.
+    private func transport(for track: Track) -> some View {
+        HStack(spacing: 52) {
+            if !track.isRadio {
+                Button {
+                    Haptics.light()
+                    store.player.skipBackward(by: 15)
+                } label: {
+                    Image(systemName: "gobackward.15")
+                        .font(.system(size: 26, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .frame(width: 56, height: 56)
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel("Back 15 seconds")
             }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel("Back 15 seconds")
 
             Button {
                 Haptics.light()
                 store.send(.togglePlayback)
             } label: {
                 Image(systemName: store.player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 52, weight: .bold))
+                    .font(.system(size: 58, weight: .bold))
                     .foregroundStyle(.primary)
-                    .frame(width: 84, height: 64)
+                    .frame(width: 92, height: 76)
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(PressableButtonStyle())
@@ -334,15 +398,19 @@ struct NowPlayingView: View {
 
             Button {
                 Haptics.medium()
-                store.send(.skipToNext)
+                if track.isRadio {
+                    store.send(.stopRadio)
+                } else {
+                    store.send(.skipToNext)
+                }
             } label: {
-                Image(systemName: "forward.fill")
-                    .font(.title2.weight(.medium))
+                Image(systemName: track.isRadio ? "stop.fill" : "forward.fill")
+                    .font(.system(size: 26, weight: .medium))
                     .foregroundStyle(.primary)
-                    .frame(width: 52, height: 52)
+                    .frame(width: 56, height: 56)
             }
             .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel("Next track")
+            .accessibilityLabel(track.isRadio ? "Stop radio" : "Next track")
         }
     }
 
@@ -410,6 +478,37 @@ struct NowPlayingView: View {
                 "Up next: \(upcoming.map(\.title).joined(separator: ", "))"
             )
         }
+    }
+}
+
+/// The LIVE indicator of a radio stream: a pulsing dot next to the
+/// word, in the same capsule language as the advertisement badge. It
+/// replaces the scrubber — a live stream has no length, so a progress
+/// bar over nothing would read as a broken control.
+private struct LiveBadge: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .opacity(isPulsing ? 0.3 : 1)
+            Text("LIVE")
+                .font(.caption.weight(.bold))
+                .tracking(2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Theme.playerSurface, in: Capsule())
+        .onAppear { isPulsing = true }
+        .animation(
+            .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+            value: isPulsing
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Live radio stream")
     }
 }
 

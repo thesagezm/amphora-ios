@@ -84,15 +84,21 @@ struct MiniPlayer: View {
 
             Button {
                 Haptics.medium()
-                store.send(.skipToNext)
+                // A radio stream has no next track — the button stops
+                // it instead.
+                if track?.isRadio == true {
+                    store.send(.stopRadio)
+                } else {
+                    store.send(.skipToNext)
+                }
             } label: {
-                Image(systemName: "forward.fill")
+                Image(systemName: track?.isRadio == true ? "stop.fill" : "forward.fill")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
             }
             .buttonStyle(PressableButtonStyle())
             .frame(width: 44, height: 44)
-            .accessibilityLabel("Next track")
+            .accessibilityLabel(track?.isRadio == true ? "Stop radio" : "Next track")
         }
         .padding(.leading, 10)
         .padding(.trailing, 4)

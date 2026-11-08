@@ -42,9 +42,16 @@ dont look sophisticated… improve the gui". Four asks, mapped to units:
    URLSession favicon loads, and every station without usable artwork
    gets a generated monogram/gradient tile (rows, mini player, full
    player, lock screen). Detail in In Flight / Last Push.
-3. **Player doesn't look sophisticated** → **Unit 3**: transport/layout
-   refinement, volume control, radio-specific controls (live badge,
-   hide rating/back-15 on live streams).
+3. **Player doesn't look sophisticated** → **Unit 3 landed** (this
+   push): the transport was rebuilt around the artwork accent (bigger
+   play/pause, matched side buttons, a volume slider under the
+   transport), and radio streams now get their own controls — a LIVE
+   badge instead of a dead zero-length scrubber, no thumbs (a radio
+   track has no song to rate — the intent would fire at a synthetic
+   `radio.<uuid>` token), no back-15 (a live stream has no timeline)
+   and a stop button instead of "next". The song-level actions that
+   are no-ops on a stream (lyrics, tune station, bookmark, hide) are
+   not offered either. Detail in In Flight / Last Push.
 4. **Settings useful + general GUI polish** → Unit 4 (and Unit 1's
    scrobble status line + Last.fm profile link already add useful
    Settings content).
@@ -218,7 +225,58 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit 2 of the GUI round: radio station artwork):** the
+**(this push — Unit 3 of the GUI round: the sophisticated player):** the
+user's "the playback controls and player dont look sophisticated".
+
+- **The transport was rebuilt** (`NowPlayingView.transport(for:)`): the
+  play/pause glyph grew to 58 pt (a 92×76 hit area), the side buttons
+  are matched 56 pt glyphs in a 56×56 area, and the spacing opened to
+  52 — the Apple-Music proportions the rest of the player already
+  follows (matte shades, plain glyphs, no liquid glass). The press
+  response (`PressableButtonStyle`: scale 0.92 + 0.6 opacity on a
+  spring) and the haptics are unchanged, and the symbol still swaps
+  with `.symbolEffect(.replace)`.
+- **A volume slider** under the transport: a speaker glyph, a native
+  `Slider` tinted with the artwork accent, a second speaker glyph.
+  `PlayerService` gained `volume` (0...1) and `setVolume(_:)`, applied
+  to `AVPlayer.volume` — the **app's** output level, not the phone's
+  system volume, so the slider never fights the hardware buttons. The
+  level survives a media-services reset (the rebuilt player restores
+  it). **Not persisted across launches yet** — a follow-up, because
+  `Preferences` is Codable and a missing key would need the optional
+  treatment the other newer fields use.
+- **Radio streams get their own controls** — the old player showed a
+  radio track as if it were a song, which was wrong in five places:
+  - a **LIVE badge** (a pulsing red dot in the same capsule language
+    as the ADVERTISEMENT badge) replaces the scrubber: a live stream
+    has no length, so a progress bar over nothing read as a broken
+    control;
+  - the **thumbs are gone** — a radio track has no song to rate, and
+    the intent would have fired at a synthetic `radio.<uuid>` token
+    (`AppStore` already refused it, so the button did nothing);
+  - **back-15 is gone** — there is no timeline to go back in;
+  - the trailing button **stops the stream** instead of skipping it
+    (both in the full player and in the mini player), because "next"
+    on a live stream was quietly a stop;
+  - the **lyrics button and the song-level actions** (Tune Station…,
+    Bookmark Song, Bookmark Artist, Hide This Song) are not offered —
+    all of them are no-ops on a stream.
+
+Local verification: **not run this session** — the host has no Swift
+toolchain and the Docker test run was declined by the user. Core Tests
+and the iOS Build ride CI on this push (fire-and-continue). The CI
+state of the Unit 2 push was not checked (the check was declined) —
+check both workflows before the next unit.
+
+**Device expectation**: full player → the transport reads as one
+cluster, the volume slider sits under it and changes the music's level
+without touching the phone's system volume; play a Pandora station →
+the scrubber and the thumbs are there as before; play a radio station
+→ a LIVE badge above the transport, no scrubber, no thumbs, no
+back-15, and the trailing button stops the stream (the mini player
+does the same).
+
+**(previous push — Unit 2 of the GUI round: radio station artwork):** the
 user's "no artwork for radiostations?" — three causes, three fixes.
 
 - **The raw HTTP URL was never tried** (`ArtworkCache.candidateURLs`
@@ -1718,78 +1776,78 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 0. **GUI round (user request 2026-11-07 — this session's driver):**
-   Unit 1 Last.fm fix ✅ → **Unit 2 radio artwork ✅ (this push)** →
-   **Unit 3 sophisticated player** (next) → Unit 4 Settings/GUI polish.
-   Unit details and root causes are in User Feedback Pending at the
-   top. Unit 3's scope: refined transport, a volume slider, a LIVE
-   badge for radio streams, and the radio-specific control rules
-   (`FeedbackBar` currently renders for radio tracks and would fire
-   rating intents at a synthetic token; back-15 is dead on a live
-   stream too).
-1. **User device test of the next IPA** — radio artwork first (every
-   station row shows a monogram tile or its real logo; the full player
-   and the lock screen show the same), then Last.fm (Settings → Last.fm
-   → Connect with real credentials; it must now succeed and show the
-   live scrobble status line), then the radio flow (R1–R5, test list in
-   In Flight / Last Push) and the older pending round (light mode,
-   history ratings, lyrics fallbacks, romanization, AirPlay).
+   Unit 1 Last.fm fix ✅ → **Unit 2 radio artwork ✅** →
+   **Unit 3 sophisticated player ✅ (this push)** → **Unit 4
+   Settings/GUI polish** (next). Unit details and root causes are in
+   User Feedback Pending at the top.
+1. **User device test of the next IPA** — the player first (transport,
+   volume slider, LIVE badge, radio controls), then radio artwork
+   (every station row shows a monogram tile or its real logo; the full
+   player and the lock screen show the same), then Last.fm (Settings →
+   Last.fm → Connect with real credentials; it must now succeed and
+   show the live scrobble status line), then the radio flow (R1–R5,
+   test list in In Flight / Last Push) and the older pending round
+   (light mode, history ratings, lyrics fallbacks, romanization,
+   AirPlay).
 2. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
-3. Anything red on the next `gh run list` — repair first.
+3. **Persist the playback volume** — the slider works but forgets the
+   level on the next launch. `Preferences` is Codable; a new key must
+   be optional (or given a default the decoder can use) so an older
+   preferences file still decodes.
+4. Anything red on the next `gh run list` — repair first.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — confirm this
-push is green on both workflows, then **start Unit 3: the sophisticated
-player** (details in the 2026-11-08 handover below).
+**FIRST ACTION next session:** `gh run list --limit 5` — confirm the
+Unit 2 and Unit 3 pushes are green on both workflows (the Unit 2 CI
+state was never checked this session), then **start Unit 4: Settings
+usefulness + general GUI polish**.
 
-## Session handover (2026-11-08, GUI round — Unit 2 landed)
+## Session handover (2026-11-08, GUI round — Unit 3 landed)
 
-**State:** Unit 2 (radio station artwork) is complete and pushed; the
-working tree is clean. Local verification was **not** run — the host has
-no Swift toolchain and the Docker test run was declined by the user —
-so Core Tests + iOS Build ride CI. Check the runs before starting the
-next unit.
+**State:** Units 2 (radio artwork) and 3 (sophisticated player) are
+complete and pushed; the working tree is clean. Local verification was
+**not** run — the host has no Swift toolchain and the Docker test run
+was declined by the user — so Core Tests + iOS Build ride CI. **The CI
+state of the Unit 2 push was never checked** (the check was declined
+mid-session): check both workflows before starting the next unit.
 
-**What Unit 2 changed (do not re-derive):**
+**What Unit 3 changed (do not re-derive):**
 
-- `PandoraCore/Sources/PandoraCore/ArtworkURL.swift` —
-  `ArtworkURLCandidates.candidates(for:)` (HTTPS first, raw URL with
-  the scheme preserved second). 17 tests in
-  `PandoraCore/Tests/PandoraCoreTests/ArtworkURLTests.swift`.
-- `PandoraCore/Sources/PandoraCore/RadioStationIdentity.swift` (new) —
-  the monogram + the deterministic hue (FNV-1a; `hashValue` is seeded
-  per process and must not be used). 8 tests in
-  `RadioStationIdentityTests.swift`.
-- `Amphora/Persistence/ArtworkCache.swift` — `candidateURLs` now
-  delegates to the core helper; the duplicated `normalizedURL` /
-  `upgradedToHTTPS` helpers are deleted.
-- `Amphora/Info.plist` (new) + `project.yml` — the target no longer
-  generates its Info.plist; the explicit plist carries
-  `NSAppTransportSecurity → NSAllowsArbitraryLoads = true` alone.
-  **Trap for the memory:** `INFOPLIST_KEY_*` cannot express a nested
-  dictionary, so the generated-plist route can never carry an ATS
-  exception. If the plist ever needs a new key, add it to
-  `Amphora/Info.plist`, not to `project.yml`.
-- `Amphora/UI/RadioStationArtwork.swift` (new) — the generated tile
-  (SwiftUI) plus `RadioStationArtworkRenderer.tileImage` (UIKit, for
-  the lock screen). Wired into `RadioView`'s row, `MiniPlayer`,
-  `NowPlayingView.artwork(for:)` and `NowPlayingService.loadArtwork`.
-  The favicon is only shown when it is big enough for the slot
-  (64 px rows / 200 px full player / 120 px lock screen).
+- `Amphora/Player/PlayerService.swift` — `volume` (0...1) + 
+  `setVolume(_:)`, applied to `AVPlayer.volume`; the level is restored
+  after a media-services reset. It is **not persisted** (follow-up in
+  Pending Queue item 3).
+- `Amphora/UI/NowPlayingView.swift` — the transport was rebuilt
+  (`transport(for:)`: 58 pt play/pause, matched 56 pt side buttons,
+  spacing 52); a **volume slider** sits under the transport; a **LIVE
+  badge** replaces the scrubber for radio; the thumbs, the back-15
+  button, the lyrics button and the song-level menu actions are hidden
+  for radio; the trailing transport button stops a stream instead of
+  skipping it.
+- `Amphora/UI/MiniPlayer.swift` — the trailing button stops a radio
+  stream (glyph and VoiceOver label follow).
+- `LiveBadge` (private, in `NowPlayingView.swift`) — the pulsing red
+  dot + "LIVE" capsule.
 
-**Unit 3 is next — the sophisticated player.** Scope (from User
-Feedback Pending item 3):
+**Unit 4 is next — Settings usefulness + general GUI polish** (the
+user's fourth ask: "add and make the settings work and useful"). Unit
+1 already added the live Last.fm status line and the profile link, so
+what is left is scope-dependent: the user has not named the settings
+they want. Sensible candidates, in order of value:
 
-1. Refined transport: the play/pause button, back-15 and next should
-   feel like the controls of a real music app (sizes, spacing, the
-   press response, the scrubber's relationship to the artwork).
-2. A **volume slider** in the full player.
-3. **Radio-specific controls**: a LIVE badge instead of a dead
-   zero-duration scrubber, and **hide the thumbs and back-15 on live
-   streams** — `FeedbackBar` currently renders for radio tracks and
-   would fire rating intents at a synthetic `radio.<uuid>` token, and
-   back-15 does nothing on a stream that has no timeline.
-4. Keep the unit small: one surface, then push and continue.
+1. **Persisting the playback volume** (Pending Queue item 3) — a
+   setting the user can actually feel.
+2. **History management** — clear the play history (the app has
+   history but no way to wipe it from the UI).
+3. **Audio quality** — Pandora already serves the best variant the
+   account offers (`Track.preferredVariant`); a user-facing preference
+   would need a protocol change, so it is out of scope unless the user
+   asks for it.
+4. General GUI polish, reviewed surface by surface.
+
+**Keep the unit small**: pick one thing, ship it, push, continue. If
+the user names a specific setting, that wins over this list.
 
 **Constraints to carry over:** no subagents (project working style);
 never wait on a build — push and continue; `PandoraCore` stays UI-free;
