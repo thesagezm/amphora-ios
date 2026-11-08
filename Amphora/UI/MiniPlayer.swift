@@ -57,7 +57,7 @@ struct MiniPlayer: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPressableButtonStyle())
             .accessibilityLabel("Open now playing")
 
             AirPlayRoutePicker(

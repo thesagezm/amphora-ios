@@ -362,3 +362,26 @@ struct PressableButtonStyle: ButtonStyle {
             )
     }
 }
+
+/// Press feedback for a full-width list row.
+///
+/// The rows are `.plain` buttons, so without a style of their own they
+/// do not react to a touch at all — the system highlight belongs to the
+/// list row, and a plain button opts out of it. This puts the app's
+/// own language back: the card dims and settles with a spring.
+///
+/// Much softer than `PressableButtonStyle` on purpose: that one shrinks
+/// a glyph button by 8%, which is right for a 44 pt control and wrong
+/// for a row that is 380 pt wide.
+struct RowPressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.99 : 1)
+            .animation(
+                .spring(duration: 0.26, bounce: 0.22),
+                value: configuration.isPressed
+            )
+    }
+}
+

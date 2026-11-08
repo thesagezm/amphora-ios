@@ -74,7 +74,7 @@ struct LoginView: View {
                     .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusM, style: .continuous))
                     .shadow(color: Theme.accent.opacity(0.30), radius: 14, y: 5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle())
                 .disabled(isSigningIn)
                 .accessibilityLabel(isSigningIn ? "Signing in" : "Sign In")
 

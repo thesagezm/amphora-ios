@@ -127,7 +127,7 @@ struct AddStationView: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowPressableButtonStyle())
         .disabled(store.isMutatingStations)
         .accessibilityLabel("Create station from \(hit.title)")
         .accessibilityHint(caption(for: hit))
@@ -155,7 +155,7 @@ struct AddStationView: View {
                 Image(systemName: "xmark")
                     .font(.footnote.weight(.semibold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .accessibilityLabel("Dismiss error")
         }
         .padding(12)

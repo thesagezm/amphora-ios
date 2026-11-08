@@ -273,7 +273,7 @@ private struct AccentSwatch: View {
             }
             .frame(width: 36, height: 36)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(accent.displayName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

@@ -83,7 +83,7 @@ struct BrowseStationsSheet: View {
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPressableButtonStyle())
             .amphoraCardRow()
         }
         .listStyle(.plain)

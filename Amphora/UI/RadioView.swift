@@ -115,7 +115,7 @@ struct RadioView: View {
                 } label: {
                     discoverRow("Popular", "The directory's most upvoted stations", "chart.line.uptrend.xyaxis")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowPressableButtonStyle())
                 .amphoraCardRow()
 
                 NavigationLink {
@@ -123,7 +123,7 @@ struct RadioView: View {
                 } label: {
                     discoverRow("Countries", "Browse stations by country", "globe")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowPressableButtonStyle())
                 .amphoraCardRow()
 
                 NavigationLink {
@@ -131,7 +131,7 @@ struct RadioView: View {
                 } label: {
                     discoverRow("Tags", "Browse stations by genre tag", "tag")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowPressableButtonStyle())
                 .amphoraCardRow()
             }
         }
@@ -152,7 +152,7 @@ struct RadioView: View {
         } label: {
             RadioStationRow(station: station, isCurrent: isCurrent(station))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowPressableButtonStyle())
     }
 
     private func discoverRow(_ title: String, _ caption: String, _ systemImage: String) -> some View {
@@ -225,7 +225,7 @@ private struct RadioResultsView: View {
             } label: {
                 RadioStationRow(station: station, isCurrent: isCurrent)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPressableButtonStyle())
             .amphoraCardRow(tinted: isCurrent)
         }
         .listStyle(.plain)
@@ -290,7 +290,7 @@ private struct RadioCountryListView: View {
                                 systemImage: "globe"
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(RowPressableButtonStyle())
                         .amphoraCardRow()
                     }
                     .listStyle(.plain)
@@ -403,7 +403,7 @@ private struct RadioTagListView: View {
                             .frame(minHeight: 44)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(RowPressableButtonStyle())
                         .amphoraCardRow()
                     }
                     .listStyle(.plain)

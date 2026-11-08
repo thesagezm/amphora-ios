@@ -225,7 +225,41 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — the explicit-content badge, at the only level the
+**(this push — the GUI polish pass: every list row now reacts to a
+touch):** the user's "improve the gui of the app". The audit found a
+concrete, systematic gap rather than a taste question: **every list row
+in the app was a `.plain` button, so no row reacted to a touch at all.**
+The system highlight belongs to the *list row*, and a plain button opts
+out of it — the player controls had the app's press language, the lists
+had nothing.
+
+- **New `RowPressableButtonStyle`** (`Theme.swift`) — the row-level
+  cousin of `PressableButtonStyle`: the card dims to 72% and settles
+  back with a spring (0.26 s, bounce 0.22), scaled to 0.99. Much
+  softer than the glyph style on purpose — that one shrinks a 44 pt
+  control by 8%, which is right for a transport button and wrong for a
+  380 pt row.
+- **Applied to every full-width row**: the Home station rows, the
+  browse row, the Radio station rows (list, search results, favorites,
+  recents), the Radio discover rows (Popular / Countries / Tags) and the
+  country/tag catalog rows, the browse sheet's category rows, the
+  add-station search results, and the mini player's open button.
+- **Icon buttons keep the glyph style**: the Login button, the accent
+  swatches, the bookmark delete and the error-banner dismiss.
+- **A haptic on the Home station rows** — tapping a station starts
+  playback, and it now says so (the hero and the Radio rows already
+  did).
+
+Local verification: the nine touched app files are parse-clean
+(`swiftc -parse -swift-version 6`); PandoraCore untouched (315/315
+stands). The app target compiles on CI only.
+
+**Device expectation**: tap a station row on Home, a station row in
+Radio, or a browse row — the card dips and springs back instead of
+feeling dead; the Sign In button and the accent swatches dip like the
+transport buttons already do.
+
+**(previous push — the explicit-content badge, at the only level the
 protocol supports):** AGENTS.md asks for an "explicit-content badge" on
 the station list. The legacy API has **no per-track explicit flag** —
 the filter is an account-level switch — so a per-station badge would

@@ -156,6 +156,7 @@ struct StationsView: View {
             ForEach(store.stations) { station in
                 let isCurrent = store.currentStation?.id == station.id
                 Button {
+                    Haptics.light()
                     store.send(.playStation(station))
                 } label: {
                     StationRow(
@@ -165,7 +166,7 @@ struct StationsView: View {
                         isSkipLimited: store.isSkipLimited(station)
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowPressableButtonStyle())
                 .amphoraCardRow(tinted: isCurrent)
                 .contextMenu {
                     // QuickMix is an aggregator — Pandora offers it no
@@ -325,7 +326,7 @@ struct StationsView: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowPressableButtonStyle())
         .accessibilityLabel("Browse Pandora's featured stations")
     }
 
@@ -343,7 +344,7 @@ struct StationsView: View {
                 Image(systemName: "xmark")
                     .font(.footnote.weight(.semibold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .accessibilityLabel("Dismiss error")
         }
         .padding(12)

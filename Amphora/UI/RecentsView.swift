@@ -268,7 +268,7 @@ private struct BookmarksList: View {
                     .font(.footnote)
                     .frame(width: 44, height: 44)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .accessibilityLabel("Remove bookmark \(bookmark.title)")
         }
         .frame(minHeight: 44)
