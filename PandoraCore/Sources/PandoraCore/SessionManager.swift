@@ -422,6 +422,18 @@ public actor SessionManager {
         }
     }
 
+    // MARK: User settings
+
+    /// The account-level settings (`user.getSettings`): pithos reads the
+    /// explicit-content filter from this reply
+    /// (`Pandora.explicit_content_filter_state`). The call carries no
+    /// parameters of its own — the session token rides in the query and
+    /// the encrypted body, exactly like every other authenticated call.
+    public func getUserSettings() async throws -> UserSettings {
+        let result = try await authenticatedRequest(PandoraAPI.Method.getUserSettings)
+        return UserSettings(result: result)
+    }
+
     // MARK: Advertisements
 
     /// Resolves an advertisement entry (pydora `get_ad_item`):

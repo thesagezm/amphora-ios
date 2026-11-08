@@ -225,7 +225,50 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — skip-limit awareness, the last unimplemented AGENTS.md
+**(this push — the explicit-content badge, at the only level the
+protocol supports):** AGENTS.md asks for an "explicit-content badge" on
+the station list. The legacy API has **no per-track explicit flag** —
+the filter is an account-level switch — so a per-station badge would
+be invented data. This unit ships the honest version: one account-level
+badge.
+
+- **The protocol, verified against pithos** —
+  `Pandora.explicit_content_filter_state` calls `user.getSettings` and
+  reads `isExplicitContentFilterEnabled` and
+  `isExplicitContentFilterPINProtected`. pithos' `https=True` only
+  switches the transport to TLS — the body is still Blowfish-encrypted,
+  exactly like every other authenticated call, so Amphora's
+  `authenticatedRequest` fits as-is.
+- **Core (`UserSettings.swift`, new)** — the reply as a value type. A
+  missing key means "off", matching pithos' `.get(..., False)`
+  default — an older server that does not send the field must not read
+  as "the filter is on".
+- **Core (`SessionManager.getUserSettings()`)** — `user.getSettings`
+  with no parameters of its own (the session token rides in the query
+  and the encrypted body, like every other call).
+- **App (`AppStore`)** — `isExplicitContentFilterEnabled`, read once
+  after sign-in / session restore. Best-effort: a failure only leaves
+  the badge off, it never blocks anything.
+- **UI** — Home carries one caption row under the browse row ("Explicit
+  content is filtered for this account." with the `e.square.fill`
+  glyph); Settings → Account shows "Explicit Content: Filtered /
+  Allowed" with a pointer to pandora.com, where the setting actually
+  lives. Changing it from the app is out of scope: the account's PIN
+  protection would have to be handled, and the API only takes effect
+  with the next playlist (pithos).
+
+Local verification: **PandoraCore 314/314 green in Docker** (307 + 7
+new tests — decoding, the missing-key default, the wrong-type case,
+the call's method/token on the wire, and the 1001 re-auth contract);
+the three touched app files are parse-clean. The app target compiles
+on CI only.
+
+**Device expectation**: sign in with an account that has the explicit
+filter on → Home shows the "Explicit content is filtered" caption under
+the browse row, and Settings → Account reads "Explicit Content:
+Filtered"; with the filter off, neither appears.
+
+**(previous push — skip-limit awareness, the last unimplemented AGENTS.md
 requirement):** "Respect skip limits and rate limits. Never hammer the
 API" + "skip-limit awareness shown in UI" — the feature set asked for
 it, the code never had it.

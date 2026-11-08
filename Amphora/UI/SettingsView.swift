@@ -18,6 +18,7 @@ struct SettingsView: View {
         List {
             appearanceSection
             lastFmSection
+            contentSection
             librarySection
             supportSection
             aboutSection
@@ -116,6 +117,28 @@ struct SettingsView: View {
                     + "Tracks shorter than 30 seconds never scrobble; "
                     + "a track counts once you've played past half of it "
                     + "or four minutes — whichever comes first."
+            )
+        }
+    }
+
+    // MARK: Account
+
+    private var contentSection: some View {
+        Section {
+            HStack {
+                Label("Explicit Content", systemImage: "e.square")
+                Spacer()
+                Text(store.isExplicitContentFilterEnabled ? "Filtered" : "Allowed")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .amphoraCardRow()
+        } header: {
+            sectionHeader("Account", icon: "person.crop.circle")
+        } footer: {
+            Text(
+                "Pandora's explicit-content filter is an account setting — "
+                    + "it applies to every station. Change it on pandora.com."
             )
         }
     }

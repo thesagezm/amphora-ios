@@ -36,6 +36,7 @@ public enum PandoraAPI {
         public static let addFeedback = "station.addFeedback"
         public static let deleteFeedback = "station.deleteFeedback"
         public static let getBookmarks = "user.getBookmarks"
+        public static let getUserSettings = "user.getSettings"
         public static let addSongBookmark = "bookmark.addSongBookmark"
         public static let addArtistBookmark = "bookmark.addArtistBookmark"
         public static let deleteSongBookmark = "bookmark.deleteSongBookmark"

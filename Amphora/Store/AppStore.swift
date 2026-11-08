@@ -180,6 +180,13 @@ final class AppStore {
     /// premium-only listening mode ("Artist Only"). Free accounts can
     /// use every other mode (Deep Cuts included).
     private(set) var isSubscriber = false
+    /// Whether Pandora hides explicit tracks for this account
+    /// (`user.getSettings` → `isExplicitContentFilterEnabled`).
+    ///
+    /// This is an **account-level** switch: the legacy API carries no
+    /// per-track explicit flag, so the app shows one account-level badge
+    /// instead of inventing a per-station one.
+    private(set) var isExplicitContentFilterEnabled = false
     /// The user's bookmarks (`user.getBookmarks`).
     private(set) var bookmarks: [Bookmark] = []
     private(set) var isLoadingBookmarks = false
@@ -613,6 +620,7 @@ final class AppStore {
         currentStation = nil
         stationModes = nil
         skipLimitStationId = nil
+        isExplicitContentFilterEnabled = false
         modesStationId = nil
         lyrics = nil
         lyricsCache = [:]
@@ -660,6 +668,7 @@ final class AppStore {
             if restored {
                 isSubscriber = await session.isSubscriber
                 authPhase = .signedIn
+                await refreshUserSettings()
                 await refreshStations()
             } else {
                 authPhase = .signedOut
@@ -682,6 +691,7 @@ final class AppStore {
                 _ = try await session.login(username: user, password: password)
                 isSubscriber = await session.isSubscriber
                 authPhase = .signedIn
+                await refreshUserSettings()
                 await refreshStations()
             } catch {
                 authPhase = .signedOut
@@ -732,6 +742,24 @@ final class AppStore {
                 + "— not requesting more tracks",
             .playback
         )
+    }
+
+    // MARK: User settings
+
+    /// Reads the account-level settings (`user.getSettings`). Best-effort:
+    /// a failure here never blocks the app, it only means the
+    /// explicit-content badge stays off.
+    private func refreshUserSettings() async {
+        do {
+            let settings = try await session.getUserSettings()
+            isExplicitContentFilterEnabled = settings.isExplicitContentFilterEnabled
+            AppLog.info(
+                "explicit content filter: \(settings.isExplicitContentFilterEnabled ? "on" : "off")",
+                .network
+            )
+        } catch {
+            AppLog.debug("user settings unavailable: \(String(describing: error))", .network)
+        }
     }
 
     // MARK: Stations

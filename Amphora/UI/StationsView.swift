@@ -149,6 +149,10 @@ struct StationsView: View {
             hero
             browseRow
                 .amphoraCardRow()
+            if store.isExplicitContentFilterEnabled {
+                explicitContentNotice
+                    .amphoraCardRow()
+            }
             ForEach(store.stations) { station in
                 let isCurrent = store.currentStation?.id == station.id
                 Button {
@@ -208,6 +212,26 @@ struct StationsView: View {
                 errorBanner(message)
             }
         }
+    }
+
+    /// The account-level explicit-content badge.
+    ///
+    /// Pandora's explicit filter is an **account** switch, not a
+    /// per-track flag — there is no per-station badge to show, so the
+    /// app says the one true thing: this account hides explicit tracks.
+    private var explicitContentNotice: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "e.square.fill")
+                .font(.footnote)
+                .foregroundStyle(Theme.accentText)
+                .accessibilityHidden(true)
+            Text("Explicit content is filtered for this account.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 22)
+        .accessibilityElement(children: .combine)
     }
 
     /// The last-played (or playing) station, large and centered — the
