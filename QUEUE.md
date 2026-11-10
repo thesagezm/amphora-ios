@@ -39,7 +39,10 @@ pandora for the last played station". Three asks, mapped to units:
    design language, in the full player, the mini player and the Home
    hero. Detail in In Flight / Last Push.
 3. **Radio tab needs the large last-played tile** (the way Home has
-   it) → **Unit C**.
+   it) → **Unit C landed** (this push): the Radio tab root opens with
+   the same hero Home carries — the most recent radio station's tile
+   large and centered, its name, and a play/pause button. Detail in
+   In Flight / Last Push.
 
 **2026-11-07 GUI round (this session's driver):** "improve the gui of
 the app… add and make the settings work and useful (last fm doesnt
@@ -252,7 +255,42 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit B of the 2026-11-10 round: the drawn transport
+**(this push — Unit C of the 2026-11-10 round: the Radio tab's
+last-played hero):** the user's "for the radio channels there should
+be that large icon the way it is with pandora for the last played
+station" — the Radio tab now opens with the same landing centerpiece
+the Home tab has carried since the 2026-10-24 redesign.
+
+- `RadioView.homeList` leads with a `radioHero` row above "My
+  Stations": the most recent radio station (`store.radioRecents.first`)
+  as a large centered tile — `RadioStationArtwork` at the hero slot
+  (240 pt cap, `minimumArtworkPixels: 200`, so a real logo only wins
+  when it is genuinely big; otherwise the drawn monogram tile, the
+  same rule the full player uses) — the station name, and a "Now
+  playing"/"Last played" caption.
+- The play/pause button is the drawn glyph family's (23 pt in the
+  58 pt accent circle, `TransportGlyph` from Unit B) and dispatches
+  the existing `.playRadioStation` intent — the store already toggles
+  playback when the tapped station is the one playing, so the hero
+  doubles as pause.
+- Hidden until something has played (no recents → no hero), same rule
+  as Home; the hero station also stays in the "Recently Played"
+  section below, as on Home. The texts combine into one VoiceOver
+  element; the button keeps its own "Pause/Play <station>" label.
+- No PandoraCore changes; `RadioController` untouched — the hero only
+  reads state the store already publishes.
+
+Local verification: `RadioView.swift` parse-clean in the `swift:6.0`
+container; PandoraCore untouched (315/315 stands). The app target
+compiles on CI only.
+
+**Device expectation**: play any radio station, leave the Radio tab,
+come back (or relaunch) → the tab opens with the last-played station
+as a large centered tile with its name and a play button; tapping the
+tile's button pauses/resumes; with no radio history the tab starts
+directly at My Stations / Discover as before.
+
+**(previous push — Unit B of the 2026-11-10 round: the drawn transport
 glyph family):** the user's "the icons for playback controls are the
 substandard none elegant icons e.g play button".
 

@@ -54,6 +54,12 @@ struct RadioView: View {
 
     private var homeList: some View {
         List {
+            // The landing centerpiece: the last-played station, large
+            // and centered — the same hero the Home tab carries, for
+            // radio (user request 2026-11-10). Hidden until something
+            // has played.
+            radioHero
+
             // Custom stations the user added by URL — editable and
             // deletable via the row's context menu.
             if !store.radioCustomStations.isEmpty {
@@ -141,6 +147,68 @@ struct RadioView: View {
 
     private func isCurrent(_ station: RadioStation) -> Bool {
         store.currentRadioStation?.uuid == station.uuid
+    }
+
+    /// The last-played radio station as the landing page's centerpiece:
+    /// the station's tile large and centered, the name, and a play/
+    /// pause button — the Home tab's hero, for radio. The store toggles
+    /// playback when the tapped station is the one playing, so the
+    /// button doubles as pause. Hidden until something has played.
+    @ViewBuilder
+    private var radioHero: some View {
+        if let station = store.radioRecents.first {
+            let isPlaying = isCurrent(station) && store.player.isPlaying
+            VStack(spacing: 16) {
+                RadioStationArtwork(
+                    stationName: station.name,
+                    faviconURL: station.faviconURL,
+                    cornerRadius: Theme.radiusL,
+                    minimumArtworkPixels: 200
+                )
+                .aspectRatio(1, contentMode: .fit)
+                .frame(maxWidth: 240)
+                .frame(maxWidth: .infinity)
+                .shadow(color: .black.opacity(0.40), radius: 22, y: 10)
+
+                VStack(spacing: 4) {
+                    Text(station.name)
+                        .font(.title3.weight(.bold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                    Text(isPlaying ? "Now playing" : "Last played")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 24)
+                .accessibilityElement(children: .combine)
+
+                Button {
+                    Haptics.light()
+                    store.send(.playRadioStation(station))
+                } label: {
+                    ZStack {
+                        if isPlaying {
+                            TransportGlyph(.pause, size: 23, color: Theme.accentGlyph)
+                        } else {
+                            TransportGlyph(.play, size: 23, color: Theme.accentGlyph)
+                        }
+                    }
+                    .frame(width: 58, height: 58)
+                    .background(Theme.accent, in: Circle())
+                    .shadow(color: Theme.accent.opacity(0.35), radius: 14, y: 5)
+                }
+                .buttonStyle(PressableButtonStyle())
+                .animation(.snappy(duration: 0.2), value: isPlaying)
+                .accessibilityLabel(
+                    isPlaying ? "Pause \(station.name)" : "Play \(station.name)"
+                )
+            }
+            .padding(.top, 6)
+            .padding(.bottom, 14)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowBackground(Color.clear)
+        }
     }
 
     /// A station row as a play button — tapping plays (or toggles) the
