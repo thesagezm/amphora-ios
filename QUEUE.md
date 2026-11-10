@@ -14,6 +14,31 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
+**2026-11-10 feedback round (this session's driver):** "fix the music
+player viewer… the playback controls move separately from the artwork
+when they should be fixed/move together… the icons for playback
+controls are the substandard none elegant icons e.g play button… for
+the radio channels there should be that large icon the way it is with
+pandora for the last played station". Three asks, mapped to units:
+
+1. **Controls move separately from the artwork** → **Unit A landed**
+   (this push). Root cause: the full player had *two* containers —
+   artwork/header/scrubber in a `ScrollView`, transport/volume/
+   feedback pinned by `.safeAreaInset(edge: .bottom)` — and the
+   content is taller than any phone screen, so every scroll moved the
+   artwork under controls that stayed put. The player is now **one
+   fixed stack**: artwork + header + scrubber + controls are children
+   of the same `VStack`, so nothing can move independently; when
+   everything fits, nothing scrolls at all, and if it overflows (huge
+   Dynamic Type, Up Next expanded) the whole unit scrolls together.
+   The artwork is the flexible element: it absorbs leftover height and
+   yields it before the controls do — the Apple-Music behavior.
+2. **Transport icons are substandard** (play.fill at 58 pt bold, the
+   double-triangle forward.fill) → **Unit B** (next): a drawn glyph
+   family to one design language.
+3. **Radio tab needs the large last-played tile** (the way Home has
+   it) → **Unit C**.
+
 **2026-11-07 GUI round (this session's driver):** "improve the gui of
 the app… add and make the settings work and useful (last fm doesnt
 work)… no artwork for radiostations?… the playback controls and player
@@ -225,7 +250,44 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — the station name on the Now Playing screen):** the last
+**(this push — Unit A of the 2026-11-10 round: the player is one fixed
+layout):** the user's "the playback controls move separately from the
+artwork when they should be fixed/move together".
+
+- **The diagnosis** — `NowPlayingView` put the artwork, track header and
+  scrubber in a `ScrollView` and pinned the transport, volume, feedback
+  bar and Up Next below them via `.safeAreaInset(edge: .bottom)`. The
+  artwork alone is nearly full width (~340 pt square) and the controls
+  region adds ~300 pt more, so on every phone the content overflows and
+  the two containers scrolled *independently* — the artwork slid under
+  controls that never moved. That is exactly what the user saw.
+- **The fix** — one stack. The main branch of `content` is now a single
+  `VStack` (artwork → header → route → scrubber → controls) inside one
+  `ScrollView`, framed to at least the screen height, so:
+  - when everything fits, nothing scrolls at all (`scrollBounceBehavior
+    (.basedOnSize)` keeps the rubber-band off) — a fixed player;
+  - when it genuinely overflows (Up Next expanded, accessibility sizes),
+    the whole unit scrolls *together* — artwork and controls can never
+    move independently again.
+- **The artwork is the flexible element** — `.aspectRatio(1, .fit)` in a
+  `frame(maxWidth: .infinity, maxHeight: .infinity)`: it absorbs the
+  leftover height and yields it before the controls do, so expanding Up
+  Next or large Dynamic Type shrinks the cover — never the transport.
+  This is the Apple-Music artwork behavior and also removes the old
+  safe-area-inset juggling.
+- `fixedControls` is now `playerControls` (it is no longer pinned); the
+  lyrics layout keeps its own fixed-transport arrangement unchanged.
+
+Local verification: `NowPlayingView.swift` parse-clean in the
+`swift:6.0` container; PandoraCore untouched (315/315 stands). The app
+target compiles on CI only.
+
+**Device expectation**: open the full player → the artwork and the
+controls sit on one fixed screen, no scrolling between them; expand Up
+Next → the artwork shrinks, the controls stay put; nothing scrolls at
+default sizes.
+
+**(previous push — the station name on the Now Playing screen):** the last
 item from AGENTS.md's Now Playing list ("artwork, title, artist,
 **station**, progress, skips") that the screen did not have — the
 header showed title, artist, album and the quality chip, but never the

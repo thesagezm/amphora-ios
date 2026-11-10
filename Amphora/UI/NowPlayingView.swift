@@ -138,27 +138,40 @@ struct NowPlayingView: View {
                 VStack(spacing: 20) {
                     routeIndicator
                     LyricsPanel()
-                    fixedControls(for: track)
+                    playerControls(for: track)
                 }
                 .padding(.bottom, 24)
             } else {
-                ScrollView {
-                    VStack(spacing: 20) {
-                        artwork(for: track)
-                        trackHeader(track)
-                        routeIndicator
-                        // A live stream has no timeline — a dead
-                        // zero-length scrubber would only look broken.
-                        // The LIVE badge takes its place.
-                        if !track.isRadio {
-                            scrubber
+                // One fixed stack, Apple-Music-shaped: the artwork and
+                // the controls are children of the same layout and move
+                // as one unit — scrolling one means scrolling both, and
+                // when everything fits nothing scrolls at all. The
+                // artwork is the flexible element: it yields height
+                // before the controls do, so Up Next, large Dynamic
+                // Type and the badges squeeze the cover, never the
+                // transport.
+                GeometryReader { geo in
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            artwork(for: track)
+                            trackHeader(track)
+                            routeIndicator
+                            // A live stream has no timeline — a dead
+                            // zero-length scrubber would only look
+                            // broken. The LIVE badge takes its place.
+                            if !track.isRadio {
+                                scrubber
+                            }
+                            playerControls(for: track)
                         }
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: geo.size.height,
+                            alignment: .top
+                        )
+                        .padding(.top, 8)
                     }
-                    .padding(.top, 8)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    fixedControls(for: track)
+                    .scrollBounceBehavior(.basedOnSize)
                 }
             }
         } else {
@@ -171,8 +184,10 @@ struct NowPlayingView: View {
     }
 
     /// Everything below the artwork/lyrics region: ad badge, LIVE badge,
-    /// transport, volume, feedback, up next, confirmations, errors.
-    private func fixedControls(for track: Track) -> some View {
+    /// transport, volume, feedback, up next, confirmations, errors. In
+    /// the main layout it rides inside the same stack as the artwork, so
+    /// the two can never move independently.
+    private func playerControls(for track: Track) -> some View {
         VStack(spacing: 18) {
             adBadge(track)
             liveBadge(track)
@@ -259,6 +274,10 @@ struct NowPlayingView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
+        // The flexible square: it grows with the space left over and
+        // yields it again when the controls need room (Up Next expanded,
+        // large Dynamic Type) — the Apple-Music artwork behavior.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
         .shadow(color: theme.colors.accent.color.opacity(0.18), radius: 40, y: 8)
         .padding(.horizontal, 28)
