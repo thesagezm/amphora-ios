@@ -268,15 +268,19 @@ struct StationsView: View {
                     Haptics.light()
                     store.send(.playStation(station))
                 } label: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.accentGlyph)
-                        .frame(width: 58, height: 58)
-                        .background(Theme.accent, in: Circle())
-                        .shadow(color: Theme.accent.opacity(0.35), radius: 14, y: 5)
-                        .contentTransition(.symbolEffect(.replace))
+                    ZStack {
+                        if isPlaying {
+                            TransportGlyph(.pause, size: 23, color: Theme.accentGlyph)
+                        } else {
+                            TransportGlyph(.play, size: 23, color: Theme.accentGlyph)
+                        }
+                    }
+                    .frame(width: 58, height: 58)
+                    .background(Theme.accent, in: Circle())
+                    .shadow(color: Theme.accent.opacity(0.35), radius: 14, y: 5)
                 }
                 .buttonStyle(PressableButtonStyle())
+                .animation(.snappy(duration: 0.2), value: isPlaying)
                 .accessibilityLabel(
                     isPlaying ? "Pause \(station.name)" : "Play \(station.name)"
                 )

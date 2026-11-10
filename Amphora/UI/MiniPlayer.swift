@@ -71,14 +71,18 @@ struct MiniPlayer: View {
                 Haptics.light()
                 store.send(.togglePlayback)
             } label: {
-                Image(systemName: store.player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Theme.accentGlyph.opacity(0.85))
-                    .frame(width: 34, height: 34)
-                    .background(Theme.accent, in: Circle())
-                    .contentTransition(.symbolEffect(.replace))
+                ZStack {
+                    if store.player.isPlaying {
+                        TransportGlyph(.pause, size: 17, color: Theme.accentGlyph.opacity(0.85))
+                    } else {
+                        TransportGlyph(.play, size: 17, color: Theme.accentGlyph.opacity(0.85))
+                    }
+                }
+                .frame(width: 34, height: 34)
+                .background(Theme.accent, in: Circle())
             }
             .buttonStyle(PressableButtonStyle())
+            .animation(.snappy(duration: 0.2), value: store.player.isPlaying)
             .frame(width: 44, height: 44)
             .accessibilityLabel(store.player.isPlaying ? "Pause" : "Play")
 
@@ -92,9 +96,7 @@ struct MiniPlayer: View {
                     store.send(.skipToNext)
                 }
             } label: {
-                Image(systemName: track?.isRadio == true ? "stop.fill" : "forward.fill")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
+                TransportGlyph(track?.isRadio == true ? .stop : .next, size: 17)
             }
             .buttonStyle(PressableButtonStyle())
             .frame(width: 44, height: 44)

@@ -34,8 +34,10 @@ pandora for the last played station". Three asks, mapped to units:
    The artwork is the flexible element: it absorbs leftover height and
    yields it before the controls do — the Apple-Music behavior.
 2. **Transport icons are substandard** (play.fill at 58 pt bold, the
-   double-triangle forward.fill) → **Unit B** (next): a drawn glyph
-   family to one design language.
+   double-triangle forward.fill) → **Unit B landed** (this push): a
+   drawn glyph family — play, pause, next, stop, back-15 — to one
+   design language, in the full player, the mini player and the Home
+   hero. Detail in In Flight / Last Push.
 3. **Radio tab needs the large last-played tile** (the way Home has
    it) → **Unit C**.
 
@@ -250,7 +252,44 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit A of the 2026-11-10 round: the player is one fixed
+**(this push — Unit B of the 2026-11-10 round: the drawn transport
+glyph family):** the user's "the icons for playback controls are the
+substandard none elegant icons e.g play button".
+
+- **New `Amphora/UI/TransportGlyph.swift`** — five glyphs *drawn*, not
+  borrowed: play (rounded triangle), pause (two rounded bars), next
+  (triangle + bar, not the dated double-triangle `forward.fill`),
+  stop (rounded square, radio streams), back-15 (a 290° arc with the
+  gap at the upper left, a counterclockwise arrowhead at the top and
+  "15" inside — the system gobackward.15's shape language, drawn to
+  match the family's weight). Every proportion derives from the
+  square the glyph is drawn in, so play at 17 pt and play at 44 pt
+  are the same icon scaled; corners round proportionally
+  (`RoundedTriangle` = 10% of the triangle's own size), the bars and
+  gaps share one ratio system, and the visual weight is matched
+  across the family. Pure SwiftUI, one file, no assets.
+- **Wired into every transport surface**: the full player's transport
+  (side glyphs at 27 pt in the 56 pt slots, play/pause at 44 pt in
+  the 92×76 slot — slightly smaller than the old 58 pt bold symbol,
+  which read as a heavy wedge), the mini player's accent-circle
+  buttons (17 pt, `accentGlyph` on the accent fill) and the Home
+  hero's play button (23 pt). The play/pause swap is a crossfade
+  (the `if/else` under the existing `.animation(value:)`); the
+  `.symbolEffect(.replace)` content transitions are gone with the
+  Image views.
+- VoiceOver labels, haptics, radio-specific behaviors (stop instead
+  of next, no back-15) are unchanged.
+
+Local verification: the four touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (315/315 stands). The
+app target compiles on CI only.
+
+**Device expectation**: the transport reads as one drawn family — a
+soft-cornered play triangle, matched pause/next/back-15, no chunky
+system wedge; the mini player and the Home hero button use the same
+icons.
+
+**(previous push — Unit A of the 2026-11-10 round: the player is one fixed
 layout):** the user's "the playback controls move separately from the
 artwork when they should be fixed/move together".
 

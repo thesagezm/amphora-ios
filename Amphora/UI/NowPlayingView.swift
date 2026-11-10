@@ -443,9 +443,7 @@ struct NowPlayingView: View {
                     Haptics.light()
                     store.player.skipBackward(by: 15)
                 } label: {
-                    Image(systemName: "gobackward.15")
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(.primary)
+                    TransportGlyph(.back15, size: 27)
                         .frame(width: 56, height: 56)
                 }
                 .buttonStyle(PressableButtonStyle())
@@ -456,11 +454,14 @@ struct NowPlayingView: View {
                 Haptics.light()
                 store.send(.togglePlayback)
             } label: {
-                Image(systemName: store.player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 58, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 92, height: 76)
-                    .contentTransition(.symbolEffect(.replace))
+                ZStack {
+                    if store.player.isPlaying {
+                        TransportGlyph(.pause, size: 44)
+                    } else {
+                        TransportGlyph(.play, size: 44)
+                    }
+                }
+                .frame(width: 92, height: 76)
             }
             .buttonStyle(PressableButtonStyle())
             .animation(.snappy(duration: 0.25), value: store.player.isPlaying)
@@ -474,9 +475,7 @@ struct NowPlayingView: View {
                     store.send(.skipToNext)
                 }
             } label: {
-                Image(systemName: track.isRadio ? "stop.fill" : "forward.fill")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(.primary)
+                TransportGlyph(track.isRadio ? .stop : .next, size: 27)
                     .frame(width: 56, height: 56)
             }
             .buttonStyle(PressableButtonStyle())
