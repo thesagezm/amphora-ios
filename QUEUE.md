@@ -290,6 +290,14 @@ as a large centered tile with its name and a play button; tapping the
 tile's button pauses/resumes; with no radio history the tab starts
 directly at My Stations / Discover as before.
 
+**CI state at the end of this round (2026-11-10):** Unit A (`2fbcc65`)
+Core Tests ✅ / iOS Build *cancelled* — superseded by the Unit B push
+minutes later, as was Unit B's (`cf7b66c`) by Unit C's (`bb28013`).
+**The runs for `bb28013` are the ones that matter — check
+`gh run list --limit 5` first thing next session** (fire-and-continue:
+never waited on them). All four touched UI files parse-clean locally;
+PandoraCore untouched (315/315 stands).
+
 **(previous push — Unit B of the 2026-11-10 round: the drawn transport
 glyph family):** the user's "the icons for playback controls are the
 substandard none elegant icons e.g play button".
