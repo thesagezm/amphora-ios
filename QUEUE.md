@@ -290,7 +290,55 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit B of the 2026-11-11 round: the lyrics have a
+**(this push — Unit C1 of the 2026-11-11 round: the core reads a radio
+station's now-playing metadata):** the first half of the user's third
+ask ("from the radiostation can we identify the currently playing song,
+display its artwork and lyrics as well").
+
+- **The protocol, verified live** — the streams carry **ICY
+  now-playing metadata** (Shoutcast/Icecast). Two stations were probed
+  live while building this: Europe 1 and MANGORADIO both answered the
+  stream request with an `icy-metaint` header (1024 and 16000) and
+  interleaved a block like
+  `StreamTitle='Europe 1 - La radio libre';StreamUrl='';` into the
+  audio. (France Info, also probed, announces nothing — its server
+  sends no `icy-metaint`.) The framing: every `icy-metaint` bytes of
+  audio, one length byte (counting blocks of 16), then the metadata,
+  padded with nulls.
+- **Core (`RadioStreamMetadata.swift`, new)** — the pure part, so the
+  whole suite still runs on Linux:
+  - `ICYMetadataParser` — a byte state machine that finds the
+    metadata blocks in whatever bytes arrive, in whatever sizes they
+    arrive. It never buffers more than one block and never looks at
+    the audio itself.
+  - `ICYMetadataParser.metadataInterval(in:)` — reads `icy-metaint`
+    out of the response headers, case-insensitively (servers spell it
+    every way there is).
+  - `RadioStreamMetadata` — the `StreamTitle` out of a block and the
+    **"Artist - Title" split** (the convention every station uses).
+    The separator is the *spaced* " - ": a bare hyphen is part of a
+    title far more often than a separator, and only the first
+    separator splits ("Artist - Title - Live" keeps its tail).
+  - `RadioNowPlaying` — the announced song: the raw string, the
+    artist, the title and the query a lyrics/artwork lookup uses.
+- **15 new core tests** (354/354 green in Docker): the block found
+  after the interval, a block split across single-byte reads, the
+  zero-length "nothing changed" byte, two blocks in one read, a stream
+  with no interval, the header lookup in four spellings, the
+  `StreamTitle` extraction, the artist/title split and its edge cases
+  (no separator, an apostrophe in the title, only the first separator
+  splitting). The block fixture is the real one Europe 1 answered
+  with.
+- Two bugs the tests caught while writing them: the parser did not
+  decrement its remaining-byte counters (a block split across reads
+  was never found), and the " - " rule had to be spelled out — a
+  spaced hyphen *is* a separator.
+
+Local verification: **PandoraCore 354/354 green** in Docker. The app
+side (the probe, the player UI, the artwork and the lyrics for the
+identified song) is **Unit C2**, next.
+
+**(previous push — Unit B of the 2026-11-11 round: the lyrics have a
 Translate button):** the user's "There is no translate button for my
 lyrics — I was playing a french song, no way to translate".
 
