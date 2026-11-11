@@ -304,6 +304,33 @@ Retry, instead of spinning indefinitely; artwork from a dead candidate
 URL falls through to the next candidate within ~30 s rather than
 stalling the row.
 
+**M6 code audit (session-of-2026-11-11, no unit needed — recording the
+clean results so they are not re-audited later):**
+
+1. **Force-unwrap discipline** — the app target carries **no `try!`,
+   `as!`, `.first!`/`.last!`** and no force unwraps in the audit
+   patterns. Clean.
+2. **Audio-quality selection** (priority 3) — `Track.variants` is
+   genuinely best-first: the playlist parser sorts by quality-bucket
+   rank then bitrate, so `preferredVariant = variants.first` really
+   streams the best the account offers; the pithos 128-MP3 promotion
+   is in place. `additionalAudioUrl: HTTP_32_AACPLUS,HTTP_128_MP3` is
+   requested (wire params match the references). No change.
+3. **Ad path** — playlist ad stubs are resolved (`session.prepareAd` →
+   `ad.getAdMetadata` + impression registration) and registration
+   failures never interrupt playback. Wired.
+4. **Radio under a media-services reset** — `playLiveStream` fills
+   `slots` exactly like `play`, so `handleMediaServicesReset` rebuilds
+   the stream and resumes. Wired.
+5. **Transport timeouts** — the hazard unit above + its follow-up
+   cover every `URLSession` user in the project; radio keeps its own
+   15 s for fast mirror rotation.
+
+**CI state (this session, non-blocking checks only):** repair
+(`6a5f494`) ✅✅ · transport timeout (`39096fb`) ✅✅ · the
+follow-up (`5c768b4`) was in flight at the last check — confirm with
+`gh run list --limit 5`.
+
 **(previous push — Unit C of the 2026-11-10 round: the Radio tab's
 last-played hero):** the user's "for the radio channels there should
 be that large icon the way it is with pandora for the last played
