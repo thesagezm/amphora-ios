@@ -290,7 +290,37 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit C2a of the 2026-11-11 round: the probe + the
+**(this push — Unit C2b: the identified song's artwork, from iTunes
+Search):** the second piece of the radio now-playing ask — once the
+probe has a title, the cover comes from here.
+
+- **`PandoraCore/SongArtwork.swift` (new)** — the iTunes Search API
+  client (`itunes.apple.com/search?term=<artist title>&entity=song
+  &limit=1`), on the shared `HTTPGETTransport` (so it inherits the 30 s
+  timeout discipline), verified live this session.
+  - **The lookup is deliberately distrustful.** The search answers the
+    *best fuzzy match*, which is not always the asked-for song — the
+    observed live case: a "Céline Dion" query answered with a track by
+    "Olivier Dion". A wrong cover is worse than no cover, so the answer
+    is verified before it is trusted: **artist must match exactly**
+    after normalization (lowercase, diacritics folded, whitespace runs
+    collapsed) and **title must match loosely** (containment either
+    way — stations announce "Title (Radio Edit)", "Title - Live" and
+    the store may carry the plain form). A result that fails the check
+    yields `nil`, never a guess.
+  - `SongArtwork` carries both sizes: the API's 100×100 URL and the
+    600×600 form (the standard `100x100bb.jpg` → `600x600bb.jpg` swap;
+    a URL without the size token is returned unchanged). The station's
+    own tile stays the app's fallback.
+- **14 new tests** (`SongArtworkTests`, 368/368 green in Docker): the
+  wire request (term/entity/limit, no headers), the happy path, the
+  600×600 swap and its no-token passthrough, the **wrong-artist
+  refusal** (the real Céline/Olivier case), the wrong-title refusal,
+  diacritics/case not refusing, the two containment directions,
+  empty results, missing fields, malformed JSON → `.malformedResponse`,
+  transport errors propagating, and the normalizer.
+
+**(previous push — Unit C2a of the 2026-11-11 round: the probe + the
 identification state):** the app half of the radio now-playing ask
 ("from the radiostation can we identify the currently playing song…")
 on top of the landed core (92ff577). The lookup (artwork/lyrics) and
