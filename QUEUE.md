@@ -343,6 +343,15 @@ song comes, or at least add a button to do it manually."
   was hidden for radio before); the quote-bubble panel behaves as on
   any track, Translate included.
 
+**CI state at the end of the session (2026-11-11):** the round landed
+in order 3d479ed ✅✅ → e55663a ✅ Core / ❌ iOS (the Sendable env
+value) → eefddc7 ❌/✅ (inherited it) → 328581d (iOS cancelled,
+superseded) → 5f4b2af ✅ Core / ❌ iOS (the probe's byte-stream
+mistake) → bf9a971 Core ✅, iOS cancelled (superseded) → **59e96b3 is
+the commit whose runs decide the round — check `gh run list` first
+thing next session** (fire-and-continue: not waited on). Core Tests
+was green on every commit it ran on (368/368).
+
 Local verification: `AppStore.swift` and `NowPlayingView.swift`
 parse-clean; PandoraCore untouched (368/368 green in Docker). The app
 target compiles on CI only.
