@@ -50,9 +50,10 @@ struct NowPlayingView: View {
                     .frame(width: 44, height: 44)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    // A radio stream has no song behind it — there are
-                    // no lyrics to show.
-                    if !isRadioStream {
+                    // A radio stream has no lyrics — unless the
+                    // station's current song has been identified; its
+                    // lyrics are looked up like any song's.
+                    if !isRadioStream || store.radioIdentification == .identified {
                         Button {
                             isShowingLyrics.toggle()
                         } label: {
@@ -94,7 +95,17 @@ struct NowPlayingView: View {
                     systemImage: "moon.zzz"
                 )
             }
-            if !isRadioStream {
+            if isRadioStream {
+                // The Identify button: retries the announced song's
+                // artwork + lyrics lookup; before the first
+                // announcement it reconnects the probe. A station that
+                // announces nothing says so beside the LIVE badge.
+                Button {
+                    store.send(.identifyRadioSong)
+                } label: {
+                    Label("Identify Song", systemImage: "magnifyingglass")
+                }
+            } else {
                 Button {
                     isShowingTuning = true
                 } label: {
@@ -190,7 +201,11 @@ struct NowPlayingView: View {
     private func playerControls(for track: Track) -> some View {
         VStack(spacing: 18) {
             adBadge(track)
-            liveBadge(track)
+            if track.isRadio {
+                radioIdentifyStatus
+            } else {
+                liveBadge(track)
+            }
             skipLimitBadge
             transport(for: track)
             volumeControl
@@ -256,15 +271,24 @@ struct NowPlayingView: View {
     private func artwork(for track: Track) -> some View {
         Group {
             if track.isRadio {
-                // At cover size a tiny favicon is worse than the
-                // generated station tile, so the tile wins unless the
-                // station really has a big logo.
-                RadioStationArtwork(
-                    stationName: track.title,
-                    faviconURL: track.artworkUrl,
-                    cornerRadius: Theme.radiusArtwork,
-                    minimumArtworkPixels: 200
-                )
+                if let artwork = store.radioSongArtwork {
+                    // The identified song's cover (iTunes Search).
+                    CachedArtwork(
+                        urlString: artwork.largeArtworkURL.absoluteString,
+                        cornerRadius: Theme.radiusArtwork,
+                        fallbackSystemImage: "music.note"
+                    )
+                } else {
+                    // At cover size a tiny favicon is worse than the
+                    // generated station tile, so the tile wins unless
+                    // the station really has a big logo.
+                    RadioStationArtwork(
+                        stationName: track.title,
+                        faviconURL: track.artworkUrl,
+                        cornerRadius: Theme.radiusArtwork,
+                        minimumArtworkPixels: 200
+                    )
+                }
             } else {
                 CachedArtwork(
                     urlString: track.artworkUrl,
@@ -286,17 +310,30 @@ struct NowPlayingView: View {
     /// Apple-Music-style block: left-aligned title, artist in the
     /// artwork accent, album beneath, and the stream quality as a matte
     /// chip on the trailing edge.
+    ///
+    /// A radio station's identified song takes the header: the stream
+    /// is still what plays, but the song is what the user cares about —
+    /// the station stays visible beneath it ("on <station>").
     private func trackHeader(_ track: Track) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        let song = track.isRadio ? store.radioNowPlaying : nil
+        return HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(track.title)
+                Text(song?.title ?? track.title)
                     .font(Font.system(.title3, design: .rounded).weight(.bold))
                     .lineLimit(2)
-                Text(track.artist)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(theme.colors.accent.color.opacity(0.9))
-                    .lineLimit(1)
-                if !track.album.isEmpty {
+                if song != nil, let artist = song?.artist {
+                    Text(artist)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(theme.colors.accent.color.opacity(0.9))
+                        .lineLimit(1)
+                } else if song == nil {
+                    // No song identified — the stream's own caption.
+                    Text(track.artist)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(theme.colors.accent.color.opacity(0.9))
+                        .lineLimit(1)
+                }
+                if !track.isRadio, !track.album.isEmpty {
                     Text(track.album)
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
@@ -305,8 +342,17 @@ struct NowPlayingView: View {
                 // The station the track came from (AGENTS.md's Now
                 // Playing list: artwork, title, artist, station,
                 // progress, skips). A radio stream's title *is* the
-                // station name, so the line is skipped there.
-                if !track.isRadio, let stationName = store.currentStation?.name {
+                // station name — the line appears only once a song is
+                // identified, as "on <station>".
+                if track.isRadio {
+                    if song != nil, let stationName = store.currentRadioStation?.name {
+                        Text("on \(stationName)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .accessibilityLabel("Playing on \(stationName)")
+                    }
+                } else if let stationName = store.currentStation?.name {
                     Text(stationName)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -405,6 +451,58 @@ struct NowPlayingView: View {
         if track.isRadio {
             LiveBadge()
         }
+    }
+
+    /// The song identification beside the LIVE badge: a spinner while
+    /// the first announcement is awaited, an honest note when the
+    /// station announces nothing, and the Identify affordance in the
+    /// meantime (AGENTS.md: honest states). An identified song needs
+    /// nothing here — it is in the header and the artwork.
+    @ViewBuilder
+    private var radioIdentifyStatus: some View {
+        HStack(spacing: 10) {
+            LiveBadge()
+            switch store.radioIdentification {
+            case .identifying:
+                // Tappable: a fresh probe connection often carries the
+                // current title within the first metadata interval.
+                Button {
+                    store.send(.identifyRadioSong)
+                } label: {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(.secondary)
+                        Text("Identify")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(theme.colors.accent.color)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Theme.playerSurface, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Identify the current song")
+            case .stationAnnouncesNothing:
+                Text("No song announcements")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .identified:
+                if store.isIdentifyingRadioSong {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(.secondary)
+                        Text("Looking up artwork…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            case .inactive:
+                EmptyView()
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// Pandora's daily skip limit stopped the playlist for this station.

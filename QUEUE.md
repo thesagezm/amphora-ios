@@ -290,7 +290,70 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit C2b: the identified song's artwork, from iTunes
+**(this push — Unit C2c: the identified song, end to end — artwork,
+lyrics, and the player UI):** the rest of the radio now-playing ask:
+"from the radiostation can we identify the currently playing song,
+display its artwork and lyrics as well — and do that when the next
+song comes, or at least add a button to do it manually."
+
+- **Automatic, on every announcement** — when the probe delivers a
+  (new) `StreamTitle`, the store looks the song's artwork (the iTunes
+  client from the previous unit) and lyrics up by itself: the next
+  song swaps the header, the cover and the lyrics without a tap.
+- **The lyrics ride the existing machinery.** The provider takes a
+  `Track`; the store builds a **synthetic radio-song track** from the
+  announcement (`radioSongTrack`, token `radio-song.<station>.<title>`
+  — deliberately not the `radio.` prefix, which the lyrics loader
+  refuses). It never reaches the player, so it can never be rated,
+  scrobbled, bookmarked, hidden or recorded — history/scrobbling/
+  rating/skip accounting stay structurally radio-free. A
+  `radioLyricsToken`/`radioLyricsTrack` pair marks which synthetic
+  track owns the lyrics panel while it is up (the player's current
+  track is still the stream), and the identity checks in the
+  translation/romanization application (`isCurrentLyricsToken`) honor
+  it — so the **Translate** button and romanization work on an
+  identified radio song exactly as on a Pandora track.
+- **Artwork in the player** — the identified song's cover (the
+  600×600 form) replaces the station tile; the tile stays the fallback
+  when the lookup found nothing trustworthy (the Céline/Olivier case
+  yields no cover, never a wrong one).
+- **Header** — the song's title and artist take the track header, with
+  the station kept visible as **"on <station>"** beneath; before the
+  first announcement the header stays the station's own name/caption.
+- **Identify, manually** — an **Identify Song** action in the player's
+  menu (retries a lookup that found nothing), and a tappable
+  **Identify** affordance beside the LIVE badge while the first
+  announcement is awaited (a fresh probe connection often carries the
+  current title within the first metadata interval). A station that
+  truly announces nothing (no `icy-metaint` — France Info) says so
+  honestly: "No song announcements" beside the LIVE badge, no button
+  that would pretend otherwise. While the artwork lookup is in flight,
+  the status shows "Looking up artwork…".
+- **Lyrics button** — enabled for radio once a song is identified (it
+  was hidden for radio before); the quote-bubble panel behaves as on
+  any track, Translate included.
+
+Local verification: `AppStore.swift` and `NowPlayingView.swift`
+parse-clean; PandoraCore untouched (368/368 green in Docker). The app
+target compiles on CI only.
+
+**Repair riding earlier in the round (`5f4b2af`):** the mini-player
+fix's iOS Build failed on one line — the `OpenNowPlayingAction`
+environment default value needed a Sendable type; the action is a
+main-actor affordance, so it is `@unchecked Sendable` (the core
+`SessionBox` shape). The probe commit (eefddc7) inherited the same
+failure; both repaired by one push.
+
+**Device expectation**: play a radio station that announces songs
+(Europe 1, MANGORADIO) → within seconds the header swaps to the song
+title/artist with "on <station>" beneath, the cover swaps to the
+song's artwork, the quote bubble appears and its lyrics load (the
+Translate button works on them too). When the station announces the
+next song, all three follow by themselves. Play France Info → the LIVE
+badge keeps company with "No song announcements" and the menu's
+Identify action is the honest no-op it must be.
+
+**(previous push — Unit C2b: the identified song's artwork, from iTunes
 Search):** the second piece of the radio now-playing ask — once the
 probe has a title, the cover comes from here.
 

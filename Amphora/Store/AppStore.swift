@@ -84,6 +84,9 @@ final class AppStore {
         case moveStation(from: Int, to: Int)
         case playRadioStation(RadioStation)
         case stopRadio
+        /// The Identify button: retries the announced song's artwork +
+        /// lyrics lookup (an automatic attempt may have found nothing).
+        case identifyRadioSong
         case toggleRadioFavorite(RadioStation)
         case removeRadioRecent(RadioStation)
         case clearRadioRecents
@@ -143,6 +146,9 @@ final class AppStore {
     /// Alphabet-letter romanizer for non-Latin-script lyrics
     /// ("사랑해" → "salanghae"); independent of the translator.
     private let lyricsRomanizer: any LyricsRomanizing
+    /// Song-artwork lookup for a radio station's identified song
+    /// (iTunes Search). The station's own tile stays the fallback.
+    private let songArtworkClient: any SongArtworkProviding
 
     private(set) var authPhase: AuthPhase = .restoring
     private(set) var stations: [Station] = []
@@ -178,6 +184,21 @@ final class AppStore {
     private(set) var radioNowPlaying: RadioNowPlaying?
     /// Where the radio song identification stands for the UI.
     private(set) var radioIdentification: RadioIdentification = .inactive
+    /// The artwork found for the identified song (nil until a lookup
+    /// succeeds — the station's tile is the fallback either way).
+    private(set) var radioSongArtwork: SongArtwork?
+    /// True while an identified song's artwork/lyrics lookup (automatic
+    /// or via the Identify button) is in flight.
+    private(set) var isIdentifyingRadioSong = false
+    /// The synthetic track token whose lyrics are on screen while a
+    /// radio station's identified song owns the lyrics panel. nil means
+    /// the lyrics belong to the player's current track, as always.
+    private var radioLyricsToken: String?
+    /// That synthetic track itself — the Translate / Refresh intents
+    /// need it, because `player.currentTrack` is still the stream.
+    private var radioLyricsTrack: Track?
+    /// The in-flight identified-song lookup (artwork + lyrics retry).
+    private var radioLookupTask: Task<Void, Never>?
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
     /// The station whose playlist hit Pandora's daily skip limit (nil
@@ -284,7 +305,8 @@ final class AppStore {
         preferencesStore: PreferencesStore = PreferencesStore(),
         lyricsProvider: any LyricsProviding = LyricsProviderChain.defaultChain(),
         lyricsTranslator: any LyricsTranslating = GoogleTranslateClient(),
-        lyricsRomanizer: any LyricsRomanizing = GoogleTranslateClient()
+        lyricsRomanizer: any LyricsRomanizing = GoogleTranslateClient(),
+        songArtwork: any SongArtworkProviding = ITunesSongArtworkClient()
     ) {
         self.session = session
         self.historyStore = historyStore
@@ -293,6 +315,7 @@ final class AppStore {
         self.lyricsProvider = lyricsProvider
         self.lyricsTranslator = lyricsTranslator
         self.lyricsRomanizer = lyricsRomanizer
+        self.songArtworkClient = songArtwork
         let player = PlayerService()
         self.player = player
         self.radio = RadioController(client: radioClient)
@@ -451,9 +474,23 @@ final class AppStore {
             }
             player.skipToNext()
         case .refreshLyrics:
-            loadLyrics(for: player.currentTrack, force: true)
+            loadLyrics(for: currentLyricsTrack, force: true)
         case .translateLyrics:
-            requestTranslation(for: player.currentTrack, manual: true)
+            requestTranslation(for: currentLyricsTrack, manual: true)
+        case .identifyRadioSong:
+            // The Identify button. With an announcement: retries the
+            // song's lookup (an earlier attempt may have found
+            // nothing). Without one: reconnects the probe — a fresh
+            // connection often carries the current title within the
+            // first metadata interval. A station that truly announces
+            // nothing says so beside the LIVE badge.
+            Haptics.light()
+            if let nowPlaying = radioNowPlaying, let station = currentRadioStation {
+                identifyRadioSong(nowPlaying, stationUUID: station.uuid)
+            } else if let station = currentRadioStation {
+                AppLog.debug("radio metadata: identify requested — restarting the probe", .playback)
+                startRadioIdentification(for: station)
+            }
         case .loadStationModes(let station):
             Task { await loadStationModes(station) }
         case .setStationMode(let mode, let station):
@@ -594,6 +631,12 @@ final class AppStore {
     private func stopRadioIdentification() {
         radioNowPlaying = nil
         radioIdentification = .inactive
+        radioSongArtwork = nil
+        isIdentifyingRadioSong = false
+        radioLyricsToken = nil
+        radioLyricsTrack = nil
+        radioLookupTask?.cancel()
+        radioLookupTask = nil
         let probe = radioMetadataProbe
         Task { await probe.stop() }
     }
@@ -606,9 +649,87 @@ final class AppStore {
         case .announced(let nowPlaying):
             radioNowPlaying = nowPlaying
             radioIdentification = .identified
+            // The station announced a (new) song — look its cover and
+            // lyrics up on its own, without a tap.
+            if let station = currentRadioStation {
+                identifyRadioSong(nowPlaying, stationUUID: station.uuid)
+            }
         case .announcesNothing:
             radioIdentification = .stationAnnouncesNothing
         }
+    }
+
+    // MARK: The identified radio song (artwork + lyrics)
+
+    /// Looks the announced song's artwork and lyrics up. Runs
+    /// automatically on every announcement, and again from the
+    /// Identify button — the retry for a lookup that found nothing.
+    private func identifyRadioSong(_ nowPlaying: RadioNowPlaying, stationUUID: String) {
+        radioLookupTask?.cancel()
+        radioSongArtwork = nil
+        isIdentifyingRadioSong = true
+
+        // The lyrics provider wants a Track — this synthetic one is
+        // built from the announcement and never reaches the player, so
+        // it can never be rated, scrobbled, bookmarked or recorded; it
+        // only feeds the lyrics path and its cache.
+        let synthetic = Self.radioSongTrack(nowPlaying, stationUUID: stationUUID)
+        loadLyrics(for: synthetic)
+        // The player's current track is still the stream — the lyrics
+        // panel must answer to the synthetic token while it is up.
+        radioLyricsToken = synthetic.trackToken
+        radioLyricsTrack = synthetic
+
+        let client = songArtworkClient
+        radioLookupTask = Task { [weak self] in
+            let artwork = try? await client.artwork(
+                forArtist: nowPlaying.artist ?? "",
+                title: nowPlaying.title
+            )
+            guard let self, !Task.isCancelled else { return }
+            isIdentifyingRadioSong = false
+            radioSongArtwork = artwork
+            if artwork == nil {
+                AppLog.debug(
+                    "radio metadata: no trustworthy artwork for \"\(nowPlaying.rawTitle)\"",
+                    .playback
+                )
+            }
+        }
+    }
+
+    /// The synthetic track the lyrics provider sees for an announced
+    /// song. The token deliberately does not carry the radio prefix —
+    /// `Track.isRadio` would make the lyrics loader refuse it — but the
+    /// track never reaches the player regardless.
+    private static func radioSongTrack(
+        _ nowPlaying: RadioNowPlaying,
+        stationUUID: String
+    ) -> Track {
+        Track(
+            trackToken: "radio-song.\(stationUUID).\(nowPlaying.rawTitle)",
+            title: nowPlaying.title,
+            artist: nowPlaying.artist ?? "",
+            album: "",
+            artworkUrl: "",
+            duration: 0,
+            stationId: stationUUID,
+            variants: []
+        )
+    }
+
+    /// Whether `token` is the track whose lyrics are on screen: the
+    /// player's current track — or, while a radio station's identified
+    /// song owns the lyrics panel, that song's synthetic token.
+    private func isCurrentLyricsToken(_ token: String) -> Bool {
+        if let radio = radioLyricsToken { return token == radio }
+        return player.currentTrack?.trackToken == token
+    }
+
+    /// The track whose lyrics are on screen — `player.currentTrack`,
+    /// except while a radio station's identified song owns the panel.
+    private var currentLyricsTrack: Track? {
+        radioLyricsTrack ?? player.currentTrack
     }
 
     /// Stars or unstars a station (device-local favorites).
@@ -1116,7 +1237,20 @@ final class AppStore {
             lyrics = nil
             isLoadingLyrics = false
             lyricsTranslationState = .none
+            // A radio station without an identified song has no lyrics
+            // to own the panel with.
+            radioLyricsToken = nil
+            radioLyricsTrack = nil
             return
+        }
+        // A track other than the radio song's own synthetic track
+        // reclaims the lyrics panel (a Pandora track arriving, a forced
+        // refresh of the stream's track). The synthetic track's own
+        // reload — the Refresh button on an identified radio song —
+        // must keep it.
+        if track.trackToken != radioLyricsToken {
+            radioLyricsToken = nil
+            radioLyricsTrack = nil
         }
         if !force, let cached = lyricsCache[track.trackToken] {
             lyrics = cached
@@ -1215,7 +1349,7 @@ final class AppStore {
         translationTask = Task { [weak self] in
             let outcome = await translator.englishTranslation(of: texts)
             guard let self, !Task.isCancelled,
-                  self.player.currentTrack?.trackToken == track.trackToken else { return }
+                  self.isCurrentLyricsToken(track.trackToken) else { return }
             switch outcome {
             case .translated(let translated):
                 guard self.applyTranslation(translated, for: track.trackToken) else {
@@ -1288,7 +1422,7 @@ final class AppStore {
         }
         guard updated.hasTranslation else { return false }
         lyricsCache[token] = updated
-        if player.currentTrack?.trackToken == token {
+        if isCurrentLyricsToken(token) {
             lyrics = updated
         }
         return true
@@ -1303,7 +1437,7 @@ final class AppStore {
         guard let cached = lyricsCache[token] else { return }
         let updated = cached.applyingRomanization(romanized)
         lyricsCache[token] = updated
-        if player.currentTrack?.trackToken == token {
+        if isCurrentLyricsToken(token) {
             lyrics = updated
         }
     }
