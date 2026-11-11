@@ -96,8 +96,14 @@ actor RadioMetadataProbe {
 
             var parser = ICYMetadataParser()
             parser.setMetadataInterval(interval)
-            for try await data in bytes {
-                if Task.isCancelled { return }
+
+            // Feeds one chunk into the parser and delivers each NEW
+            // title. The parser accepts any chunk boundaries; the 4 KB
+            // buffer only bounds the delivery latency (≈0.25 s at
+            // 128 kbps) — `URLSession.AsyncBytes` yields single bytes,
+            // so reading them one at a time into a chunk keeps the
+            // per-byte overhead off the hot path.
+            func emit(_ data: Data) {
                 for block in parser.consume(data) {
                     guard let nowPlaying = RadioStreamMetadata.nowPlaying(in: block),
                           nowPlaying.rawTitle != lastAnnouncedTitle else { continue }
@@ -109,6 +115,18 @@ actor RadioMetadataProbe {
                     deliver(.announced(nowPlaying))
                 }
             }
+
+            var pending: [UInt8] = []
+            pending.reserveCapacity(4096)
+            for try await byte in bytes {
+                if Task.isCancelled { return }
+                pending.append(byte)
+                if pending.count >= 4096 {
+                    emit(Data(pending))
+                    pending.removeAll(keepingCapacity: true)
+                }
+            }
+            if !pending.isEmpty { emit(Data(pending)) }
         } catch is CancellationError {
             // Normal shutdown.
         } catch {

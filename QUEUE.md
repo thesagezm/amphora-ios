@@ -290,7 +290,17 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit C2c: the identified song, end to end — artwork,
+**Repair (this push — the probe compiles on macOS):** the Sendable
+repair's iOS Build failed in `RadioMetadataProbe.swift` — the probe
+fed `parser.consume(data)` from a `for try await data in bytes` loop,
+but `URLSession.AsyncBytes` yields **single bytes** (`Element == UInt8`
+on both platforms). The loop now buffers 4 KB before handing the
+parser a chunk (the parser accepts any boundaries; 4 KB only bounds
+the delivery latency to ≈0.25 s at 128 kbps) and drains the tail at
+stream end. `swiftc -parse` cannot catch this — it does not typecheck;
+a reminder that the app target's local check is shape-only.
+
+**(previous push — Unit C2c: the identified song, end to end — artwork,
 lyrics, and the player UI):** the rest of the radio now-playing ask:
 "from the radiostation can we identify the currently playing song,
 display its artwork and lyrics as well — and do that when the next
