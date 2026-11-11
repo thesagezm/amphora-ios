@@ -20,6 +20,17 @@ struct TransportGlyph: View {
     var size: CGFloat
     var color: Color = .primary
 
+    /// Explicit init on purpose: the synthesized memberwise init would
+    /// demand the `kind:` label, and the whole point of the family is
+    /// terse call sites — `TransportGlyph(.play, size: 44)` and
+    /// `TransportGlyph(.back15, size: 27)` in the transports, with the
+    /// color where the glyph sits on the accent fill instead of white.
+    init(_ kind: Kind, size: CGFloat, color: Color = .primary) {
+        self.kind = kind
+        self.size = size
+        self.color = color
+    }
+
     var body: some View {
         switch kind {
         case .play:

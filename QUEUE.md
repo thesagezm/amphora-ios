@@ -326,6 +326,15 @@ substandard none elegant icons e.g play button".
 - VoiceOver labels, haptics, radio-specific behaviors (stop instead
   of next, no back-15) are unchanged.
 
+**Repair (this push):** the Unit B iOS Build was red on two lines —
+`missing argument label 'kind:' in call` — the synthesized memberwise
+init labels its first parameter, so the leading-dot calls
+(`TransportGlyph(.pause, size: 23)`, the same shape in the full
+player, the mini player and the hero) did not compile. Fixed at the
+source: `TransportGlyph` now has an explicit init with the kind
+unlabeled, every call site unchanged. All five touched files
+parse-clean; the app target compiles on CI only.
+
 Local verification: the four touched files parse-clean in the
 `swift:6.0` container; PandoraCore untouched (315/315 stands). The
 app target compiles on CI only.
