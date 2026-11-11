@@ -13,6 +13,23 @@ final class AppStore {
         case signedIn
     }
 
+    /// The state of the English translation for the current lyrics. The
+    /// lyrics panel turns this into the **Translate** button, the
+    /// "Translating…" state and the result.
+    enum LyricsTranslationState: Equatable {
+        /// Nothing has been asked for yet.
+        case none
+        /// A request is in flight.
+        case translating
+        /// The English translation is on the lyrics.
+        case translated
+        /// The lyrics are already in English — there is nothing to
+        /// translate.
+        case alreadyEnglish
+        /// The request failed. The user can try again.
+        case failed(message: String)
+    }
+
     /// UI intents. Kept as an enum so adding an intent later never changes
     /// the UI call sites.
     enum Intent {
@@ -30,6 +47,9 @@ final class AppStore {
         case skipToNext
         case setPlaybackVolume(Float)
         case refreshLyrics
+        /// Translate the current lyrics into English, on demand — the
+        /// lyrics panel's **Translate** button.
+        case translateLyrics
         /// nil = the currently playing station (player path); a station
         /// value tunes from the list without touching playback.
         case loadStationModes(Station?)
@@ -145,6 +165,9 @@ final class AppStore {
     /// play, or when nothing could be fetched).
     private(set) var lyrics: Lyrics?
     private(set) var isLoadingLyrics = false
+    /// The state of the English translation for the current lyrics —
+    /// drives the lyrics panel's **Translate** button.
+    private(set) var lyricsTranslationState: LyricsTranslationState = .none
     /// Session-scoped lyrics cache keyed by `trackToken` — repeat listens
     /// don't re-hit the lyrics service. Not-found results are cached too.
     private var lyricsCache: [String: Lyrics] = [:]
@@ -402,6 +425,8 @@ final class AppStore {
             player.skipToNext()
         case .refreshLyrics:
             loadLyrics(for: player.currentTrack, force: true)
+        case .translateLyrics:
+            requestTranslation(for: player.currentTrack, manual: true)
         case .loadStationModes(let station):
             Task { await loadStationModes(station) }
         case .setStationMode(let mode, let station):
@@ -623,6 +648,7 @@ final class AppStore {
         isExplicitContentFilterEnabled = false
         modesStationId = nil
         lyrics = nil
+        lyricsTranslationState = .none
         lyricsCache = [:]
         queuedTrackTokens = []
         lastErrorMessage = nil
@@ -1009,15 +1035,18 @@ final class AppStore {
         guard let track, !track.isAdvertisement, !track.isRadio else {
             lyrics = nil
             isLoadingLyrics = false
+            lyricsTranslationState = .none
             return
         }
         if !force, let cached = lyricsCache[track.trackToken] {
             lyrics = cached
             isLoadingLyrics = false
+            lyricsTranslationState = cached.hasTranslation ? .translated : .none
             return
         }
         lyrics = nil
         isLoadingLyrics = true
+        lyricsTranslationState = .none
         let provider = lyricsProvider
         AppLog.debug("lyrics: lookup for \"\(track.title)\" — \"\(track.artist)\"", .lyrics)
         lyricsTask = Task { [weak self] in
@@ -1037,7 +1066,8 @@ final class AppStore {
                     "lyrics: \(Self.describe(fetched)) for \"\(track.title)\"",
                     .lyrics
                 )
-                translateIfNeeded(fetched, for: track)
+                requestTranslation(for: track, manual: false)
+                requestRomanization(for: track)
             case .failure(let error):
                 if (error as? LyricsError) == .notFound {
                     lyricsCache[track.trackToken] = .empty
@@ -1059,29 +1089,95 @@ final class AppStore {
         return "empty"
     }
 
-    /// Kicks off an English translation and an alphabet romanization for
-    /// a freshly fetched set of synced lyrics. The two requests are
-    /// independent — a failed or empty romanization never suppresses the
-    /// translation and vice versa. The endpoint detects the source
-    /// language and returns nil for English; the romanizer skips
-    /// Latin-script text before any request. Lyrics display immediately;
-    /// both fill in when they arrive.
-    private func translateIfNeeded(_ fetched: Lyrics, for track: Track) {
-        guard fetched.isSynced, !fetched.lines.isEmpty else { return }
-        let texts = fetched.lines.map(\.text)
+    /// Translates the current lyrics into English.
+    ///
+    /// The automatic pass (`manual: false`) runs when the lyrics
+    /// arrive; the manual pass is the lyrics panel's **Translate**
+    /// button. The button exists because the automatic pass only ever
+    /// ran on *synchronised* lyrics and gave up silently when the
+    /// service refused — a French song whose lyrics came as plain text
+    /// had no way to be translated at all, and a failed request had no
+    /// way to be repeated.
+    ///
+    /// The three answers stay apart: a translation to show, lyrics that
+    /// are already in English (nothing to do) and a failed request
+    /// (worth a retry).
+    private func requestTranslation(for track: Track?, manual: Bool) {
+        guard let track, let current = lyrics, !current.isEmpty else { return }
+        // Already translated — nothing to ask for. (The manual pass
+        // lands here too: the button disappears once it worked.)
+        if current.hasTranslation {
+            lyricsTranslationState = .translated
+            return
+        }
+        // The lines to translate: the synchronised lines, or the plain
+        // text split into lines. The service keeps the line breaks, so
+        // the answer lines up with the input one-to-one.
+        let texts: [String]
+        if current.isSynced {
+            texts = current.lines.map(\.text)
+        } else if let plain = current.plainText {
+            texts = plain.components(separatedBy: "\n")
+        } else {
+            return
+        }
+        guard !texts.isEmpty else { return }
+
+        translationTask?.cancel()
+        lyricsTranslationState = .translating
         let translator = lyricsTranslator
-        let romanizer = lyricsRomanizer
-        AppLog.debug("lyrics: translating \(texts.count) lines", .lyrics)
+        AppLog.debug(
+            "lyrics: translating \(texts.count) lines"
+                + (manual ? " (manual)" : "")
+                + " for \"\(track.title)\"",
+            .lyrics
+        )
         translationTask = Task { [weak self] in
-            let translated = await translator.englishTranslation(of: texts)
-            guard let self, !Task.isCancelled else { return }
-            if let translated {
-                self.applyTranslation(translated, for: track.trackToken)
+            let outcome = await translator.englishTranslation(of: texts)
+            guard let self, !Task.isCancelled,
+                  self.player.currentTrack?.trackToken == track.trackToken else { return }
+            switch outcome {
+            case .translated(let translated):
+                guard self.applyTranslation(translated, for: track.trackToken) else {
+                    // The answer did not line up with the lines — it is
+                    // refused rather than shown against the wrong words.
+                    self.lyricsTranslationState = .failed(
+                        message: "The translation didn't line up. Try again."
+                    )
+                    AppLog.debug(
+                        "lyrics: misaligned translation for \"\(track.title)\" — refused",
+                        .lyrics
+                    )
+                    return
+                }
+                self.lyricsTranslationState = .translated
                 AppLog.info("lyrics: translation applied for \"\(track.title)\"", .lyrics)
-            } else {
-                AppLog.debug("lyrics: no translation for \"\(track.title)\" (English or none)", .lyrics)
+            case .alreadyEnglish:
+                self.lyricsTranslationState = .alreadyEnglish
+                AppLog.debug("lyrics: already English — \"\(track.title)\"", .lyrics)
+            case .failed(let reason):
+                self.lyricsTranslationState = .failed(
+                    message: "Couldn't translate the lyrics. Try again."
+                )
+                AppLog.debug(
+                    "lyrics: translation failed for \"\(track.title)\" (\(reason))",
+                    .lyrics
+                )
             }
         }
+    }
+
+    /// Kicks off an alphabet romanization for the current lyrics — the
+    /// reading line for lyrics written in a non-Latin script
+    /// ("사랑해" → "salanghae"). The endpoint skips Latin-script text
+    /// before any request, so an English or French song costs nothing
+    /// here. It is independent of the translation: neither suppresses
+    /// the other.
+    private func requestRomanization(for track: Track) {
+        guard track.isSynced, let current = lyrics, current.isSynced,
+              !current.lines.isEmpty else { return }
+        let texts = current.lines.map(\.text)
+        let romanizer = lyricsRomanizer
         romanizationTask = Task { [weak self] in
             let romanized = await romanizer.romanization(of: texts)
             guard let self, !Task.isCancelled else { return }
@@ -1094,26 +1190,28 @@ final class AppStore {
         }
     }
 
-    /// Fills `LyricLine.translation` on the cached lyrics for `token` and,
-    /// if that track is still current, on the live state. Guarded by line
-    /// count so a mismatched response can never shift the alignment.
-    private func applyTranslation(_ translated: [String], for token: String) {
-        guard var updated = lyricsCache[token], updated.isSynced,
-              updated.lines.count == translated.count else { return }
-        var lines = updated.lines
-        for index in lines.indices {
-            lines[index].translation = translated[index]
+    /// Fills the English translation on the cached lyrics for `token`
+    /// and, if that track is still current, on the live state.
+    ///
+    /// The alignment guard lives in the core
+    /// (`Lyrics.applyingTranslation`): a misaligned answer is refused
+    /// rather than shown against the wrong lines. Returns `false` when
+    /// the answer could not be applied.
+    @discardableResult
+    private func applyTranslation(_ translated: [String], for token: String) -> Bool {
+        guard let cached = lyricsCache[token] else { return false }
+        let updated: Lyrics
+        if cached.isSynced {
+            updated = cached.applyingTranslation(translated)
+        } else {
+            updated = cached.applyingPlainTranslation(translated.joined(separator: "\n"))
         }
-        updated = Lyrics(
-            lines: lines,
-            plainText: updated.plainText,
-            instrumental: updated.instrumental,
-            trackID: updated.trackID
-        )
+        guard updated.hasTranslation else { return false }
         lyricsCache[token] = updated
         if player.currentTrack?.trackToken == token {
             lyrics = updated
         }
+        return true
     }
 
     /// Fills `LyricLine.romanization` on the cached lyrics for `token` and,
@@ -1122,18 +1220,8 @@ final class AppStore {
     /// Mirrors `applyTranslation`; each helper rebuilds from the current
     /// cache entry, so whichever lands second keeps the first one's field.
     private func applyRomanization(_ romanized: [String], for token: String) {
-        guard var updated = lyricsCache[token], updated.isSynced,
-              updated.lines.count == romanized.count else { return }
-        var lines = updated.lines
-        for index in lines.indices {
-            lines[index].romanization = romanized[index]
-        }
-        updated = Lyrics(
-            lines: lines,
-            plainText: updated.plainText,
-            instrumental: updated.instrumental,
-            trackID: updated.trackID
-        )
+        guard let cached = lyricsCache[token] else { return }
+        let updated = cached.applyingRomanization(romanized)
         lyricsCache[token] = updated
         if player.currentTrack?.trackToken == token {
             lyrics = updated

@@ -78,6 +78,11 @@ public struct Lyrics: Codable, Sendable, Equatable {
     /// Un-synchronised lyrics (the whole text). Nil when the lyrics are
     /// synchronised.
     public let plainText: String?
+    /// The English translation of `plainText` — the counterpart of
+    /// `LyricLine.translation` for lyrics that carry no timestamps.
+    /// Nil when the lyrics are synchronised, already in English, or no
+    /// translation was fetched.
+    public var plainTranslation: String?
     /// The track is instrumental — there are no words to show.
     public let instrumental: Bool
     /// The id of the lyric record at the source (lrclib's `id`), used
@@ -87,13 +92,28 @@ public struct Lyrics: Codable, Sendable, Equatable {
     public init(
         lines: [LyricLine] = [],
         plainText: String? = nil,
+        plainTranslation: String? = nil,
         instrumental: Bool = false,
         trackID: Int? = nil
     ) {
         self.lines = lines
         self.plainText = plainText
+        self.plainTranslation = plainTranslation
         self.instrumental = instrumental
         self.trackID = trackID
+    }
+
+    /// Decoding is written by hand so a payload written before
+    /// `plainTranslation` existed still decodes: the synthesized decoder
+    /// treats a missing key as an error, and one missing key must not
+    /// throw away the whole lyric set.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        lines = try container.decode([LyricLine].self, forKey: .lines)
+        plainText = try container.decodeIfPresent(String.self, forKey: .plainText)
+        plainTranslation = try container.decodeIfPresent(String.self, forKey: .plainTranslation)
+        instrumental = try container.decodeIfPresent(Bool.self, forKey: .instrumental) ?? false
+        trackID = try container.decodeIfPresent(Int.self, forKey: .trackID)
     }
 
     /// No lyrics at all.
@@ -104,6 +124,63 @@ public struct Lyrics: Codable, Sendable, Equatable {
 
     /// `true` when there is nothing to display.
     public var isEmpty: Bool { lines.isEmpty && (plainText?.isEmpty ?? true) && !instrumental }
+
+    /// `true` when an English translation is on the lyrics — on the
+    /// synchronised lines or on the plain text.
+    public var hasTranslation: Bool {
+        if let plainTranslation, !plainTranslation.isEmpty { return true }
+        return lines.contains { !($0.translation ?? "").isEmpty }
+    }
+
+    /// The lyrics with an English translation applied to the
+    /// synchronised lines. A count mismatch is **refused** (the
+    /// alignment would shift and every line would show the wrong
+    /// words), so the lyrics come back unchanged.
+    public func applyingTranslation(_ translated: [String]) -> Lyrics {
+        guard isSynced, lines.count == translated.count else { return self }
+        var newLines = lines
+        for index in newLines.indices {
+            newLines[index].translation = translated[index]
+        }
+        return Lyrics(
+            lines: newLines,
+            plainText: plainText,
+            plainTranslation: plainTranslation,
+            instrumental: instrumental,
+            trackID: trackID
+        )
+    }
+
+    /// The lyrics with an English translation applied to the plain
+    /// text. An empty translation is refused.
+    public func applyingPlainTranslation(_ translated: String?) -> Lyrics {
+        guard let translated, !translated.isEmpty else { return self }
+        return Lyrics(
+            lines: lines,
+            plainText: plainText,
+            plainTranslation: translated,
+            instrumental: instrumental,
+            trackID: trackID
+        )
+    }
+
+    /// The lyrics with an alphabet romanization applied to the
+    /// synchronised lines ("사랑해" → "salanghae"). A count mismatch is
+    /// refused, exactly like the translation.
+    public func applyingRomanization(_ romanized: [String]) -> Lyrics {
+        guard isSynced, lines.count == romanized.count else { return self }
+        var newLines = lines
+        for index in newLines.indices {
+            newLines[index].romanization = romanized[index]
+        }
+        return Lyrics(
+            lines: newLines,
+            plainText: plainText,
+            plainTranslation: plainTranslation,
+            instrumental: instrumental,
+            trackID: trackID
+        )
+    }
 
     /// The index of the line that is playing at `time`, or nil before
     /// the first line starts.

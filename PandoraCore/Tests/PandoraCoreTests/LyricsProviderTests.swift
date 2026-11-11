@@ -227,7 +227,7 @@ final class LyricsProviderTests: XCTestCase {
 
         let translated = await client.englishTranslation(of: ["Je suis un chat"])
 
-        XCTAssertEqual(translated, ["I am a cat"])
+        XCTAssertEqual(translated, .translated(["I am a cat"]))
         let request = try XCTUnwrap(transport.requests.first)
         XCTAssertTrue(request.url.absoluteString.contains("tl=en"))
         XCTAssertTrue(request.url.absoluteString.contains("sl=auto"))
@@ -242,10 +242,10 @@ final class LyricsProviderTests: XCTestCase {
 
         let translated = await client.englishTranslation(of: ["Hallelujah"])
 
-        XCTAssertNil(translated)
+        XCTAssertEqual(translated, .alreadyEnglish)
     }
 
-    func testTranslationFailureReturnsNil() async {
+    func testTranslationFailureIsTyped() async {
         let transport = StubGETTransport(responses: [
             .failure(PandoraTransportError(reason: "network failure"))
         ])
@@ -253,6 +253,6 @@ final class LyricsProviderTests: XCTestCase {
 
         let translated = await client.englishTranslation(of: ["Bonjour"])
 
-        XCTAssertNil(translated)
+        XCTAssertEqual(translated, .failed(reason: "network failure"))
     }
 }

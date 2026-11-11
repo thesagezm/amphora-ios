@@ -29,12 +29,13 @@ to units:
    pauses, empties the queue and drops the current item *explicitly*
    before the new one is inserted.
 2. **"There is no translate button for my lyrics — I was playing a french
-   song, no way to translate"** → **Unit B (next)**: an explicit
-   **Translate** button on the lyrics panel, with a "Translating…"
-   state and a retry when the request fails. The automatic translation
-   only ever ran on *synchronised* lyrics and silently gave up when the
-   service refused; plain-text lyrics were never translated at all, and
-   there was no way to ask for it by hand.
+   song, no way to translate"** → **Unit B landed** (this push): an
+   explicit **Translate** button on the lyrics panel, with a
+   "Translating…" state, a retry when the request fails, and plain-text
+   lyrics translated too. The automatic translation only ever ran on
+   *synchronised* lyrics and silently gave up when the service
+   refused; plain-text lyrics were never translated at all, and there
+   was no way to ask for it by hand.
 3. **"from the radiostation can we identify the currently playing song,
    display its artwork and lyrics as well — and do that when the next
    song comes, or at least add a button to do it manually"** → **Unit C
@@ -289,7 +290,63 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — M6 unit: transport-failure copy the user can act on):**
+**(this push — Unit B of the 2026-11-11 round: the lyrics have a
+Translate button):** the user's "There is no translate button for my
+lyrics — I was playing a french song, no way to translate".
+
+- **The gap** — the translation existed, but the user could neither see
+  it nor ask for it. `translateIfNeeded` ran **only on synchronised
+  lyrics**, so a song whose lyrics arrived as plain text was never
+  translated at all. When the service refused, the old translator
+  answered `nil` for *both* "these lyrics are already English" and
+  "the request failed", so the app could not tell the two apart and
+  simply did nothing — there was no button, no message, no second try.
+- **The core (`Lyrics.swift`)** — plain-text lyrics now have a home for
+  their translation (`Lyrics.plainTranslation`, the counterpart of
+  `LyricLine.translation`), and the apply logic moved into the model as
+  pure helpers: `applyingTranslation(_:)` (synchronised lines),
+  `applyingPlainTranslation(_:)` and `applyingRomanization(_:)`. A
+  **misaligned answer is refused** — one translated line for two
+  original lines would shift the whole alignment and show the wrong
+  words against every line. `Lyrics` now decodes by hand, so a payload
+  written before `plainTranslation` existed still decodes (a missing
+  key must not throw the lyrics away).
+- **The core (`LyricsProvider.swift`)** — the translator answers with
+  the three outcomes that actually exist: `LyricsTranslation
+  .translated([String])`, `.alreadyEnglish`, `.failed(reason:)`. The
+  "already English" and "it failed" answers are different to the user,
+  so they no longer collapse into one `nil`.
+- **The app (`AppStore`)** — a new intent `.translateLyrics` (the
+  button) and a typed `lyricsTranslationState` (`.none` /
+  `.translating` / `.translated` / `.alreadyEnglish` / `.failed`). The
+  automatic pass still runs when the lyrics arrive (so a French song
+  with synchronised lyrics is translated without a tap), but it now
+  covers plain-text lyrics too, and the manual pass can repeat a
+  request that failed. The state resets with the track.
+- **The UI (`LyricsPanel`)** — a header bar above the lyrics with a
+  **Translate** button, a "Translating…" spinner while the request is
+  in flight, a "Translated" mark when it worked, "Already in English"
+  when there was nothing to do, and the failure message with a
+  **Retry** button when it failed. Plain-text lyrics show the English
+  translation under the original words.
+- **12 new core tests** (339/339 green in Docker): the model helpers
+  (including the refused misalignment and the legacy payload), the
+  round trip through `Codable`, and the translator's three answers.
+  The three existing translator tests were updated to the typed
+  outcome.
+
+Local verification: **PandoraCore 339/339 green**; `AppStore.swift`
+and `LyricsPanel.swift` are parse-clean in the `swift:6.0` container.
+The app target compiles on CI only.
+
+**Device expectation**: play a French (or any non-English) song → open
+the player → tap the quote bubble → the lyrics panel carries a
+**Translate** button → tap it → "Translating…" → the English lines
+appear under the originals. An English song reads "Already in English";
+a failed request shows the message and a **Retry** button. The button
+disappears once the translation is on screen.
+
+**(previous push — M6 unit: transport-failure copy the user can act on):**
 the M6 audit found the last raw-string surface on the error path (the
 radio-handover fix, `f2508f7`, was already committed by the concurrent
 session working the 2026-11-11 round; this unit rides alongside it).
@@ -2331,14 +2388,14 @@ toolbar) → Copy → paste.
 ## Pending Queue
 
 0. **2026-11-11 round (this session's driver):** Unit A (the Pandora ↔
-   radio player handover) ✅ **landed in this push** → **Unit B** (the
-   lyrics **Translate** button — explicit, with a "Translating…" state,
-   a retry, and plain-text lyrics translated too) → **Unit C1** (the
-   portable ICY now-playing metadata parser in PandoraCore) → **Unit C2**
-   (the app-side radio metadata probe + the identified song's title,
-   artwork and lyrics in the player, updating by itself and with a
-   manual **Identify** button). Root causes and details are in User
-   Feedback Pending at the top.
+   radio player handover) ✅ landed → **Unit B** (the lyrics **Translate**
+   button — explicit, with a "Translating…" state, a retry, and
+   plain-text lyrics translated too) ✅ **landed in this push** → **Unit
+   C1** (the portable ICY now-playing metadata parser in PandoraCore) →
+   **Unit C2** (the app-side radio metadata probe + the identified
+   song's title, artwork and lyrics in the player, updating by itself
+   and with a manual **Identify** button). Root causes and details are
+   in User Feedback Pending at the top.
 1. **GUI round (user request 2026-11-07 — this session's driver):**
    Unit 1 Last.fm fix ✅ → Unit 2 radio artwork ✅ → Unit 3
    sophisticated player ✅ → **Unit 4 Settings/GUI polish ✅**

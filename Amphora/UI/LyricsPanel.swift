@@ -21,7 +21,10 @@ struct LyricsPanel: View {
     var body: some View {
         Group {
             if let lyrics = store.lyrics, !lyrics.isEmpty {
-                content(for: lyrics)
+                VStack(spacing: 0) {
+                    translationBar
+                    content(for: lyrics)
+                }
             } else if store.isLoadingLyrics {
                 loading
             } else {
@@ -31,20 +34,79 @@ struct LyricsPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The translate control: a **Translate** button while there is
+    /// something to translate, a "Translating…" state while the request
+    /// is in flight, and the result once it is known — translated,
+    /// already English, or failed (with a retry).
+    ///
+    /// The button is the answer to "there is no way to translate this
+    /// song": the automatic pass only ran on synchronised lyrics and
+    /// gave up silently, so the user had nothing to press.
+    private var translationBar: some View {
+        HStack(spacing: 12) {
+            translationStatus
+            Spacer(minLength: 0)
+            translateButton
+        }
+        .padding(.horizontal, 28)
+        .padding(.bottom, 10)
+    }
+
+    @ViewBuilder
+    private var translationStatus: some View {
+        switch store.lyricsTranslationState {
+        case .none:
+            EmptyView()
+        case .translating:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Translating…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        case .translated:
+            Label("Translated", systemImage: "checkmark.circle.fill")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(theme.colors.accent.color)
+        case .alreadyEnglish:
+            Label("Already in English", systemImage: "character.bubble")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.footnote)
+                .foregroundStyle(.yellow)
+        }
+    }
+
+    @ViewBuilder
+    private var translateButton: some View {
+        switch store.lyricsTranslationState {
+        case .none, .failed:
+            Button {
+                Haptics.light()
+                store.send(.translateLyrics)
+            } label: {
+                Label(
+                    store.lyricsTranslationState == .none ? "Translate" : "Retry",
+                    systemImage: "character.bubble"
+                )
+            }
+            .buttonStyle(.bordered)
+            .tint(theme.colors.accent.color)
+            .accessibilityLabel("Translate the lyrics into English")
+        case .translating, .translated, .alreadyEnglish:
+            EmptyView()
+        }
+    }
+
     @ViewBuilder
     private func content(for lyrics: Lyrics) -> some View {
         if lyrics.isSynced {
             syncedLyrics(lyrics)
         } else if let plain = lyrics.plainText, !plain.isEmpty {
-            ScrollView {
-                Text(plain)
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 32)
-            }
+            plainLyrics(plain, translation: lyrics.plainTranslation)
         } else if lyrics.instrumental {
             ContentUnavailableView(
                 "Instrumental",
@@ -53,6 +115,30 @@ struct LyricsPanel: View {
             )
         } else {
             unavailable
+        }
+    }
+
+    /// Un-synchronised lyrics: the original words, with the English
+    /// translation underneath once it has been fetched.
+    private func plainLyrics(_ plain: String, translation: String?) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(plain)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(6)
+                if let translation, !translation.isEmpty {
+                    Divider()
+                        .padding(.vertical, 2)
+                    Text(translation)
+                        .font(.title3)
+                        .foregroundStyle(.primary)
+                        .lineSpacing(6)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 32)
         }
     }
 

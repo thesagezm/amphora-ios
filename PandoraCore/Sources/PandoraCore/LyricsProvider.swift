@@ -204,11 +204,27 @@ public struct LRCLibClient: LyricsProviding, Sendable {
 
 // MARK: - Translation
 
+/// The outcome of an English-translation request.
+///
+/// The three answers are genuinely different to the user: a translation
+/// to show, lyrics that are already English (nothing to do), and a
+/// failed request (worth a retry). Collapsing the last two into "no
+/// translation" is what left the player unable to explain itself — and
+/// unable to offer a second try.
+public enum LyricsTranslation: Sendable, Equatable {
+    /// The English lines — one per input line.
+    case translated([String])
+    /// The lyrics are already in English; the service detected it.
+    case alreadyEnglish
+    /// The service could not be reached, or answered with something
+    /// unexpected. The reason is for the log, not for the UI.
+    case failed(reason: String)
+}
+
 /// Translates lyric lines into English.
 public protocol LyricsTranslating: Sendable {
-    /// The English version of `lines`, or nil when the lines are already
-    /// in English (or nothing could be translated).
-    func englishTranslation(of lines: [String]) async -> [String]?
+    /// The English version of `lines`.
+    func englishTranslation(of lines: [String]) async -> LyricsTranslation
 }
 
 /// The Google `translate_a` endpoint with automatic source-language
@@ -234,9 +250,9 @@ public struct GoogleTranslateClient: LyricsTranslating, Sendable {
         self.userAgent = userAgent
     }
 
-    public func englishTranslation(of lines: [String]) async -> [String]? {
+    public func englishTranslation(of lines: [String]) async -> LyricsTranslation {
         let text = lines.joined(separator: "\n")
-        guard !text.isEmpty else { return nil }
+        guard !text.isEmpty else { return .failed(reason: "empty lyrics") }
 
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         components?.queryItems = [
@@ -246,22 +262,30 @@ public struct GoogleTranslateClient: LyricsTranslating, Sendable {
             URLQueryItem(name: "dt", value: "t"),
             URLQueryItem(name: "q", value: text)
         ]
-        guard let url = components?.url else { return nil }
+        guard let url = components?.url else {
+            return .failed(reason: "bad endpoint")
+        }
 
-        guard let data = try? await transport.get(
-            url: url,
-            headers: ["User-Agent": userAgent]
-        ) else { return nil }
+        let data: Data
+        do {
+            data = try await transport.get(url: url, headers: ["User-Agent": userAgent])
+        } catch let error as PandoraTransportError {
+            return .failed(reason: error.reason)
+        } catch {
+            return .failed(reason: "network failure")
+        }
         guard let response = try? JSONDecoder().decode(Response.self, from: data) else {
-            return nil
+            return .failed(reason: "unexpected response")
         }
         // Already English — no translation needed.
         let detected = response.detectedSourceLanguage?.lowercased() ?? ""
-        if detected == "en" || detected.hasPrefix("en-") { return nil }
+        if detected == "en" || detected.hasPrefix("en-") { return .alreadyEnglish }
         // The service keeps the line breaks, so the segments line up with
         // the input lines one-to-one.
-        guard response.segments.count == lines.count else { return nil }
-        return response.segments.map(\.translated)
+        guard response.segments.count == lines.count else {
+            return .failed(reason: "unexpected response")
+        }
+        return .translated(response.segments.map(\.translated))
     }
 
     /// The service's reply: `[[segments], null, detectedLanguage, …]`.
