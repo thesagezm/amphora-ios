@@ -27,6 +27,7 @@ struct SettingsView: View {
         .listStyle(.plain)
         .amphoraListBackground()
         .background(Theme.background.ignoresSafeArea())
+        .miniPlayer()
         .navigationTitle("Settings")
         .onAppear {
             Task { await store.refreshArtworkCacheSize() }

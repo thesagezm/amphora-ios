@@ -49,6 +49,7 @@ struct DiagnosticsView: View {
             }
         }
         .background(Theme.background.ignoresSafeArea())
+        .miniPlayer()
         .navigationTitle("Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

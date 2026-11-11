@@ -5,20 +5,26 @@ import SwiftUI
 /// history and bookmarks open from a Home toolbar button. The
 /// persistent mini-player rides along.
 ///
-/// The mini-player rides **each tab's content** as a bottom
-/// `safeAreaInset`, while the full-player sheet is owned **here** — one
-/// instance for the whole shell, so switching tabs never tears it down.
+/// The mini-player rides the **scroll surfaces themselves** (each
+/// screen's List/ScrollView, via `.miniPlayer()`), not the tab content:
+/// a bottom safe-area inset applied *outside* a `NavigationStack` keeps
+/// its place above the tab bar but never reaches the scroll content
+/// inside — the lists scrolled underneath the card and the last row was
+/// stuck beneath it, untappable (user report 2026-11-11). Attached to
+/// the scroll surface directly, the inset is part of the scroll view's
+/// own safe area, so the last row scrolls clear of the card.
 ///
-/// Two layouts were tried and are worth remembering:
+/// Three layouts tried and worth remembering:
 /// - `safeAreaInset` on the `TabView` itself lays the inset out in the
 ///   tab bar's own region and covers the bar — the original bug.
+/// - `safeAreaInset` on each tab's `NavigationStack` fixed the bar but
+///   not the lists — an inset outside a `NavigationStack` does not
+///   propagate into the scroll content inside it.
 /// - iOS 26's `tabViewBottomAccessory` is the system-shaped solution,
-///   but it does not exist in the iOS 18 SDK this project builds against
-///   (CI: Xcode 16.4, "has no member"). Revisit when the toolchain moves
-///   past iOS 18.
+///   but it does not exist in the iOS 18 SDK this project builds
+///   against (CI: Xcode 16.4, "has no member"). Revisit when the
+///   toolchain moves past iOS 18.
 struct MainTabView: View {
-    @Environment(AppStore.self) private var store
-
     @State private var isShowingNowPlaying = false
 
     var body: some View {
@@ -29,7 +35,6 @@ struct MainTabView: View {
             .tabItem {
                 Label("Home", systemImage: "music.note.house")
             }
-            .miniPlayer { isShowingNowPlaying = true }
 
             NavigationStack {
                 RadioView()
@@ -37,7 +42,6 @@ struct MainTabView: View {
             .tabItem {
                 Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
             }
-            .miniPlayer { isShowingNowPlaying = true }
 
             NavigationStack {
                 SettingsView()
@@ -45,34 +49,61 @@ struct MainTabView: View {
             .tabItem {
                 Label("Settings", systemImage: "gearshape")
             }
-            .miniPlayer { isShowingNowPlaying = true }
         }
         .tint(Theme.accent)
+        .environment(\.openNowPlaying, OpenNowPlayingAction {
+            isShowingNowPlaying = true
+        })
         .sheet(isPresented: $isShowingNowPlaying) {
             NowPlayingView()
         }
     }
 }
 
-/// The per-tab mini-player slot: an empty inset until something plays.
-/// It must attach to tab *content* — see the discussion on `MainTabView`.
-private struct MiniPlayerInset: View {
+/// Opens the full player. `MainTabView` owns the sheet — one instance
+/// for the whole shell, so tab switches never tear it down — and hands
+/// the action down through the environment; every screen's mini-player
+/// slot dispatches to it.
+struct OpenNowPlayingAction {
+    let open: () -> Void
+}
+
+private struct OpenNowPlayingKey: EnvironmentKey {
+    static let defaultValue = OpenNowPlayingAction(open: {})
+}
+
+extension EnvironmentValues {
+    /// Presents the full Now Playing sheet.
+    var openNowPlaying: OpenNowPlayingAction {
+        get { self[OpenNowPlayingKey.self] }
+        set { self[OpenNowPlayingKey.self] = newValue }
+    }
+}
+
+/// The mini-player slot: an empty inset until something plays. It must
+/// attach to the scroll surface itself — see the discussion on
+/// `MainTabView`.
+struct MiniPlayerInset: View {
     @Environment(AppStore.self) private var store
-    let onOpen: () -> Void
+    @Environment(\.openNowPlaying) private var openNowPlaying
 
     var body: some View {
         Group {
             if store.player.currentTrack != nil {
-                MiniPlayer(onOpen: onOpen)
+                MiniPlayer(onOpen: { openNowPlaying.open() })
             }
         }
     }
 }
 
-private extension View {
-    func miniPlayer(onOpen: @escaping () -> Void) -> some View {
+extension View {
+    /// Pins the mini-player above the tab bar and keeps scrollable
+    /// content clear of it. Attach directly to the screen's
+    /// List/ScrollView (or the Group selecting them) — never to a
+    /// `NavigationStack`.
+    func miniPlayer() -> some View {
         safeAreaInset(edge: .bottom, spacing: 0) {
-            MiniPlayerInset(onOpen: onOpen)
+            MiniPlayerInset()
         }
     }
 }

@@ -19,6 +19,7 @@ struct RadioView: View {
         Group {
             if radio.searchText.isEmpty {
                 homeList
+                    .miniPlayer()
             } else {
                 RadioResultsView()
             }
@@ -282,6 +283,7 @@ private struct RadioResultsView: View {
                 }
             }
         }
+        .miniPlayer()
     }
 
     private var resultsList: some View {
@@ -376,6 +378,7 @@ private struct RadioCountryListView: View {
                     .accessibilityLabel("Loading countries")
             }
         }
+        .miniPlayer()
         .navigationTitle("Countries")
         .onAppear {
             radio.loadCountries()
@@ -496,6 +499,7 @@ private struct RadioTagListView: View {
                     .accessibilityLabel("Loading tags")
             }
         }
+        .miniPlayer()
         .navigationTitle("Tags")
         .onAppear {
             radio.loadTags()

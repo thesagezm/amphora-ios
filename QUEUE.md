@@ -290,7 +290,43 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**Repair (this push — the iOS Build is green again):** Unit B's iOS
+**(this push — the mini-player no longer covers the last list row):**
+the user's "the mini player overlaps/hides/obfuscates the bottom row
+station so I can't click on any station at the bottom."
+
+- **The diagnosis** — the 2026-10-23 fix (`316b6c9`, "miniplayer
+  overlaps and hides the bottom tab bar") moved the mini-player inset
+  from the `TabView` onto each tab's `NavigationStack`. That put the
+  card in the right *place* — directly above the tab bar — but a
+  bottom safe-area inset applied **outside** a `NavigationStack` never
+  reaches the scroll content *inside* it: the `List`s kept scrolling
+  underneath the card, so the last row sat behind the mini-player and
+  could neither be seen nor tapped. The same gap existed on every
+  pushed list (search results, the discovery lists, countries, tags)
+  and on the Settings tab.
+- **The fix** — the inset now attaches to the **scroll surfaces
+  themselves** via the same `.miniPlayer()` modifier (safe-area inset
+  on the `List`/`ScrollView` directly is the documented pattern and
+  always lands in the scroll view's own content inset). Every covered
+  surface: the Home station list (and its loading/error/empty states),
+  the Radio tab root (hero/recents/favorites/discover), search results
+  (`RadioResultsView`, shared by the root and the pushed discovery
+  lists), the countries and tags catalogs, Settings, and the pushed
+  About and Diagnostics screens (so the player doesn't vanish while
+  navigating there). The **Recents/bookmarks sheet** is a separate
+  presentation layer and never carried the mini-player — unchanged.
+- **Plumbing** — `MainTabView` owns the full-player sheet and now
+  hands an `OpenNowPlayingAction` down through the environment, so the
+  per-screen slots can open the shared sheet without threading a
+  closure through every view. `.miniPlayer()` takes no arguments.
+
+**Device expectation**: with something playing, scroll any list to its
+end — Home stations, Radio recents/favorites/discover/search/countries/
+tags, Settings — the last row scrolls fully clear of the mini-player
+and is tappable; the card stays pinned directly above the tab bar; the
+card's tap still opens the full player from every screen.
+
+**Repair (previous push — the iOS Build is green again):** Unit B's iOS
 Build was red on one line — `AppStore.swift:1177: value of type 'Track'
 has no member 'isSynced'` — the romanization guard in
 `requestRomanization(for:)` checked `track.isSynced`, but `isSynced` is

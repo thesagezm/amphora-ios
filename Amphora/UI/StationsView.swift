@@ -33,6 +33,7 @@ struct StationsView: View {
                 list
             }
         }
+        .miniPlayer()
         .navigationTitle("Home")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

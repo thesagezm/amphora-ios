@@ -12,6 +12,7 @@ struct AboutView: View {
         .listStyle(.plain)
         .amphoraListBackground()
         .background(Theme.background.ignoresSafeArea())
+        .miniPlayer()
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
     }
