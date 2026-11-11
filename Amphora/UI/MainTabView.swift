@@ -64,7 +64,12 @@ struct MainTabView: View {
 /// for the whole shell, so tab switches never tear it down — and hands
 /// the action down through the environment; every screen's mini-player
 /// slot dispatches to it.
-struct OpenNowPlayingAction {
+///
+/// `@unchecked Sendable`: the closure mutates `MainTabView`'s `@State`
+/// and every caller reaches it from the main actor — it is a
+/// main-actor affordance, not a thread-safe one (the same shape as the
+/// core's `SessionBox`).
+struct OpenNowPlayingAction: @unchecked Sendable {
     let open: () -> Void
 }
 
