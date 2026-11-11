@@ -122,6 +122,13 @@ actor ArtworkCache {
         for url in candidates {
             if Task.isCancelled { return nil }
             var request = URLRequest(url: url)
+            // Same shared default as the core transports: without an
+            // explicit interval a bare request can hang for days on a
+            // connection that was accepted but never answers, and every
+            // artwork surface (rows, mini player, full player, lock
+            // screen) would sit on a placeholder with no route to a
+            // retry.
+            request.timeoutInterval = NetworkDefaults.requestTimeoutInterval
             request.setValue("image/*", forHTTPHeaderField: "Accept")
             request.setValue("Amphora", forHTTPHeaderField: "User-Agent")
             do {

@@ -162,6 +162,7 @@ public struct URLSessionLastFmTransport: LastFmTransport {
 
     public func post(url: URL, form: Data, headers: [String: String]) async throws -> LastFmHTTPResponse {
         var request = URLRequest(url: url)
+        request.timeoutInterval = NetworkDefaults.requestTimeoutInterval
         request.httpMethod = "POST"
         for (field, value) in headers {
             request.setValue(value, forHTTPHeaderField: field)

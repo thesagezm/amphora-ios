@@ -280,15 +280,29 @@ user. The audit found a real hang hazard on the main request path.
   neither a slow fetch nor a hang can silently break it. **319/319
   green in Docker** (315 + 4; the tight loop, 4 s).
 
-Follow-up for a later unit (not this one — one hazard per push): the
-lyrics providers, `LastFmClient`, `StationModes` and the app's
-`ArtworkCache` still run on the system defaults; the same factory
-treatment applies there.
+Follow-up landed (this second push of the same hazard — one hazard
+class, every remaining site):
+- **`NetworkDefaults` (new, core)** — the shared `requestTimeoutInterval`
+  (30 s) with the reasoning in one place; the main transport's
+  `defaultTimeoutInterval` now *references* it, and a test asserts the
+  two cannot drift apart.
+- **Applied at every remaining bare-request site**: the lyrics GET
+  transport (one fix covers lrclib, lyrics.ovh and Google translate,
+  which all ride `HTTPGETTransport`), `LastFmClient`'s session
+  transport, the station-modes transport, the CSRF bootstrap's
+  HEAD/GET cookie probe, and the app's `ArtworkCache` (its request now
+  carries the interval — without it, every artwork surface sat on a
+  placeholder with no route to a retry on a hung connection).
+- Radio keeps its own shorter 15 s by design (directory probes must
+  fail fast so mirror rotation can kick in). **320/320 green** in
+  Docker (315 before the pair, +4 first unit, +1 anti-drift here).
 
 **Device expectation**: with Wi-Fi on but no actual route (captive
 portal / after leaving the network), opening the app or pulling to
 refresh now fails within ~30 s with the error banner and a working
-Retry, instead of spinning indefinitely.
+Retry, instead of spinning indefinitely; artwork from a dead candidate
+URL falls through to the next candidate within ~30 s rather than
+stalling the row.
 
 **(previous push — Unit C of the 2026-11-10 round: the Radio tab's
 last-played hero):** the user's "for the radio channels there should

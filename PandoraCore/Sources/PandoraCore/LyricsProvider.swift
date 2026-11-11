@@ -65,6 +65,7 @@ public struct URLSessionGETTransport: HTTPGETTransport {
 
     public func get(url: URL, headers: [String: String]) async throws -> Data {
         var request = URLRequest(url: url)
+        request.timeoutInterval = NetworkDefaults.requestTimeoutInterval
         request.httpMethod = "GET"
         for (field, value) in headers {
             request.setValue(value, forHTTPHeaderField: field)

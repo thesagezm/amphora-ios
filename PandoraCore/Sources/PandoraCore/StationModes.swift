@@ -219,6 +219,7 @@ public struct URLSessionModesTransport: ModesTransport {
 
     public func post(url: URL, body: Data, headers: [String: String]) async throws -> ModesHTTPResponse {
         var request = URLRequest(url: url)
+        request.timeoutInterval = NetworkDefaults.requestTimeoutInterval
         request.httpMethod = "POST"
         for (field, value) in headers {
             request.setValue(value, forHTTPHeaderField: field)
@@ -286,6 +287,7 @@ public final class CookieCSRFProvider: CSRFTokenProviding, @unchecked Sendable {
     private func bootstrap() async throws -> String {
         for method in ["HEAD", "GET"] {
             var request = URLRequest(url: Self.webRootURL)
+            request.timeoutInterval = NetworkDefaults.requestTimeoutInterval
             request.httpMethod = method
             request.setValue("Amphora", forHTTPHeaderField: "User-Agent")
             if let (_, response) = try? await box.session.data(for: request),

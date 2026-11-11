@@ -45,10 +45,9 @@ public struct URLSessionTransport: HTTPTransport {
     /// interval (radio uses 15 s) and the main path gets one too.
     private let timeoutInterval: TimeInterval
 
-    /// The transport's default request timeout. Long enough for a slow
-    /// cellular playlist fetch, short enough that the UI recovers and
-    /// offers a retry within a human attention span.
-    public static let defaultTimeoutInterval: TimeInterval = 30
+    /// The main transport's request timeout — the shared package
+    /// default (see `NetworkDefaults`).
+    public static let defaultTimeoutInterval: TimeInterval = NetworkDefaults.requestTimeoutInterval
 
     public init(
         session: URLSession = .shared,

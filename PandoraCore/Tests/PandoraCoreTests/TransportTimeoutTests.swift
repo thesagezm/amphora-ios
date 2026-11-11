@@ -48,4 +48,16 @@ final class TransportTimeoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(interval, 15)
         XCTAssertLessThanOrEqual(interval, 60)
     }
+
+    func testMainTransportSharesThePackageDefault() {
+        // The main transport and the shared constant must not drift
+        // apart — every other transport (lyrics GET, Last.fm, station
+        // modes, CSRF bootstrap, the app's artwork cache) applies
+        // NetworkDefaults.requestTimeoutInterval directly.
+        XCTAssertEqual(
+            URLSessionTransport.defaultTimeoutInterval,
+            NetworkDefaults.requestTimeoutInterval
+        )
+        XCTAssertGreaterThan(NetworkDefaults.requestTimeoutInterval, 0)
+    }
 }
