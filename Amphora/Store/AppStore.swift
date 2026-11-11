@@ -6,6 +6,20 @@ import PandoraCore
 @Observable
 final class AppStore {
     /// Where the app is in the auth lifecycle. Drives `RootView`'s switch.
+    /// How far the radio now-playing identification has come for the
+    /// screen that is playing.
+    enum RadioIdentification: Equatable {
+        /// Not a radio stream (or playback stopped).
+        case inactive
+        /// The probe is connected and listening; no title yet.
+        case identifying
+        /// A song is announced (`radioNowPlaying`).
+        case identified
+        /// The station sends no ICY metadata — it announces nothing and
+        /// can only be identified by hand if a lookup ever supports it.
+        case stationAnnouncesNothing
+    }
+
     enum AuthPhase {
         case restoring      // warm-launch restore attempt in flight
         case signedOut
@@ -99,6 +113,11 @@ final class AppStore {
     /// Playback engine. Owns the player, the audio session and the
     /// now-playing track; it never talks to the network.
     let player: PlayerService
+    /// Reads the playing radio station's ICY now-playing metadata over
+    /// its own parallel connection (read-only — the audio path is the
+    /// player's). Doubles the stream bandwidth while a station plays
+    /// and stops with it.
+    private let radioMetadataProbe = RadioMetadataProbe()
     /// The internet-radio directory client (radio-browser.info). The
     /// play-click ping runs from here; all directory *fetches* for the
     /// Radio tab go through `radio` — one shared client, so the mirror
@@ -152,6 +171,13 @@ final class AppStore {
     private(set) var radioRecents: [RadioStation] = []
     /// User-added custom stations (name + raw stream URL), device-local.
     private(set) var radioCustomStations: [RadioStation] = []
+    /// The song the playing radio station's ICY metadata is announcing
+    /// (nil until a title arrives). This is the *station's* claim, not
+    /// a Pandora track — it never enters history, scrobbling, ratings,
+    /// bookmarks or skip accounting.
+    private(set) var radioNowPlaying: RadioNowPlaying?
+    /// Where the radio song identification stands for the UI.
+    private(set) var radioIdentification: RadioIdentification = .inactive
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
     /// The station whose playlist hit Pandora's daily skip limit (nil
@@ -330,6 +356,7 @@ final class AppStore {
             if track == nil, currentRadioStation != nil {
                 currentRadioStation = nil
                 lyrics = nil
+                stopRadioIdentification()
             }
             // An advertisement that plays must be resolved + registered
             // (pydora `AdItem.prepare_playback`) — best-effort, never
@@ -516,6 +543,9 @@ final class AppStore {
         modesStationId = nil
         recordRadioRecent(station)
         player.playLiveStream(track: Track.radioTrack(for: station))
+        // Listen along for the station's now-playing announcements (the
+        // probe holds its own read-only connection).
+        startRadioIdentification(for: station)
         // Directory click counter (Shortwave parity) — best-effort,
         // never blocks playback. Custom stations aren't in the
         // directory, so there is nothing to count.
@@ -531,7 +561,54 @@ final class AppStore {
         AppLog.info("radio: stopped", .playback)
         currentRadioStation = nil
         lyrics = nil
+        stopRadioIdentification()
         player.stop()
+    }
+
+    // MARK: Radio now-playing identification (ICY metadata)
+
+    /// Starts listening to the station's stream metadata. A late event
+    /// from a previous station's probe is dropped by the identity check
+    /// in the delivery hop.
+    private func startRadioIdentification(for station: RadioStation) {
+        radioNowPlaying = nil
+        radioIdentification = .identifying
+        guard let url = URL(string: station.streamURL) else {
+            AppLog.debug("radio metadata: station has no usable stream URL", .playback)
+            return
+        }
+        let stationUUID = station.uuid
+        let probe = radioMetadataProbe
+        Task {
+            await probe.start(url: url) { [weak self] event in
+                Task { @MainActor [weak self] in
+                    guard let self, self.currentRadioStation?.uuid == stationUUID else { return }
+                    self.handleRadioMetadata(event)
+                }
+            }
+        }
+    }
+
+    /// Stops the probe and clears the identification — the moment
+    /// playback stops the second connection goes too (bandwidth).
+    private func stopRadioIdentification() {
+        radioNowPlaying = nil
+        radioIdentification = .inactive
+        let probe = radioMetadataProbe
+        Task { await probe.stop() }
+    }
+
+    private func handleRadioMetadata(_ event: RadioMetadataProbe.Event) {
+        switch event {
+        case .listening:
+            // Connected; a title is expected but has not arrived.
+            if radioNowPlaying == nil { radioIdentification = .identifying }
+        case .announced(let nowPlaying):
+            radioNowPlaying = nowPlaying
+            radioIdentification = .identified
+        case .announcesNothing:
+            radioIdentification = .stationAnnouncesNothing
+        }
     }
 
     /// Stars or unstars a station (device-local favorites).
@@ -643,6 +720,8 @@ final class AppStore {
         bookmarks = []
         genreCategories = nil
         currentStation = nil
+        currentRadioStation = nil
+        stopRadioIdentification()
         stationModes = nil
         skipLimitStationId = nil
         isExplicitContentFilterEnabled = false
@@ -879,6 +958,7 @@ final class AppStore {
             // "next" stop the (already stopped) radio stream instead of
             // skipping the Pandora track.
             currentRadioStation = nil
+            stopRadioIdentification()
             // A different station invalidates the cached listening modes.
             stationModes = nil
             modesStationId = nil

@@ -290,7 +290,50 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — the mini-player no longer covers the last list row):**
+**(this push — Unit C2a of the 2026-11-11 round: the probe + the
+identification state):** the app half of the radio now-playing ask
+("from the radiostation can we identify the currently playing song…")
+on top of the landed core (92ff577). The lookup (artwork/lyrics) and
+the player UI follow in the next units.
+
+- **`Amphora/Player/RadioMetadataProbe.swift` (new)** — an actor that
+  opens its **own** connection to the station's `streamURL` with the
+  `Icy-MetaData: 1` request header and reads along: the response's
+  `icy-metaint` (via the core's case-insensitive
+  `ICYMetadataParser.metadataInterval(in:)`), then every arriving
+  chunk into the core parser; each new `StreamTitle` is delivered as
+  an `.announced(RadioNowPlaying)` event. The player keeps its own
+  connection — the probe never touches the audio path.
+  - **Timeouts split by role**: request timeout 20 s (dead server
+    noticed between chunks) but resource timeout 24 h (a live stream
+    runs for hours and must not be reaped).
+  - **Dedup**: a repeat of the same raw title (stations re-announce)
+    is not a new song.
+  - **Honest failure**: a server with no `icy-metaint` (France Info)
+    is reported once as `.announcesNothing` — not retried forever; a
+    connection failure just ends the probe (audio unaffected). The
+    error object is deliberately *not* logged — a network error's
+    description can carry the failing URL and stream URLs never reach
+    the log.
+  - **Bandwidth note**: while a station plays, the probe doubles the
+    stream's bandwidth (a second full connection). Acceptable — and
+    it stops the moment playback stops.
+- **`AppStore`** — owns one probe. `radioNowPlaying: RadioNowPlaying?`
+  (the announced song) and `radioIdentification`
+  (`.inactive` / `.identifying` / `.identified` / `.announcesNothing`)
+  are published for the UI. The probe starts with the stream
+  (`playRadio`), and stops in every path that leaves radio:
+  `stopRadio`, a Pandora station taking the player over, the radio
+  station losing its player slot, and sign-out (which now also clears
+  `currentRadioStation` — `player.stop()` alone left it set). Each
+  delivery hops to the main actor behind a station-identity check, so
+  a late event from a previous station's probe is dropped.
+
+Local verification: `RadioMetadataProbe.swift` and `AppStore.swift`
+parse-clean (`swiftc -parse -swift-version 6`); PandoraCore untouched
+(354/354 green in Docker). The app target compiles on CI only.
+
+**(previous push — the mini-player no longer covers the last list row):**
 the user's "the mini player overlaps/hides/obfuscates the bottom row
 station so I can't click on any station at the bottom."
 
