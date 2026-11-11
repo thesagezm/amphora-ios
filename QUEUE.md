@@ -290,6 +290,20 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**Repair (this push — the iOS Build is green again):** Unit B's iOS
+Build was red on one line — `AppStore.swift:1177: value of type 'Track'
+has no member 'isSynced'` — the romanization guard in
+`requestRomanization(for:)` checked `track.isSynced`, but `isSynced` is
+a member of `Lyrics`, not of `Track` (a typo inherited from the
+translation path's guard shape). The correct guard needs only the
+lyrics: synchronised lyrics with at least one line — the romanizer
+works per-line, so the track object says nothing it needs to know.
+The guard is now `guard let current = lyrics, current.isSynced,
+!current.lines.isEmpty else { return }`. Unit C1 touched only
+PandoraCore (its Core Tests run was green; the iOS Build failure was
+inherited from Unit B's commit). Both units' code now rides this
+green push.
+
 **(this push — Unit C1 of the 2026-11-11 round: the core reads a radio
 station's now-playing metadata):** the first half of the user's third
 ask ("from the radiostation can we identify the currently playing song,

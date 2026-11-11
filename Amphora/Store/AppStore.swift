@@ -1174,7 +1174,7 @@ final class AppStore {
     /// here. It is independent of the translation: neither suppresses
     /// the other.
     private func requestRomanization(for track: Track) {
-        guard track.isSynced, let current = lyrics, current.isSynced,
+        guard let current = lyrics, current.isSynced,
               !current.lines.isEmpty else { return }
         let texts = current.lines.map(\.text)
         let romanizer = lyricsRomanizer
