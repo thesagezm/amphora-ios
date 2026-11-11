@@ -35,18 +35,45 @@ public struct URLSessionTransport: HTTPTransport {
 
     private let box: SessionBox
     private let userAgent: String
+    /// Per-request timeout. An `URLRequest` with the system default of
+    /// 60 s bounds only the *request*; the resource timeout stays seven
+    /// days, so on a connection that was accepted but never answers (a
+    /// captive portal, a suspended socket) the send can hang
+    /// effectively forever and the app shows a spinner that never
+    /// stops. `URLSession.shared`'s post establishes exactly that
+    /// hazard, so every transport in this package names its own
+    /// interval (radio uses 15 s) and the main path gets one too.
+    private let timeoutInterval: TimeInterval
 
-    public init(session: URLSession = .shared, userAgent: String = "Amphora") {
+    /// The transport's default request timeout. Long enough for a slow
+    /// cellular playlist fetch, short enough that the UI recovers and
+    /// offers a retry within a human attention span.
+    public static let defaultTimeoutInterval: TimeInterval = 30
+
+    public init(
+        session: URLSession = .shared,
+        userAgent: String = "Amphora",
+        timeoutInterval: TimeInterval = URLSessionTransport.defaultTimeoutInterval
+    ) {
         self.box = SessionBox(session)
         self.userAgent = userAgent
+        self.timeoutInterval = timeoutInterval
     }
 
-    public func post(url: URL, body: Data, contentType: String) async throws -> Data {
-        var request = URLRequest(url: url)
+    /// The request this transport sends — pure assembly, no I/O. A
+    /// method of its own so the timeout and headers stay unit-testable
+    /// without a network.
+    func makeRequest(url: URL, body: Data, contentType: String) -> URLRequest {
+        var request = URLRequest(url: url, timeoutInterval: timeoutInterval)
         request.httpMethod = "POST"
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.httpBody = body
+        return request
+    }
+
+    public func post(url: URL, body: Data, contentType: String) async throws -> Data {
+        let request = makeRequest(url: url, body: body, contentType: contentType)
 
         do {
             let (data, response) = try await box.session.data(for: request)

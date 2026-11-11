@@ -255,7 +255,42 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit C of the 2026-11-10 round: the Radio tab's
+**(this push — M6 unit: the Pandora transport has a timeout):** an M6
+robustness unit while the 2026-11-10 round's device test is with the
+user. The audit found a real hang hazard on the main request path.
+
+- **The gap** — `URLSessionTransport` built its request with the bare
+  `URLRequest(url:)` initializer, so it carried the system defaults:
+  the *request* timeout is 60 s but the **resource timeout stays seven
+  days**. On a connection that was accepted but never answers — a
+  captive portal, a suspended socket, a hostile middlebox — the send
+  hangs effectively forever and the UI shows a spinner that never
+  stops. The radio transport has always named its interval (15 s);
+  every other `URLSession` user in the package (lyrics, Last.fm,
+  StationModes, the app's `ArtworkCache`) still inherits the default.
+- **The fix** — `URLSessionTransport` gained a `timeoutInterval`
+  (default **30 s**: long enough for a slow cellular playlist fetch,
+  short enough that the offline retry UX actually engages) applied
+  through the request factory. Request assembly was already a pure
+  step, so it moved into `makeRequest(url:body:contentType:)` — pure,
+  no I/O — and `post` now reads one line to build its request.
+- **4 new tests** (network-free, via the factory): the default is on
+  the wire, a custom interval is honored, the POST/headers/body
+  assembly is unchanged, and the default is bounded (15–60 s) so
+  neither a slow fetch nor a hang can silently break it. **319/319
+  green in Docker** (315 + 4; the tight loop, 4 s).
+
+Follow-up for a later unit (not this one — one hazard per push): the
+lyrics providers, `LastFmClient`, `StationModes` and the app's
+`ArtworkCache` still run on the system defaults; the same factory
+treatment applies there.
+
+**Device expectation**: with Wi-Fi on but no actual route (captive
+portal / after leaving the network), opening the app or pulling to
+refresh now fails within ~30 s with the error banner and a working
+Retry, instead of spinning indefinitely.
+
+**(previous push — Unit C of the 2026-11-10 round: the Radio tab's
 last-played hero):** the user's "for the radio channels there should
 be that large icon the way it is with pandora for the last played
 station" — the Radio tab now opens with the same landing centerpiece
