@@ -14,6 +14,40 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
+**2026-11-11 feedback round (this session's driver):** three asks, mapped
+to units:
+
+1. **"if i play a track with pandora i cant go to the radio tab and start
+   playing a radiostation from there"** → **Unit A landed** (this push).
+   Root cause: `AVQueuePlayer.removeAllItems()` does not reliably drop
+   the item that is *currently playing* — the old stream keeps playing
+   and stays the current item, so the item inserted right after it waits
+   in the queue and never becomes current. Starting radio during a
+   Pandora track therefore left the **Pandora track playing** with the
+   radio stream stuck behind it (and the reverse: starting a Pandora
+   station during radio left the radio stream playing). The player now
+   pauses, empties the queue and drops the current item *explicitly*
+   before the new one is inserted.
+2. **"There is no translate button for my lyrics — I was playing a french
+   song, no way to translate"** → **Unit B (next)**: an explicit
+   **Translate** button on the lyrics panel, with a "Translating…"
+   state and a retry when the request fails. The automatic translation
+   only ever ran on *synchronised* lyrics and silently gave up when the
+   service refused; plain-text lyrics were never translated at all, and
+   there was no way to ask for it by hand.
+3. **"from the radiostation can we identify the currently playing song,
+   display its artwork and lyrics as well — and do that when the next
+   song comes, or at least add a button to do it manually"** → **Unit C
+   (next)**: the radio streams carry **ICY now-playing metadata**
+   (`StreamTitle='Artist - Title'`), verified live against real
+   stations this session (Europe 1, MANGORADIO — both answered
+   `icy-metaint` and a `StreamTitle`). The plan: a portable metadata
+   parser in PandoraCore (Unit C1), then the app-side probe + the
+   now-playing UI with the identified song's artwork and lyrics, the
+   title updating by itself when the station announces the next song,
+   and a manual **Identify** button for the stations that announce
+   nothing.
+
 **2026-11-10 feedback round (this session's driver):** "fix the music
 player viewer… the playback controls move separately from the artwork
 when they should be fixed/move together… the icons for playback
@@ -255,7 +289,53 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — M6 unit: the Pandora transport has a timeout):** an M6
+**(this push — Unit A of the 2026-11-11 round: the player hands over
+between Pandora and radio):** the user's "if i play a track with pandora
+i cant go to the radio tab and start playing a radiostation from there".
+
+- **The diagnosis** — `PlayerService.resetQueue()` emptied the queue
+  with `AVQueuePlayer.removeAllItems()` alone. That call does **not**
+  reliably drop the item that is *currently playing*: the old stream
+  keeps playing and stays the player's current item, so the item
+  inserted right after it waits in the queue and never becomes current.
+  The symptoms matched the report exactly:
+  - Pandora → radio: the **Pandora track kept playing** while the radio
+    stream sat queued behind it. The UI said the radio station was
+    playing (the store had set `currentRadioStation` and the player
+    reported `.playing`), so the app looked stuck.
+  - radio → Pandora: the same in reverse — the radio stream kept
+    playing and the Pandora track never started.
+  The track-change observer never saw the radio track either, because
+  the current item never changed.
+- **The fix** — `resetQueue()` now **pauses, empties the queue and
+  drops the current item explicitly** (`replaceCurrentItem(with: nil)`)
+  before the new item is inserted. The old item is gone before the new
+  one arrives, in either direction, whichever way the framework
+  treats `removeAllItems()`.
+- **A second bug, found on the way** — `AppStore.play(_:)` never
+  cleared `currentRadioStation`, so after starting a Pandora station
+  following a radio stream the store still believed radio was current:
+  the radio row kept its "playing" marker and the player's **next**
+  button stopped radio (a no-op) instead of skipping the Pandora track.
+  The player is singular, and the store now says so in both directions.
+- **A third, smaller one** — when a stream's player item could not be
+  built (a dead URL), the queue had already been emptied but
+  `currentTrack` still pointed at the track that was replaced, so the
+  player showed a stale track. `play()` / `playLiveStream()` now clear
+  the current track before reporting the failure.
+
+Local verification: `PlayerService.swift` and `AppStore.swift` are
+parse-clean in the `swift:6.0` container; PandoraCore untouched
+(320/320 stands). The app target compiles on CI only.
+
+**Device expectation**: play a Pandora track → open the Radio tab → tap
+a station → the radio stream starts (the Pandora track stops) and the
+mini player shows the station; tap **next** → the radio stream stops;
+play radio → tap a Home station → the Pandora track starts and the
+radio stream stops. Both directions, with no stale "playing" marker on
+the radio rows.
+
+**(previous push — M6 unit: the Pandora transport has a timeout):** an M6
 robustness unit while the 2026-11-10 round's device test is with the
 user. The audit found a real hang hazard on the main request path.
 
@@ -2209,13 +2289,22 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-0. **GUI round (user request 2026-11-07 — this session's driver):**
+0. **2026-11-11 round (this session's driver):** Unit A (the Pandora ↔
+   radio player handover) ✅ **landed in this push** → **Unit B** (the
+   lyrics **Translate** button — explicit, with a "Translating…" state,
+   a retry, and plain-text lyrics translated too) → **Unit C1** (the
+   portable ICY now-playing metadata parser in PandoraCore) → **Unit C2**
+   (the app-side radio metadata probe + the identified song's title,
+   artwork and lyrics in the player, updating by itself and with a
+   manual **Identify** button). Root causes and details are in User
+   Feedback Pending at the top.
+1. **GUI round (user request 2026-11-07 — this session's driver):**
    Unit 1 Last.fm fix ✅ → Unit 2 radio artwork ✅ → Unit 3
    sophisticated player ✅ → **Unit 4 Settings/GUI polish ✅**
    (volume persistence, Settings data management, the list press
    feedback, the station name in the Now Playing header). Unit details
    and root causes are in User Feedback Pending at the top.
-1. **User device test of the next IPA** — the player first (transport,
+2. **User device test of the next IPA** — the player first (transport,
    volume slider, LIVE badge, radio controls), then radio artwork
    (every station row shows a monogram tile or its real logo; the full
    player and the lock screen show the same), then Last.fm (Settings →
@@ -2224,18 +2313,18 @@ toolbar) → Copy → paste.
    test list in In Flight / Last Push) and the older pending round
    (light mode, history ratings, lyrics fallbacks, romanization,
    AirPlay).
-2. **Bookmarks on device** — user reports they don't work; protocol
+3. **Bookmarks on device** — user reports they don't work; protocol
    verified against pydora. If the device test still fails, the
    Diagnostics log decides the next step.
-3. **Persist the playback volume** — ✅ landed (the slider's level now
+4. **Persist the playback volume** — ✅ landed (the slider's level now
    survives a relaunch).
-4. **Skip-limit awareness** — ✅ landed (typed core error, a SKIP LIMIT
+5. **Skip-limit awareness** — ✅ landed (typed core error, a SKIP LIMIT
    badge in the player, the station row marked, and no prefetch
    hammering while the limit is reached).
-5. **Explicit-content indicator** — ✅ landed at the only level the
+6. **Explicit-content indicator** — ✅ landed at the only level the
    protocol supports (an account-level badge, since the legacy API has
    no per-track explicit flag).
-6. Anything red on the next `gh run list` — repair first.
+7. Anything red on the next `gh run list` — repair first.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — confirm the
 GUI-polish and Now-Playing pushes are green, then **install the IPA on

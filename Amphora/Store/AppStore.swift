@@ -847,6 +847,12 @@ final class AppStore {
                 return
             }
             currentStation = station
+            // The player is singular: a Pandora station takes the player
+            // over from a radio stream. Leaving `currentRadioStation`
+            // set would keep the radio row marked as playing and make
+            // "next" stop the (already stopped) radio stream instead of
+            // skipping the Pandora track.
+            currentRadioStation = nil
             // A different station invalidates the cached listening modes.
             stationModes = nil
             modesStationId = nil
@@ -1524,7 +1530,9 @@ final class AppStore {
             return "Pandora's daily skip limit was reached. Try again later."
         }
         if let error = error as? PandoraTransportError {
-            return "Couldn't reach Pandora (\(error.reason)). Check your connection."
+            // Core owns the copy (timeout vs unreachable vs server
+            // status) — the raw reason is log material, never UI copy.
+            return error.localizedDescription
         }
         if error is PandoraMalformedResponseError {
             return "Pandora sent an unexpected response. Try again."

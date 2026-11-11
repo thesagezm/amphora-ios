@@ -151,6 +151,10 @@ final class PlayerService {
         finishOutgoingTrack()
         resetQueue()
         guard let item = makeItem(for: track) else {
+            // The queue is empty now, so the old track is no longer
+            // playing — say so, or the player would keep showing the
+            // track that was replaced.
+            currentTrack = nil
             fail("That track isn't playable right now.")
             return
         }
@@ -179,6 +183,10 @@ final class PlayerService {
         finishOutgoingTrack()
         resetQueue()
         guard let item = makeItem(for: track) else {
+            // The queue was emptied for the switch, so nothing is
+            // playing any more — the current track must not keep
+            // pointing at the track that was replaced.
+            currentTrack = nil
             fail("That stream isn't playable right now.")
             return
         }
@@ -321,8 +329,24 @@ final class PlayerService {
 
     // MARK: - Queue internals
 
+    /// Empties the queue for a source switch.
+    ///
+    /// `AVQueuePlayer.removeAllItems()` alone does **not** reliably drop
+    /// the item that is currently playing: the old stream keeps playing
+    /// and stays the player's current item, so the item inserted right
+    /// after it waits in the queue and never becomes current. That is
+    /// exactly the handover that failed in the field — starting a radio
+    /// station while a Pandora track played left the Pandora track
+    /// playing (the radio stream sat behind it), and starting a Pandora
+    /// station while radio played left the radio stream playing.
+    ///
+    /// Pausing first and then dropping the current item *explicitly*
+    /// hands the player over: the old item is gone before the new one
+    /// is inserted, in either direction.
     private func resetQueue() {
+        player.pause()
         player.removeAllItems()
+        player.replaceCurrentItem(with: nil)
         slots.removeAll()
     }
 
