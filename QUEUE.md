@@ -289,7 +289,48 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**(this push — Unit A of the 2026-11-11 round: the player hands over
+**(this push — M6 unit: transport-failure copy the user can act on):**
+the M6 audit found the last raw-string surface on the error path (the
+radio-handover fix, `f2508f7`, was already committed by the concurrent
+session working the 2026-11-11 round; this unit rides alongside it).
+
+- **The gap** — the app assembled its own banner copy from the
+  transport error: "Couldn't reach Pandora (\(error.reason))" — so a
+  dead connection showed the raw internal reason "network failure"
+  inline in the UI, and a server-side 502 read the same as being
+  offline. `PandoraAPIError` already had a curated copy table; the
+  transport error had none.
+- **Core (`Errors.swift`)** — `PandoraTransportError` gained
+  `localizedDescription` (the API error's design, mirrored): curated
+  copy for `unreachable` ("No internet connection…"), `timeout`
+  ("Pandora took too long to respond…"), `network failure`, the bare
+  `non-HTTP response`, and `HTTP <status>` (a CDN 502 is a *server*
+  problem, not the user's connection). `httpStatusCode` extracts the
+  status; an unknown reason falls back to generic copy and **never**
+  leaks the raw string — the raw `reason` stays log material only.
+- **Core (`LegacyPandoraClient`)** — the transport's catch classifies
+  `URLError` by cause (`timedOut` → "timeout",
+  `notConnectedToInternet`/`networkConnectionLost` → "unreachable",
+  everything else → "network failure") instead of collapsing every
+  URL-layer failure into one reason, so the UI can tell offline from
+  slow.
+- **App (`AppStore.userMessage`)** — returns the curated description;
+  the raw-reason string interpolation is gone from the banner.
+- **7 new tests** (`TransportErrorCopyTests`): every reason maps to its
+  expected copy, HTTP status extraction, the no-status fallback, that
+  an unknown reason cannot leak, and the URLError classification table.
+- Deliberately out of scope (same shape, later unit): the lyrics /
+  Last.fm / modes transports still collapse their failures to their
+  own "network failure" reason — those paths are optional surfaces
+  (lyrics lookup, scrobbling) and their copy is already generic, not
+  leaky.
+
+**Device expectation**: airplane mode → "No internet connection.
+Amphora will try again."; Wi-Fi with no route (hangs past the 30 s
+timeout) → "Pandora took too long to respond…"; a CDN 502 → the
+server-problem copy. No internal reason strings anywhere in the UI.
+
+**(previous push — Unit A of the 2026-11-11 round: the player hands over
 between Pandora and radio):** the user's "if i play a track with pandora
 i cant go to the radio tab and start playing a radiostation from there".
 

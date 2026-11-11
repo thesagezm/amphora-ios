@@ -85,10 +85,15 @@ public struct URLSessionTransport: HTTPTransport {
             return data
         } catch let error as PandoraTransportError {
             throw error
+        } catch let error as URLError {
+            // Classify by cause so the UI can tell "you're offline"
+            // from "Pandora is slow" (see
+            // `PandoraTransportError.localizedDescription`). No
+            // `.localizedDescription` re-inspection otherwise: the
+            // message carries no URL/token material, and the raw reason
+            // stays sanitized (the transport never sees response bodies).
+            throw PandoraTransportError(urlError: error)
         } catch {
-            // No `.localizedDescription` re-inspection: message carries no
-            // URL/token material either way, and the detail is already
-            // sanitized (transport layer never sees response bodies here).
             throw PandoraTransportError(reason: "network failure")
         }
     }

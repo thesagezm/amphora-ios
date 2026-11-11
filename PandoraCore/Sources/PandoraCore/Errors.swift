@@ -154,7 +154,51 @@ public struct PandoraAPIError: Error, Sendable, Equatable, Codable {
 /// Transport-level failure (offline, DNS, TLS, timeout).
 public struct PandoraTransportError: Error, Sendable, Equatable {
     public let reason: String
+
+    /// The reason a `URLError`-shaped failure produced, when the URL
+    /// layer says why. `notConnectedToInternet` / `networkConnectionLost`
+    /// collapse to the same "unreachable" reason; everything else keeps
+    /// the transport's own reason string.
+    public init(urlError: URLError) {
+        switch urlError.code {
+        case .timedOut:
+            self.reason = "timeout"
+        case .notConnectedToInternet, .networkConnectionLost:
+            self.reason = "unreachable"
+        default:
+            self.reason = "network failure"
+        }
+    }
+
     public init(reason: String) { self.reason = reason }
+
+    /// What went wrong, in words a user can act on — the transport-error
+    /// counterpart of `PandoraAPIError.localizedDescription`. The raw
+    /// `reason` stays what the log keeps; the UI must never show it.
+    public var localizedDescription: String {
+        switch reason {
+        case "unreachable":
+            return "No internet connection. Amphora will try again."
+        case "timeout":
+            return "Pandora took too long to respond. Check your connection and try again."
+        case "network failure":
+            return "Couldn't reach Pandora. Check your connection and try again."
+        case "non-HTTP response":
+            return "Pandora sent an unexpected response. Try again."
+        default:
+            if let status = httpStatusCode {
+                return "Pandora's servers had a problem (HTTP \(status)). Try again."
+            }
+            return "Something went wrong talking to Pandora. Try again."
+        }
+    }
+
+    /// The `HTTP <status>` reason, when that is what failed — a 502 from
+    /// a CDN is a server problem, not the user's connection.
+    public var httpStatusCode: Int? {
+        guard reason.hasPrefix("HTTP ") else { return nil }
+        return Int(reason.dropFirst("HTTP ".count))
+    }
 }
 
 /// The response body was not decodable JSON, or had no `stat`.
