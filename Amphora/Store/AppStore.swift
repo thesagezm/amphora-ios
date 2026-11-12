@@ -199,6 +199,11 @@ final class AppStore {
     private var radioLyricsTrack: Track?
     /// The in-flight identified-song lookup (artwork + lyrics retry).
     private var radioLookupTask: Task<Void, Never>?
+    /// The pending announcement — an ICY title that arrived while the
+    /// audio was still behind the live edge, waiting for the listener
+    /// to reach it before it swaps the header, the cover and the
+    /// lyrics (see `scheduleRadioAnnouncement`).
+    private var radioAnnouncementTask: Task<Void, Never>?
     /// True while a playlist request for a station is in flight.
     private(set) var isLoadingPlaylist = false
     /// The station whose playlist hit Pandora's daily skip limit (nil
@@ -637,6 +642,8 @@ final class AppStore {
         radioLyricsTrack = nil
         radioLookupTask?.cancel()
         radioLookupTask = nil
+        radioAnnouncementTask?.cancel()
+        radioAnnouncementTask = nil
         let probe = radioMetadataProbe
         Task { await probe.stop() }
     }
@@ -647,16 +654,51 @@ final class AppStore {
             // Connected; a title is expected but has not arrived.
             if radioNowPlaying == nil { radioIdentification = .identifying }
         case .announced(let nowPlaying):
-            radioNowPlaying = nowPlaying
-            radioIdentification = .identified
-            // The station announced a (new) song — look its cover and
-            // lyrics up on its own, without a tap.
-            if let station = currentRadioStation {
-                identifyRadioSong(nowPlaying, stationUUID: station.uuid)
-            }
+            scheduleRadioAnnouncement(nowPlaying)
         case .announcesNothing:
             radioIdentification = .stationAnnouncesNothing
         }
+    }
+
+    /// Applies an announcement when the *audio* reaches it.
+    ///
+    /// The probe reads the station's metadata at the stream's live
+    /// edge, but the player buffers behind that edge (up to 30 s of
+    /// `preferredForwardBufferDuration`) — applying the announcement
+    /// the moment it arrives swapped the header, the cover and the
+    /// lyrics up to half a song before the listener heard the song
+    /// (user report 2026-11-12). The player measures its own lag
+    /// (`PlayerService.liveStreamLag`); a short gap applies as before,
+    /// a real one waits it out. A newer announcement cancels the
+    /// waiting one, and a station switch or stop cancels everything —
+    /// the identity check at application time is the second line of
+    /// defence.
+    private func scheduleRadioAnnouncement(_ nowPlaying: RadioNowPlaying) {
+        radioAnnouncementTask?.cancel()
+        radioAnnouncementTask = nil
+        guard let station = currentRadioStation else { return }
+        let uuid = station.uuid
+        let lag = player.liveStreamLag
+        if lag > 1.5 {
+            radioAnnouncementTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(lag))
+                guard let self, !Task.isCancelled else { return }
+                self.applyRadioAnnouncement(nowPlaying, stationUUID: uuid)
+            }
+        } else {
+            applyRadioAnnouncement(nowPlaying, stationUUID: uuid)
+        }
+    }
+
+    private func applyRadioAnnouncement(
+        _ nowPlaying: RadioNowPlaying, stationUUID: String
+    ) {
+        guard currentRadioStation?.uuid == stationUUID else { return }
+        radioNowPlaying = nowPlaying
+        radioIdentification = .identified
+        // The station announced a (new) song — look its cover and
+        // lyrics up on its own, without a tap.
+        identifyRadioSong(nowPlaying, stationUUID: stationUUID)
     }
 
     // MARK: The identified radio song (artwork + lyrics)

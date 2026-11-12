@@ -66,13 +66,21 @@ wrong).
    directly beneath it, mid-screen. `.miniPlayer()` now stretches the
    content to fill the screen before attaching the inset; Lists already
    fill and are unaffected.
-6. **Radio lyrics/artwork/metadata ahead of the audio** → Unit 6. The
-   identification probe reads the stream's live edge, but the player
-   buffers up to 30 s behind it (`preferredForwardBufferDuration`),
-   so the announcement swap fired up to half a song before the audio
-   reached it. Fix: measure the player's real lag (buffered-ahead vs.
-   the playback position) and delay the announcement until the audio
-   catches up. Lookups still start at announcement time.
+6. **Radio lyrics/artwork/metadata ahead of the audio** → **Unit 6
+   landed** (this push). The identification probe reads the station's
+   metadata at the stream's **live edge**, while the player
+   deliberately buffers up to 30 s behind that edge
+   (`preferredForwardBufferDuration`) — applying the announcement the
+   moment it arrived swapped the header, cover and lyrics up to half a
+   song before the listener heard it. `PlayerService.liveStreamLag`
+   now measures the real gap (the buffered-ahead window minus the
+   playback position, capped at 45 s) and the store schedules the
+   announcement until the audio reaches it: a gap under ~1.5 s applies
+   immediately as before, a real one waits, a newer announcement
+   cancels the waiting one, and stop/switch cancels everything (the
+   station-identity check at application time stays as the second
+   line of defence). The artwork/lyrics lookups run at application
+   time, so the panel never leads the song it describes.
 7. **Stations identify songs but fetch no artwork** → **Unit 4
    landed** (this push). The iTunes lookup requested `limit=1` and
    verified only the top answer — and the top answer is frequently

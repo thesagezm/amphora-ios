@@ -69,6 +69,28 @@ final class PlayerService {
 
     var isPlaying: Bool { state == .playing || state == .buffering }
 
+    /// How far the audible audio lags a live stream's edge, in
+    /// seconds.
+    ///
+    /// The radio identification probe reads the station's metadata at
+    /// the stream's live edge; the player deliberately buffers behind
+    /// that edge (`preferredForwardBufferDuration`), so an announcement
+    /// describes a song the listener hears seconds later — the
+    /// "lyrics and artwork are far ahead of the actual tracks" report
+    /// (2026-11-12). The gap is the buffered-ahead window: the
+    /// buffered range's end (the download edge, in item time) minus
+    /// the playback position. 0 when the measurement is not meaningful
+    /// (nothing loaded yet, a finite track, a stalled read) — callers
+    /// treat 0 as "apply now".
+    var liveStreamLag: TimeInterval {
+        guard let item = player.currentItem,
+              let range = item.loadedTimeRanges.first?.timeRangeValue else { return 0 }
+        let bufferedEnd = range.start.seconds + range.duration.seconds
+        let lag = bufferedEnd - elapsed
+        guard lag.isFinite, lag > 0 else { return 0 }
+        return min(lag, 45)
+    }
+
     /// Tracks queued behind the current one, most immediate first — the
     /// "Up Next" list. The queue holds the current track plus everything
     /// enqueued from playlist fetches, so this is what will actually play.
