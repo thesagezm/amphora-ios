@@ -527,9 +527,11 @@ struct NowPlayingView: View {
         }
     }
 
-    /// Plain bold glyphs, no filled circles — the transport Apple Music
-    /// uses, with the artwork accent reserved for the scrubber and
-    /// ratings.
+    /// The transport: matched side glyphs around the main play/pause,
+    /// which sits in the accent-filled circle the mini player and the
+    /// Home hero already use (user request 2026-11-12 — the bare 44 pt
+    /// glyph read as unfinished next to the two circled buttons
+    /// elsewhere in the app).
     ///
     /// A live radio stream has no timeline: the back-15 button is gone
     /// (there is nowhere to go back to) and the trailing button stops
@@ -554,13 +556,16 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     if store.player.isPlaying {
-                        TransportGlyph(.pause, size: 44)
+                        TransportGlyph(.pause, size: 32, color: Theme.accentGlyph)
                     } else {
-                        TransportGlyph(.play, size: 44)
+                        TransportGlyph(.play, size: 32, color: Theme.accentGlyph)
                     }
                 }
-                .frame(width: 92, height: 76)
+                .frame(width: 72, height: 72)
+                .background(Theme.accent, in: Circle())
+                .shadow(color: Theme.accent.opacity(0.30), radius: 12, y: 4)
             }
+            .frame(width: 92, height: 76)
             .buttonStyle(PressableButtonStyle())
             .animation(.snappy(duration: 0.25), value: store.player.isPlaying)
             .accessibilityLabel(store.player.isPlaying ? "Pause" : "Play")

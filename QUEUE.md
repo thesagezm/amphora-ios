@@ -29,9 +29,12 @@ wrong).
    response" — the translation arrived and was thrown away. Also the
    endpoint 429s by IP; the client treats that as a plain failure
    instead of backing off.
-2. **Play/pause needs a filled circle** → Unit 2. The full player's
-   main button is a bare 44 pt glyph (deliberate AM-style, but the
-   user wants the circle the mini player and Home hero have).
+2. **Play/pause needs a filled circle** → **Unit 2 landed** (this
+   push). The full player's main button was a bare 44 pt glyph
+   (deliberate AM-style, but it read as unfinished next to the circled
+   buttons the mini player and Home hero carry); it now sits in a
+   72 pt accent-filled circle with the drawn glyph in the legible
+   accent-glyph colour, same slot size, press response and animation.
 3. **"Last.fm rejected that username or password" everywhere** →
    Unit 7. The string is error 4. During *playback*, Last.fm also
    reports a dead session key as error 4 on some methods, so the
