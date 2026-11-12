@@ -42,12 +42,18 @@ wrong).
    72 pt accent-filled circle with the drawn glyph in the legible
    accent-glyph colour, same slot size, press response and animation.
 3. **"Last.fm rejected that username or password" everywhere** →
-   Unit 7. The string is error 4. During *playback*, Last.fm also
-   reports a dead session key as error 4 on some methods, so the
-   scrobbler's status line showed the credentials sentence for what is
-   actually "session ended — sign in again". Session errors get their
-   own handling (disable + re-auth prompt, like error 9 already gets);
-   the credentials sentence stays only in the sign-in form.
+   **Unit 7 landed** (this push). The sentence is Last.fm error 4,
+   and during *playback* a dead session key is reported by Last.fm as
+   error 4 on the scrobble/now-playing methods — so the Settings
+   status line showed the credentials sentence for what is actually
+   "session ended — sign in again" (the password is never stored; the
+   sentence made no sense there). Playback-time error 4 now gets the
+   same re-auth handling as error 9: the key is dropped, scrobbling
+   pauses, the form comes back with "Last.fm session ended. Sign in
+   again." The credentials sentence remains the sign-in form's
+   answer only — and a stale one there clears the moment the user
+   edits a field, instead of sitting under the form forever. PandoraCore
+   untouched (379/379 stands); both app files parse-clean.
 4. **Popular atop country pages, but where is the rest?** → **Unit 3
    landed** (this push). Every discovery list (Popular, a country, a
    tag, search) was hard-capped at `limit=50` with no way past it. The

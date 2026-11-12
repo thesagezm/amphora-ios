@@ -15,8 +15,12 @@
 //  (the store owns the write; this class exposes the flag).
 //
 //  Scrobbling must never disturb playback (Priority 1): failures log
-//  and, when Last.fm rejects the session key (error 9), the state
-//  becomes `.needsAuth` — the user signs in again from Settings.
+//  and, when Last.fm rejects the session (error 9 — or error 4, which
+//  is how a dead key surfaces on the scrobble methods), the state
+//  becomes `.needsAuth` — the user signs in again from Settings. The
+//  credentials sentence ("rejected that username or password") is the
+//  sign-in form's answer only; playback-time rejections are session
+//  failures, not credential failures.
 //
 
 import Foundation
@@ -114,6 +118,14 @@ final class Scrobbler {
         AppLog.info("last.fm: signed out")
     }
 
+    /// Clears a stale sign-in failure. The message must answer the
+    /// attempt that caused it, not sit under the form forever — the
+    /// fields' edits call this, so the error disappears the moment the
+    /// user starts typing a corrected entry.
+    func clearAuthError() {
+        authError = nil
+    }
+
     // MARK: - Playback hooks
 
     /// `track.updateNowPlaying` for a track that just started. Never
@@ -197,22 +209,41 @@ final class Scrobbler {
         return session.key
     }
 
-    /// Scrobble failures only log — except a rejected session key
-    /// (error 9), which disables scrobbling until re-auth.
+    /// Scrobble failures only log — except a rejected *session* (the
+    /// key, error 9 — or error 4, which is how Last.fm reports a dead
+    /// key on the scrobble/now-playing methods), which disables
+    /// scrobbling until re-auth.
     private func handle(_ error: Error, while title: String) {
         if case LastFmError.invalidSessionKey = error {
-            AppLog.error("last.fm: session key rejected — scrobbling paused")
-            authState = .needsAuth(message: "Last.fm session ended. Sign in again.")
-            isEnabled = false
-            onEnabledChanged?(false)
-            try? keychain.remove(Self.keychainAccount)
-            lastActivity = "Last.fm session ended. Sign in again."
-            lastActivityIsError = true
+            sessionEnded()
+            return
+        }
+        // "Invalid username or password" during *playback* is not the
+        // credentials sentence's business — the password is never
+        // stored. Last.fm reports a dead session key as error 4 on
+        // these methods, so the session failure gets the same
+        // re-auth handling as error 9 (user report 2026-11-12: the
+        // credentials sentence appeared in the status line and the
+        // logs for what is a session ending).
+        if case LastFmError.invalidCredentials = error {
+            sessionEnded()
             return
         }
         lastActivity = "Last.fm error on \"\(title)\": \(Self.userMessage(for: error))"
         lastActivityIsError = true
         AppLog.error("last.fm: update failed for \"\(title)\": \(String(describing: error))", .playback)
+    }
+
+    /// The stored session is no longer valid: drop it, disable
+    /// scrobbling and put the sign-in form back.
+    private func sessionEnded() {
+        AppLog.error("last.fm: session rejected — scrobbling paused")
+        authState = .needsAuth(message: "Last.fm session ended. Sign in again.")
+        isEnabled = false
+        onEnabledChanged?(false)
+        try? keychain.remove(Self.keychainAccount)
+        lastActivity = "Last.fm session ended. Sign in again."
+        lastActivityIsError = true
     }
 
     private static func userMessage(for error: Error) -> String {

@@ -355,9 +355,11 @@ private struct LastFmSettings: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .amphoraCardRow()
+                .onChange(of: username) { _, _ in store.scrobbler.clearAuthError() }
             SecureField("Last.fm password", text: $password)
                 .textContentType(.password)
                 .amphoraCardRow()
+                .onChange(of: password) { _, _ in store.scrobbler.clearAuthError() }
             Button {
                 store.send(.authenticateLastFm(username: username, password: password))
             } label: {
