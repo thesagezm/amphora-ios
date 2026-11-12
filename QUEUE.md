@@ -21,14 +21,20 @@ top answer for a French song — the artwork refusal firing correctly on
 a wrong result is the same bug as "no artwork" when every result is
 wrong).
 
-1. **Translate doesn't work** → Unit 5. The Google endpoint is fine
-   (verified live); the client's *alignment check* is the failure: it
-   requires one response segment per lyric line, but Google splits long
-   lines into several segments and skips empty ones, so the counts
-   mismatch and the app reports "didn't line up" / "unexpected
-   response" — the translation arrived and was thrown away. Also the
-   endpoint 429s by IP; the client treats that as a plain failure
-   instead of backing off.
+1. **Translate doesn't work** → **Unit 5 landed** (this push). The
+   Google endpoint is fine (verified live); the client's *alignment
+   contract* was the failure. It demanded one response segment per
+   lyric line, but Google splits long lines into several segments and
+   skips blank input, so the counts mismatched and the app refused the
+   translation it had already received. Now: blank lines are never
+   sent (their translation slot stays "" — the misalignment source),
+   a long line split across segments is reassembled from the segment
+   texts (joined, split back on newlines), anything that still doesn't
+   line up is refused as before, and the endpoint's IP-based HTTP 429
+   gets a short backoff + retry instead of an instant failure. 4 new
+   core tests (blank lines on the wire + mapped back, the split-line
+   reassembly, the 429 retry and its give-up) — **379/379 green**
+   locally.
 2. **Play/pause needs a filled circle** → **Unit 2 landed** (this
    push). The full player's main button was a bare 44 pt glyph
    (deliberate AM-style, but it read as unfinished next to the circled

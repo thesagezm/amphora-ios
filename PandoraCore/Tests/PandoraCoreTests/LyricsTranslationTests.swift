@@ -129,15 +129,91 @@ final class LyricsTranslationTests: XCTestCase {
     }
 
     func testTranslatorReportsAMisalignedAnswerAsAFailure() async {
-        // Two answers for one line: the alignment cannot be trusted.
+        // Two lines in, but the answer carries no line breaks to
+        // rebuild them from — the alignment cannot be trusted.
         let response = Data("""
-        [[["I am a cat","Je suis un chat",null,null,3],["Black cat","Chat noir",null,null,3]],null,"fr",null,null,null,1]
+        [[["I am a cat, and a black one","Je suis un chat, chat noir",null,null,3]],null,"fr",null,null,null,1]
+        """.utf8)
+        let transport = StubGETTransport(responses: [.success(response)])
+        let client = GoogleTranslateClient(transport: transport)
+
+        let outcome = await client.englishTranslation(of: ["Je suis un chat", "Chat noir"])
+
+        XCTAssertEqual(outcome, .failed(reason: "unexpected response"))
+    }
+
+    func testASplitLineIsReassembledFromTheSegmentTexts() async {
+        // The service splits a *long* line into several segments — the
+        // pieces joined are the line's translation, and the answer is
+        // not a misalignment.
+        let response = Data("""
+        [[["I am a ca","Je suis un ",null,null,3],["t","chat",null,null,3]],null,"fr",null,null,null,1]
         """.utf8)
         let transport = StubGETTransport(responses: [.success(response)])
         let client = GoogleTranslateClient(transport: transport)
 
         let outcome = await client.englishTranslation(of: ["Je suis un chat"])
 
-        XCTAssertEqual(outcome, .failed(reason: "unexpected response"))
+        XCTAssertEqual(outcome, .translated(["I am a cat"]))
+    }
+
+    // MARK: - Empty lines and rate limits
+
+    func testEmptyLinesAreNotSentAndMapBackEmpty() async {
+        let transport = StubGETTransport(responses: [.success(Data("""
+        [[["I walk alone","Je marche seul",null,null,3],["People I don't know","Des gens que je ne connais pas",null,null,3]],null,"fr",null,null,null,1]
+        """.utf8))])
+        let client = GoogleTranslateClient(transport: transport)
+
+        let outcome = await client.englishTranslation(
+            of: ["Je marche seul", "", "Des gens que je ne connais pas"]
+        )
+
+        // The blank section separator gets "" — never a shifted answer.
+        XCTAssertEqual(
+            outcome,
+            .translated(["I walk alone", "", "People I don't know"])
+        )
+        // The blank line never reaches the wire.
+        let url = try? URLComponents(url: transport.requests[0].url, resolvingAgainstBaseURL: false)
+        XCTAssertEqual(url?.queryItems?.value(for: "q"), "Je marche seul\nDes gens que je ne connais pas")
+    }
+
+    func testRateLimitRetriesAndThenSucceeds() async {
+        // The free endpoint 429s by IP; the client backs off and asks
+        // again instead of reporting a failed translation.
+        let response = Data("""
+        [[["I am a cat","Je suis un chat",null,null,3]],null,"fr",null,null,null,1]
+        """.utf8)
+        let transport = StubGETTransport(responses: [
+            .failure(PandoraTransportError(reason: "HTTP 429")),
+            .success(response),
+        ])
+        let client = GoogleTranslateClient(transport: transport)
+
+        let outcome = await client.englishTranslation(of: ["Je suis un chat"])
+
+        XCTAssertEqual(outcome, .translated(["I am a cat"]))
+        XCTAssertEqual(transport.requests.count, 2)
+    }
+
+    func testRateLimitGivesUpAfterTwoRetries() async {
+        let transport = StubGETTransport(responses: [
+            .failure(PandoraTransportError(reason: "HTTP 429")),
+            .failure(PandoraTransportError(reason: "HTTP 429")),
+            .failure(PandoraTransportError(reason: "HTTP 429")),
+        ])
+        let client = GoogleTranslateClient(transport: transport)
+
+        let outcome = await client.englishTranslation(of: ["Bonjour"])
+
+        XCTAssertEqual(outcome, .failed(reason: "HTTP 429"))
+        XCTAssertEqual(transport.requests.count, 3)
+    }
+}
+
+private extension [URLQueryItem] {
+    func value(for name: String) -> String? {
+        first { $0.name == name }?.value
     }
 }

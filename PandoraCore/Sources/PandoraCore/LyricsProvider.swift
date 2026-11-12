@@ -251,8 +251,17 @@ public struct GoogleTranslateClient: LyricsTranslating, Sendable {
     }
 
     public func englishTranslation(of lines: [String]) async -> LyricsTranslation {
-        let text = lines.joined(separator: "\n")
-        guard !text.isEmpty else { return .failed(reason: "empty lyrics") }
+        // Empty lines are not sent. The service skips blank input
+        // entirely, so a blank line between sections would shift the
+        // answer's alignment for every line after it — the misaligned
+        // answer would then be refused and the whole translation lost
+        // (the "translate doesn't work" report). Empty lines carry no
+        // words; their translation slot stays "".
+        let sentIndices = lines.indices.filter {
+            !lines[$0].trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        let sentLines = sentIndices.map { lines[$0] }
+        guard !sentLines.isEmpty else { return .failed(reason: "empty lyrics") }
 
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         components?.queryItems = [
@@ -260,32 +269,68 @@ public struct GoogleTranslateClient: LyricsTranslating, Sendable {
             URLQueryItem(name: "sl", value: "auto"),
             URLQueryItem(name: "tl", value: "en"),
             URLQueryItem(name: "dt", value: "t"),
-            URLQueryItem(name: "q", value: text)
+            URLQueryItem(name: "q", value: sentLines.joined(separator: "\n"))
         ]
         guard let url = components?.url else {
             return .failed(reason: "bad endpoint")
         }
 
-        let data: Data
-        do {
-            data = try await transport.get(url: url, headers: ["User-Agent": userAgent])
-        } catch let error as PandoraTransportError {
-            return .failed(reason: error.reason)
-        } catch {
-            return .failed(reason: "network failure")
+        // The free endpoint rate-limits by IP (HTTP 429) — a short
+        // backoff and a retry, like the lyrics service's own busy
+        // answer. A shared carrier IP can 429 the first request of a
+        // song and answer the next fine.
+        var fetched: Data? = nil
+        var attempt = 0
+        while fetched == nil {
+            do {
+                fetched = try await transport.get(
+                    url: url, headers: ["User-Agent": userAgent]
+                )
+            } catch let error as PandoraTransportError
+                    where error.reason == "HTTP 429" && attempt < 2 {
+                attempt += 1
+                try? await Task.sleep(for: .milliseconds(700 * attempt))
+            } catch let error as PandoraTransportError {
+                return .failed(reason: error.reason)
+            } catch {
+                return .failed(reason: "network failure")
+            }
         }
+        let data = fetched ?? Data()
         guard let response = try? JSONDecoder().decode(Response.self, from: data) else {
             return .failed(reason: "unexpected response")
         }
         // Already English — no translation needed.
         let detected = response.detectedSourceLanguage?.lowercased() ?? ""
         if detected == "en" || detected.hasPrefix("en-") { return .alreadyEnglish }
-        // The service keeps the line breaks, so the segments line up with
-        // the input lines one-to-one.
-        guard response.segments.count == lines.count else {
-            return .failed(reason: "unexpected response")
+
+        // The alignment, in two shapes the service answers with:
+        // - one segment per line (the common case) maps directly;
+        // - the service splits *long* lines into several segments —
+        //   then the segment texts carry the line breaks, and joining
+        //   them and splitting back reconstructs the lines.
+        // Either way the count must match the *sent* lines exactly, or
+        // the answer is refused — never shown against the wrong words.
+        let direct = response.segments.map(\.translated)
+        let sentTranslations: [String]
+        if direct.count == sentLines.count {
+            sentTranslations = direct
+        } else {
+            let rejoined = direct.joined().components(separatedBy: "\n")
+            guard rejoined.count == sentLines.count else {
+                return .failed(reason: "unexpected response")
+            }
+            sentTranslations = rejoined
         }
-        return .translated(response.segments.map(\.translated))
+
+        // Map the answer back onto the original line list: the lines
+        // that were sent keep their translation, the empty ones stay
+        // empty.
+        var translated = Array(repeating: "", count: lines.count)
+        for (index, translation) in zip(sentIndices, sentTranslations) {
+            translated[index] = translation
+        }
+        return .translated(translated)
     }
 
     /// The service's reply: `[[segments], null, detectedLanguage, …]`.
