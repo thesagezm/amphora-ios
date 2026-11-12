@@ -287,19 +287,66 @@ private struct RadioResultsView: View {
     }
 
     private var resultsList: some View {
-        List(radio.results) { station in
-            let isCurrent = store.currentRadioStation?.uuid == station.uuid
-            Button {
-                Haptics.light()
-                store.send(.playRadioStation(station))
-            } label: {
-                RadioStationRow(station: station, isCurrent: isCurrent)
+        List {
+            ForEach(radio.results) { station in
+                let isCurrent = store.currentRadioStation?.uuid == station.uuid
+                Button {
+                    Haptics.light()
+                    store.send(.playRadioStation(station))
+                } label: {
+                    RadioStationRow(station: station, isCurrent: isCurrent)
+                }
+                .buttonStyle(RowPressableButtonStyle())
+                .amphoraCardRow(tinted: isCurrent)
             }
-            .buttonStyle(RowPressableButtonStyle())
-            .amphoraCardRow(tinted: isCurrent)
+            moreRows
         }
         .listStyle(.plain)
         .amphoraListBackground()
+    }
+
+    /// The paging footer: "Show More" while the ranking has more pages,
+    /// a spinner while the next page loads, and the failure + retry
+    /// when one didn't come back. The stations already on screen are
+    /// never disturbed by it.
+    @ViewBuilder
+    private var moreRows: some View {
+        if radio.isLoadingMore {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading more stations…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .amphoraCardRow()
+        } else if let message = radio.moreErrorMessage {
+            VStack(spacing: 10) {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.yellow)
+                    .multilineTextAlignment(.center)
+                Button("Retry") {
+                    radio.loadMore()
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accentText)
+            }
+            .frame(maxWidth: .infinity)
+            .amphoraCardRow()
+        } else if radio.canLoadMore {
+            Button {
+                Haptics.light()
+                radio.loadMore()
+            } label: {
+                Label("Show More Stations", systemImage: "chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(RowPressableButtonStyle())
+            .amphoraCardRow()
+        }
     }
 
     private func errorState(_ message: String) -> some View {

@@ -42,9 +42,17 @@ wrong).
    actually "session ended — sign in again". Session errors get their
    own handling (disable + re-auth prompt, like error 9 already gets);
    the credentials sentence stays only in the sign-in form.
-4. **Popular atop country pages, but where is the rest?** → Unit 3.
-   Every discovery list is hard-capped at `limit=50` with no paging.
-   Adds offset support in the core and a "Show More" row in the app.
+4. **Popular atop country pages, but where is the rest?** → **Unit 3
+   landed** (this push). Every discovery list (Popular, a country, a
+   tag, search) was hard-capped at `limit=50` with no way past it. The
+   core's list endpoints take `offset` now (omitted from the URL on the
+   first page, so the wire looks as before), the controller pages 50 at
+   a time with a "Show More Stations" footer row, a short page marks
+   the end of the ranking and removes the row, the ranking's shift
+   between requests is deduped by uuid, and a failed page keeps the
+   stations on screen and offers Retry in the footer. 2 new core tests
+   (offset on every endpoint, omitted on the first page) — **370/370
+   green** locally.
 5. **Mini player in the middle of the screen on Popular/Countries** →
    **Unit 1 landed** (this push). `safeAreaInset` places its content
    at the bottom of the *modified view's own bounds* — on those pages

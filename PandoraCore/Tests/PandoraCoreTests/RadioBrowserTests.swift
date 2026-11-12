@@ -259,6 +259,38 @@ final class RadioBrowserTests: XCTestCase {
         XCTAssertTrue(url.contains("/json/url/11111111-1111-1111-1111-111111111111"))
     }
 
+    // MARK: Paging (offset)
+
+    func testOffsetPagesEveryListEndpoint() async throws {
+        let transport = ScriptedTransport(outcomes: [
+            ("topvote", .success(Data("[]".utf8))),
+            ("bycountrycodeexact", .success(Data("[]".utf8))),
+            ("bytag", .success(Data("[]".utf8))),
+            ("stations/search", .success(Data("[]".utf8))),
+        ])
+        let api = client(transport)
+        _ = try await api.topStations(offset: 50)
+        _ = try await api.stations(countryCode: "DE", offset: 100)
+        _ = try await api.stations(tag: "jazz", offset: 25)
+        _ = try await api.searchStations(name: "jazz", offset: 75)
+        XCTAssertTrue(try XCTUnwrap(transport.requestedURLs[0]).contains("offset=50"))
+        XCTAssertTrue(try XCTUnwrap(transport.requestedURLs[1]).contains("offset=100"))
+        XCTAssertTrue(try XCTUnwrap(transport.requestedURLs[2]).contains("offset=25"))
+        XCTAssertTrue(try XCTUnwrap(transport.requestedURLs[3]).contains("offset=75"))
+    }
+
+    func testFirstPageOmitsTheOffset() async throws {
+        let transport = ScriptedTransport(outcomes: [
+            ("topvote", .success(Data("[]".utf8))),
+            ("bycountrycodeexact", .success(Data("[]".utf8))),
+        ])
+        let api = client(transport)
+        _ = try await api.topStations()
+        _ = try await api.stations(countryCode: "DE")
+        XCTAssertFalse(try XCTUnwrap(transport.requestedURLs[0]).contains("offset"))
+        XCTAssertFalse(try XCTUnwrap(transport.requestedURLs[1]).contains("offset"))
+    }
+
     // MARK: Playback bridge
 
     func testRadioTrackCarriesStationFactsAndLiveDuration() {

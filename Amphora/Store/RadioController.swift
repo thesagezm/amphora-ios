@@ -38,6 +38,15 @@ final class RadioController {
     private(set) var isLoading = false
     /// User-facing copy for the last failed load; nil when healthy.
     private(set) var errorMessage: String?
+    /// The list pages 50 stations at a time ("Show More"). `false` once
+    /// a page came back short of the page size — the end of the ranking.
+    private(set) var canLoadMore = false
+    /// True while a "Show More" page is in flight (separate from
+    /// `isLoading`, which owns the whole-list first page).
+    private(set) var isLoadingMore = false
+    /// Copy for a failed "Show More" page — shown as a footer under the
+    /// stations already on screen, never replacing them.
+    private(set) var moreErrorMessage: String?
     /// The countries / tags catalogs — nil until first fetched this
     /// session (same fetch-once caching as the genre browse sheet).
     private(set) var countries: [RadioCountry]?
@@ -63,6 +72,7 @@ final class RadioController {
     private let client: RadioBrowserClient
     private var loadTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
+    private var moreTask: Task<Void, Never>?
 
     init(client: RadioBrowserClient = RadioBrowserClient()) {
         self.client = client
@@ -70,22 +80,75 @@ final class RadioController {
 
     // MARK: Station lists
 
-    /// Loads the station list for `mode`, replacing any in-flight load.
+    /// The page size every discovery list loads — "Show More" extends
+    /// it (user request 2026-11-12: the country pages showed the top 50
+    /// with no way to the rest).
+    static let pageSize = 50
+
+    /// Loads the station list for `mode`, replacing any in-flight load
+    /// (first page only — paging continues through `loadMore`).
     func show(_ mode: Mode) {
         activeMode = mode
+        moreTask?.cancel()
+        isLoadingMore = false
+        moreErrorMessage = nil
+        canLoadMore = false
         let client = client
         run {
-            switch mode {
-            case .popular:
-                self.results = try await client.topStations()
-            case .search(let query):
-                self.results = try await client.searchStations(name: query)
-            case .country(let code, _):
-                self.results = try await client.stations(countryCode: code)
-            case .tag(let tag):
-                self.results = try await client.stations(tag: tag)
-            }
+            self.results = try await Self.fetch(
+                client: client, mode: mode, offset: 0
+            )
             self.didLoadResults = true
+            self.canLoadMore = self.results.count >= Self.pageSize
+        }
+    }
+
+    /// Appends the next page for the active mode. A short page (fewer
+    /// than the page size) marks the end of the ranking and the button
+    /// goes away. A failure keeps the stations already on screen and
+    /// surfaces in the footer.
+    func loadMore() {
+        guard let mode = activeMode, canLoadMore,
+              !isLoading, !isLoadingMore else { return }
+        let offset = results.count
+        let client = client
+        isLoadingMore = true
+        moreErrorMessage = nil
+        moreTask = Task {
+            do {
+                let page = try await Self.fetch(
+                    client: client, mode: mode, offset: offset
+                )
+                guard !Task.isCancelled, activeMode == mode else { return }
+                // The directory's ranking shifts between requests — a
+                // station that moved across the page boundary must not
+                // appear twice.
+                let known = Set(results.map(\.uuid))
+                results.append(contentsOf: page.filter { !known.contains($0.uuid) })
+                canLoadMore = page.count >= Self.pageSize
+            } catch {
+                guard !Task.isCancelled, activeMode == mode else { return }
+                AppLog.info("radio: directory page failed — \(error)", .network)
+                moreErrorMessage = Self.userMessage(for: error)
+            }
+            guard !Task.isCancelled, activeMode == mode else { return }
+            isLoadingMore = false
+        }
+    }
+
+    /// The one fetch every mode pages through.
+    private static func fetch(
+        client: RadioBrowserClient, mode: Mode, offset: Int
+    ) async throws -> [RadioStation] {
+        switch mode {
+        case .popular:
+            return try await client.topStations(offset: offset)
+        case .search(let query):
+            return try await client.searchStations(name: query, offset: offset)
+        case .country(let code, _):
+            return try await client.stations(countryCode: code, offset: offset)
+        case .tag(let tag):
+            return try await client.stations(tag: tag, offset: offset)
         }
     }
 

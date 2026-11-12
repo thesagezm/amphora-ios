@@ -331,45 +331,48 @@ public actor RadioBrowserClient {
     // MARK: Discovery endpoints
 
     /// Full-text search by station name (`/json/stations/search`).
-    /// Ranked by community votes, broken stations hidden.
-    public func searchStations(name: String, limit: Int = 50) async throws -> [RadioStation] {
+    /// Ranked by community votes, broken stations hidden. `offset`
+    /// pages through the ranking (the app's "Show More").
+    public func searchStations(name: String, limit: Int = 50, offset: Int = 0) async throws -> [RadioStation] {
         let query = trimmed(name)
         guard !query.isEmpty else { return [] }
-        return try await fetchStations(
-            path: "/json/stations/search",
-            query: [
-                URLQueryItem(name: "name", value: query),
-                URLQueryItem(name: "order", value: "votes"),
-                URLQueryItem(name: "reverse", value: "true"),
-                URLQueryItem(name: "hidebroken", value: "true"),
-                URLQueryItem(name: "limit", value: String(limit)),
-            ]
-        )
+        var items = [
+            URLQueryItem(name: "name", value: query),
+            URLQueryItem(name: "order", value: "votes"),
+            URLQueryItem(name: "reverse", value: "true"),
+            URLQueryItem(name: "hidebroken", value: "true"),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        if offset > 0 { items.append(URLQueryItem(name: "offset", value: String(offset))) }
+        return try await fetchStations(path: "/json/stations/search", query: items)
     }
 
     /// The directory's most upvoted stations (`/json/stations/topvote`).
-    public func topStations(limit: Int = 50) async throws -> [RadioStation] {
-        try await fetchStations(path: "/json/stations/topvote/\(limit)")
+    public func topStations(limit: Int = 50, offset: Int = 0) async throws -> [RadioStation] {
+        try await fetchStations(
+            path: "/json/stations/topvote/\(limit)",
+            query: Self.offsetQuery(offset)
+        )
     }
 
     /// Stations of one country, by ISO code
     /// (`/json/stations/bycountrycodeexact/{code}`).
-    public func stations(countryCode: String, limit: Int = 50) async throws -> [RadioStation] {
+    public func stations(countryCode: String, limit: Int = 50, offset: Int = 0) async throws -> [RadioStation] {
         let code = trimmed(countryCode).uppercased()
         guard !code.isEmpty else { return [] }
         return try await fetchStations(
             path: "/json/stations/bycountrycodeexact/\(percentEncoded(code))",
-            query: Self.listQuery(limit: limit)
+            query: Self.listQuery(limit: limit, offset: offset)
         )
     }
 
     /// Stations under one community tag (`/json/stations/bytag/{tag}`).
-    public func stations(tag: String, limit: Int = 50) async throws -> [RadioStation] {
+    public func stations(tag: String, limit: Int = 50, offset: Int = 0) async throws -> [RadioStation] {
         let tag = trimmed(tag)
         guard !tag.isEmpty else { return [] }
         return try await fetchStations(
             path: "/json/stations/bytag/\(percentEncoded(tag))",
-            query: Self.listQuery(limit: limit)
+            query: Self.listQuery(limit: limit, offset: offset)
         )
     }
 
@@ -422,13 +425,19 @@ public actor RadioBrowserClient {
     // MARK: Internals
 
     /// The shared list ordering: most popular first, broken hidden.
-    private static func listQuery(limit: Int) -> [URLQueryItem] {
+    /// `offset` pages past the first window (0 = the default, omitted
+    /// from the URL so the first page looks exactly as before).
+    private static func listQuery(limit: Int, offset: Int) -> [URLQueryItem] {
         [
             URLQueryItem(name: "order", value: "votes"),
             URLQueryItem(name: "reverse", value: "true"),
             URLQueryItem(name: "hidebroken", value: "true"),
             URLQueryItem(name: "limit", value: String(limit)),
-        ]
+        ] + offsetQuery(offset)
+    }
+
+    private static func offsetQuery(_ offset: Int) -> [URLQueryItem] {
+        offset > 0 ? [URLQueryItem(name: "offset", value: String(offset))] : []
     }
 
     private func fetchStations(path: String, query: [URLQueryItem] = []) async throws -> [RadioStation] {
