@@ -8,7 +8,10 @@
 //  The response shape is the one the live service returns (verified
 //  against itunes.apple.com/search this session); the motivating
 //  refusal case is real: a "Céline Dion" query answered with an
-//  "Olivier Dion" track.
+//  "Olivier Dion" track — and the top window is *full* of other
+//  artists for that song (Floran, Olivier Dion ×2, Stromae, Rose were
+//  its first five answers live). The client scans the window and runs
+//  an artist-only second pass; these tests script both passes.
 //
 
 import XCTest
@@ -34,25 +37,38 @@ final class SongArtworkTests: XCTestCase {
             + ", \"kind\": \"song\", \"trackId\": 1}"
     }
 
-    private func searchJSON(_ result: String?) -> Data {
-        let results = result.map { "[\($0)]" } ?? "[]"
-        return Data("""
-        {"resultCount": \(result == nil ? 0 : 1), "results": \(results)}
+    private func searchJSON(_ results: [String]) -> Data {
+        Data("""
+        {"resultCount": \(results.count), "results": [\(results.joined(separator: ", "))]}
         """.utf8)
     }
 
     private func success(_ data: Data) -> Result<Data, Error> { .success(data) }
 
-    private func makeClient(_ response: Result<Data, Error>) -> ITunesSongArtworkClient {
-        ITunesSongArtworkClient(transport: StubGETTransport(responses: [response]))
+    /// A client whose first pass answers `first`. When the first pass
+    /// finds nothing verified, the client runs the artist-only second
+    /// pass — `second` scripts it (default: empty results).
+    private func makeClient(
+        _ first: Result<Data, Error>,
+        second: Result<Data, Error>? = nil
+    ) -> ITunesSongArtworkClient {
+        let secondResponse = second ?? success(searchJSON([]))
+        return ITunesSongArtworkClient(
+            transport: StubGETTransport(responses: [first, secondResponse])
+        )
+    }
+
+    private func makeClient(_ responses: [Result<Data, Error>]) -> ITunesSongArtworkClient {
+        ITunesSongArtworkClient(transport: StubGETTransport(responses: responses))
     }
 
     // MARK: The wire request
 
-    func testRequestCarriesTermEntityAndLimit() async throws {
-        let transport = StubGETTransport(
-            responses: [success(searchJSON(resultJSON(artist: "a", track: "b")))]
-        )
+    func testRequestCarriesTermEntityAndWindow() async throws {
+        let transport = StubGETTransport(responses: [
+            success(searchJSON([])),
+            success(searchJSON([])),
+        ])
         let client = ITunesSongArtworkClient(transport: transport)
         _ = try await client.artwork(forArtist: "Céline Dion", title: "Tous les chemins")
         let request = try XCTUnwrap(transport.requests.first)
@@ -60,7 +76,7 @@ final class SongArtworkTests: XCTestCase {
         let query = try XCTUnwrap(url.queryItems)
         XCTAssertEqual(query.value(for: "term"), "Céline Dion Tous les chemins")
         XCTAssertEqual(query.value(for: "entity"), "song")
-        XCTAssertEqual(query.value(for: "limit"), "1")
+        XCTAssertEqual(query.value(for: "limit"), "25")
         XCTAssertEqual(url.host, "itunes.apple.com")
         XCTAssertEqual(url.path, "/search")
         // The lookup sends no headers.
@@ -70,10 +86,10 @@ final class SongArtworkTests: XCTestCase {
     // MARK: The happy path
 
     func testMatchingResultYieldsArtwork() async throws {
-        let client = makeClient(success(searchJSON(resultJSON(
+        let client = makeClient(success(searchJSON([resultJSON(
             artist: "Céline Dion",
             track: "Tous les chemins mènent à l'amour"
-        ))))
+        )])))
         let found = try await client.artwork(
             forArtist: "Céline Dion",
             title: "Tous les chemins mènent à l'amour"
@@ -84,6 +100,49 @@ final class SongArtworkTests: XCTestCase {
             "https://is1-ssl.mzstatic.com/image/thumb/Music/1.jpg/100x100bb.jpg"
         )
     }
+
+    func testVerifiedMatchBelowTheTopResultIsFound() async throws {
+        // The live case: the top of the window is other artists' same-
+        // titled songs; the asked-for song sits further down. The scan
+        // must find it — and stop after the first pass.
+        let client = makeClient(success(searchJSON([
+            resultJSON(artist: "Floran", track: "Tous les chemins mènent à toi"),
+            resultJSON(artist: "Olivier Dion", track: "Tous les chemins"),
+            resultJSON(artist: "Céline Dion", track: "Tous les chemins mènent à l'amour"),
+        ])))
+        let artwork = try await client.artwork(
+            forArtist: "Céline Dion",
+            title: "Tous les chemins mènent à l'amour"
+        )
+        XCTAssertNotNil(artwork)
+    }
+
+    func testArtistOnlySecondPassFindsTheSongTheCombinedQueryMissed() async throws {
+        let stub = StubGETTransport(responses: [
+            success(searchJSON([resultJSON(
+                artist: "Olivier Dion",
+                track: "Tous les chemins mènent à l'amour"
+            )])),
+            success(searchJSON([resultJSON(
+                artist: "Céline Dion",
+                track: "Tous les chemins mènent à l'amour"
+            )])),
+        ])
+        let client = ITunesSongArtworkClient(transport: stub)
+        let artwork = try await client.artwork(
+            forArtist: "Céline Dion",
+            title: "Tous les chemins mènent à l'amour"
+        )
+        XCTAssertNotNil(artwork)
+        // Two requests: the combined term, then the artist alone.
+        XCTAssertEqual(stub.requests.count, 2)
+        let second = try XCTUnwrap(
+            URLComponents(url: stub.requests[1].url, resolvingAgainstBaseURL: false)
+        )
+        XCTAssertEqual(second.queryItems?.value(for: "term"), "Céline Dion")
+    }
+
+    // MARK: Size tokens
 
     func testLargeArtworkReplacesTheSizeToken() {
         let artwork = SongArtwork(artworkURL: URL(
@@ -105,12 +164,19 @@ final class SongArtworkTests: XCTestCase {
 
     func testWrongArtistIsRefused() async throws {
         // The real case: the fuzzy search answered a "Céline Dion"
-        // query with an "Olivier Dion" track. No artwork, never a
+        // query with an "Olivier Dion" track — and nothing else in
+        // either pass is the asked-for song. No artwork, never a
         // wrong cover.
-        let client = makeClient(success(searchJSON(resultJSON(
-            artist: "Olivier Dion",
-            track: "Tous les chemins mènent à l'amour"
-        ))))
+        let client = makeClient(
+            success(searchJSON([resultJSON(
+                artist: "Olivier Dion",
+                track: "Tous les chemins mènent à l'amour"
+            )])),
+            second: success(searchJSON([resultJSON(
+                artist: "Olivier Dion",
+                track: "Tous les chemins mènent à l'amour"
+            )]))
+        )
         let artwork = try await client.artwork(
             forArtist: "Céline Dion",
             title: "Tous les chemins mènent à l'amour"
@@ -119,10 +185,10 @@ final class SongArtworkTests: XCTestCase {
     }
 
     func testDifferentTitleIsRefused() async throws {
-        let client = makeClient(success(searchJSON(resultJSON(
+        let client = makeClient(success(searchJSON([resultJSON(
             artist: "Céline Dion",
             track: "Un tout autre titre"
-        ))))
+        )])))
         let artwork = try await client.artwork(
             forArtist: "Céline Dion",
             title: "Tous les chemins"
@@ -130,12 +196,27 @@ final class SongArtworkTests: XCTestCase {
         XCTAssertNil(artwork)
     }
 
+    func testGuestArtistIsAccepted() async throws {
+        // Stations announce the guests ("Céline Dion feat. …") — the
+        // primary-artist comparison accepts it, the guest is not
+        // promoted to the artist.
+        let client = makeClient(success(searchJSON([resultJSON(
+            artist: "Céline Dion feat. a stranger",
+            track: "Tous les chemins mènent à l'amour"
+        )])))
+        let artwork = try await client.artwork(
+            forArtist: "Céline Dion",
+            title: "Tous les chemins mènent à l'amour"
+        )
+        XCTAssertNotNil(artwork)
+    }
+
     func testDiacriticsAndCaseDoNotRefuse() async throws {
         // "Céline" vs "celine", "Beyoncé" vs "beyonce" — same artist.
-        let client = makeClient(success(searchJSON(resultJSON(
+        let client = makeClient(success(searchJSON([resultJSON(
             artist: "beyonce",
             track: "Halo"
-        ))))
+        )])))
         let artwork = try await client.artwork(forArtist: "Beyoncé", title: "Halo")
         XCTAssertNotNil(artwork)
     }
@@ -143,20 +224,20 @@ final class SongArtworkTests: XCTestCase {
     func testTitleVariantIsAcceptedByLooseContainment() async throws {
         // Stations announce "Title (Radio Edit)" / "Title - Live"; the
         // store may carry the plain form. Either containment matches.
-        let decorated = makeClient(success(searchJSON(resultJSON(
+        let decorated = makeClient(success(searchJSON([resultJSON(
             artist: "Céline Dion",
             track: "Tous les chemins (Radio Edit)"
-        ))))
+        )])))
         let variant = try await decorated.artwork(
             forArtist: "Céline Dion",
             title: "Tous les chemins"
         )
         XCTAssertNotNil(variant)
 
-        let reversed = makeClient(success(searchJSON(resultJSON(
+        let reversed = makeClient(success(searchJSON([resultJSON(
             artist: "Céline Dion",
             track: "Tous les chemins"
-        ))))
+        )])))
         let other = try await reversed.artwork(
             forArtist: "Céline Dion",
             title: "Tous les chemins mènent à l'amour"
@@ -167,14 +248,14 @@ final class SongArtworkTests: XCTestCase {
     // MARK: Empty / broken answers
 
     func testNoResultsYieldsNoArtwork() async throws {
-        let client = makeClient(success(searchJSON(nil)))
+        let client = makeClient(success(searchJSON([])))
         let artwork = try await client.artwork(forArtist: "Nobody", title: "Nothing")
         XCTAssertNil(artwork)
     }
 
     func testResultWithoutArtworkURLYieldsNoArtwork() async throws {
         let client = makeClient(success(searchJSON(
-            resultJSON(artist: "Céline Dion", track: "Halo", artwork: nil)
+            [resultJSON(artist: "Céline Dion", track: "Halo", artwork: nil)]
         )))
         let artwork = try await client.artwork(forArtist: "Céline Dion", title: "Halo")
         XCTAssertNil(artwork)
@@ -182,7 +263,7 @@ final class SongArtworkTests: XCTestCase {
 
     func testResultWithoutArtistOrTrackFieldsIsRefused() async throws {
         let client = makeClient(success(
-            searchJSON(resultJSON(artist: nil, track: nil))
+            searchJSON([resultJSON(artist: nil, track: nil)])
         ))
         let artwork = try await client.artwork(forArtist: "Céline Dion", title: "Halo")
         XCTAssertNil(artwork)
@@ -216,6 +297,24 @@ final class SongArtworkTests: XCTestCase {
         XCTAssertEqual(ITunesSongArtworkClient.normalized("  Céline  DION "), "celine dion")
         XCTAssertEqual(ITunesSongArtworkClient.normalized("Beyoncé"), "beyonce")
         XCTAssertEqual(ITunesSongArtworkClient.normalized("Björk"), "bjork")
+    }
+
+    func testPrimaryArtistCutsTheGuests() {
+        XCTAssertEqual(
+            ITunesSongArtworkClient.primaryArtist("celine dion feat. a stranger"),
+            "celine dion"
+        )
+        XCTAssertEqual(
+            ITunesSongArtworkClient.primaryArtist("milow & anouk"),
+            "milow"
+        )
+        XCTAssertEqual(ITunesSongArtworkClient.primaryArtist("k's choice featuring sarah"), "k's choice")
+    }
+
+    func testPrimaryArtistNeverCutsAnArtistAway() {
+        // An artist *named* by a marker word keeps its full name.
+        XCTAssertEqual(ITunesSongArtworkClient.primaryArtist("with"), "with")
+        XCTAssertEqual(ITunesSongArtworkClient.primaryArtist("feat"), "feat")
     }
 }
 

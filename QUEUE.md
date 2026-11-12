@@ -67,13 +67,21 @@ wrong).
    reached it. Fix: measure the player's real lag (buffered-ahead vs.
    the playback position) and delay the announcement until the audio
    catches up. Lookups still start at announcement time.
-7. **Stations identify songs but fetch no artwork** → Unit 4. The
-   iTunes lookup requests `limit=1` and refuses the answer unless the
-   artist matches exactly. Verified live: for "Céline Dion — Tous les
-   chemins mènent à l'amour" the API's top five answers are all *other*
-   artists (Floran, Olivier Dion ×2, Stromae, Rose) — with `limit=1`
-   the check can only ever refuse. Fix: fetch ~25 and scan for the
-   verified match; a second artist-only pass as the fallback.
+7. **Stations identify songs but fetch no artwork** → **Unit 4
+   landed** (this push). The iTunes lookup requested `limit=1` and
+   verified only the top answer — and the top answer is frequently
+   another artist's same-titled song (verified live: for "Céline Dion
+   — Tous les chemins mènent à l'amour" the API's first five answers
+   are Floran, Olivier Dion ×2, Stromae and Rose, so with `limit=1`
+   the refusal fired on every result it ever saw). Now: two passes —
+   the combined "artist title" term, then the artist alone — each
+   fetching a 25-result window and scanned for the *verified* match;
+   the artist check gains a primary-artist tolerance so a station's
+   "X feat. Y" announcement still finds X's song, without weakening
+   the wrong-artist refusal (Olivier Dion is still refused). 5 net new
+   core tests (match below the top result, the artist-only second
+   pass on the wire, guest acceptance, primary-artist cutting and its
+   never-cut-away guard) — **375/375 green** locally.
 
 **2026-11-11 feedback round (previous session's driver):** three asks,
 mapped to units:
