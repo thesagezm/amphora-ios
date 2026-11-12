@@ -109,11 +109,15 @@ every commit it ran on. iOS Builds: `3f6aec6` (Unit 1) cancelled
 the job was never acquired by a hosted macOS runner in 15 m ("runner
 capacity constraints"), and `3eda60f` (Unit 3), which contains Unit 2's
 NowPlayingView change, built green immediately after — no repair needed
-· `3eda60f` ✅✅ · `baad566` / `87ec1e3` / `9ce30a2` iOS cancelled
-(superseded, each within minutes) · **`c12be9a` (Unit 7) is the commit
-whose runs decide the round — check `gh run list --limit 5` first thing
-next session** (fire-and-continue: not waited on). Local checks all
-green: PandoraCore **379/379**; every touched app file parse-clean.
+· `3eda60f` ✅✅ · `baad566` / `87ec1e3` / `9ce30a2` / `c12be9a` iOS
+cancelled (superseded, each within minutes) · `bb9190e` (the QUEUE
+record) **failed the same way — runner capacity again, never compiled;
+re-triggered via `gh run rerun` (2026-11-12 17:32), not waited on**.
+**That rerun is the one that decides the round and produces the IPA
+with all seven fixes** — check `gh run list --limit 5` first thing next
+session; if it fails on capacity again, just rerun it, there is no
+code to repair. Local checks all green: PandoraCore **379/379**; every
+touched app file parse-clean.
 
 **2026-11-11 feedback round (previous session's driver):** three asks,
 mapped to units:
