@@ -103,6 +103,18 @@ wrong).
    pass on the wire, guest acceptance, primary-artist cutting and its
    never-cut-away guard) — **375/375 green** locally.
 
+**CI state at the end of the round (2026-11-12):** Core Tests green on
+every commit it ran on. iOS Builds: `3f6aec6` (Unit 1) cancelled
+(superseded) · `9680486` (Unit 2) **failed — infrastructure, not code**:
+the job was never acquired by a hosted macOS runner in 15 m ("runner
+capacity constraints"), and `3eda60f` (Unit 3), which contains Unit 2's
+NowPlayingView change, built green immediately after — no repair needed
+· `3eda60f` ✅✅ · `baad566` / `87ec1e3` / `9ce30a2` iOS cancelled
+(superseded, each within minutes) · **`c12be9a` (Unit 7) is the commit
+whose runs decide the round — check `gh run list --limit 5` first thing
+next session** (fire-and-continue: not waited on). Local checks all
+green: PandoraCore **379/379**; every touched app file parse-clean.
+
 **2026-11-11 feedback round (previous session's driver):** three asks,
 mapped to units:
 
