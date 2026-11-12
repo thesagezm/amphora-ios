@@ -14,8 +14,58 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
-**2026-11-11 feedback round (this session's driver):** three asks, mapped
-to units:
+**2026-11-12 feedback round (this session's driver):** seven asks, mapped
+to units. Root causes all diagnosed against the code this session; one
+lookup verified live (iTunes Search returns a *different* artist as its
+top answer for a French song — the artwork refusal firing correctly on
+a wrong result is the same bug as "no artwork" when every result is
+wrong).
+
+1. **Translate doesn't work** → Unit 5. The Google endpoint is fine
+   (verified live); the client's *alignment check* is the failure: it
+   requires one response segment per lyric line, but Google splits long
+   lines into several segments and skips empty ones, so the counts
+   mismatch and the app reports "didn't line up" / "unexpected
+   response" — the translation arrived and was thrown away. Also the
+   endpoint 429s by IP; the client treats that as a plain failure
+   instead of backing off.
+2. **Play/pause needs a filled circle** → Unit 2. The full player's
+   main button is a bare 44 pt glyph (deliberate AM-style, but the
+   user wants the circle the mini player and Home hero have).
+3. **"Last.fm rejected that username or password" everywhere** →
+   Unit 7. The string is error 4. During *playback*, Last.fm also
+   reports a dead session key as error 4 on some methods, so the
+   scrobbler's status line showed the credentials sentence for what is
+   actually "session ended — sign in again". Session errors get their
+   own handling (disable + re-auth prompt, like error 9 already gets);
+   the credentials sentence stays only in the sign-in form.
+4. **Popular atop country pages, but where is the rest?** → Unit 3.
+   Every discovery list is hard-capped at `limit=50` with no paging.
+   Adds offset support in the core and a "Show More" row in the app.
+5. **Mini player in the middle of the screen on Popular/Countries** →
+   **Unit 1 landed** (this push). `safeAreaInset` places its content
+   at the bottom of the *modified view's own bounds* — on those pages
+   the content was a small centered loading spinner, so the card sat
+   directly beneath it, mid-screen. `.miniPlayer()` now stretches the
+   content to fill the screen before attaching the inset; Lists already
+   fill and are unaffected.
+6. **Radio lyrics/artwork/metadata ahead of the audio** → Unit 6. The
+   identification probe reads the stream's live edge, but the player
+   buffers up to 30 s behind it (`preferredForwardBufferDuration`),
+   so the announcement swap fired up to half a song before the audio
+   reached it. Fix: measure the player's real lag (buffered-ahead vs.
+   the playback position) and delay the announcement until the audio
+   catches up. Lookups still start at announcement time.
+7. **Stations identify songs but fetch no artwork** → Unit 4. The
+   iTunes lookup requests `limit=1` and refuses the answer unless the
+   artist matches exactly. Verified live: for "Céline Dion — Tous les
+   chemins mènent à l'amour" the API's top five answers are all *other*
+   artists (Floran, Olivier Dion ×2, Stromae, Rose) — with `limit=1`
+   the check can only ever refuse. Fix: fetch ~25 and scan for the
+   verified match; a second artist-only pass as the fallback.
+
+**2026-11-11 feedback round (previous session's driver):** three asks,
+mapped to units:
 
 1. **"if i play a track with pandora i cant go to the radio tab and start
    playing a radiostation from there"** → **Unit A landed** (this push).

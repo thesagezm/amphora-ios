@@ -106,9 +106,20 @@ extension View {
     /// content clear of it. Attach directly to the screen's
     /// List/ScrollView (or the Group selecting them) — never to a
     /// `NavigationStack`.
+    ///
+    /// The content is stretched to fill the screen first. Without it,
+    /// a screen whose content is a small centered placeholder (the
+    /// loading spinner, an empty state) gave the inset a small anchor:
+    /// `safeAreaInset` places its content at the *bottom of the
+    /// modified view's own bounds*, so the card landed directly under
+    /// the centered spinner — in the middle of the screen (user report
+    /// 2026-11-12, the Popular/Countries pages). A flexible frame
+    /// makes the bounds the whole screen, so the card is at the bottom
+    /// whatever the content is; Lists already fill and are unaffected.
     func miniPlayer() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) {
-            MiniPlayerInset()
-        }
+        frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                MiniPlayerInset()
+            }
     }
 }
