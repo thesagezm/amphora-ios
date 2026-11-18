@@ -1,18 +1,25 @@
 import PandoraCore
 import SwiftUI
-import UIKit
 
-/// Full-screen player, Apple-Music-shaped: large rounded artwork, a
-/// left-aligned title block with the stream quality beside it, a thin
-/// scrubber, and a plain-glyph transport that answers every touch with
-/// a soft spring. Secondary actions (sleep timer, tuning, bookmarks,
-/// hide-song) live behind the toolbar's ellipsis menu — one sleep
-/// control, no duplicate moons. The ambient backdrop still comes from
-/// the artwork palette (`ArtworkThemeController`); every static
-/// surface is a matte palette shade, never glass.
+/// Full-screen player, BitChord-structured with an Apple-Music lineage:
+/// artwork-driven mesh scene, a flexible region that swaps between the
+/// artwork sleeve, the lyrics panel and the frosted queue panel, and a
+/// frosted dock row owning the secondary toggles. The transport, the
+/// Pandora badges (thumbs, skip limit, ads, LIVE + identify) and the
+/// quality chip are all unchanged — this is the shell around them.
+///
+/// Static surfaces are frosted (BitChord's glass finish); the mesh
+/// backdrop still comes from the artwork palette
+/// (`ArtworkThemeController`).
 struct NowPlayingView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+
+    /// BitChord's artwork sleeve easing: the 500 ms CubicBezier
+    /// (0.215, 0.61, 0.355, 1) the pause-shrink rides.
+    private static let sleeveAnimation = Animation.timingCurve(
+        0.215, 0.61, 0.355, 1, duration: 0.5
+    )
 
     /// The shared ambient theme. Reading the singleton's `@Observable`
     /// state from body is tracked like any environment dependency.
@@ -21,7 +28,9 @@ struct NowPlayingView: View {
     @State private var isShowingSleepTimer = false
     @State private var isShowingTuning = false
     @State private var isShowingLyrics = false
-    @State private var isShowingUpNext = false
+    /// The queue panel — the frosted, read-only successor of the old
+    /// Up Next disclosure (Pandora's queue is server-driven).
+    @State private var isShowingQueue = false
     /// The volume while the slider is being dragged. The level is
     /// applied live, but it is only written to disk when the drag ends.
     @State private var draftVolume: Double?
@@ -40,28 +49,11 @@ struct NowPlayingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
+                // The dock owns the secondary toggles now — lyrics,
+                // queue, sleep timer and the output picker are its four
+                // discs — so the bar above stays ellipsis + Done.
                 ToolbarItem(placement: .topBarLeading) {
                     actionsMenu
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    AirPlayRoutePicker(
-                        tint: UIColor(theme.colors.accent.color),
-                        activeTint: UIColor(theme.colors.accent.color)
-                    )
-                    .frame(width: 44, height: 44)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    // A radio stream has no lyrics — unless the
-                    // station's current song has been identified; its
-                    // lyrics are looked up like any song's.
-                    if !isRadioStream || store.radioIdentification == .identified {
-                        Button {
-                            isShowingLyrics.toggle()
-                        } label: {
-                            Image(systemName: isShowingLyrics ? "quote.bubble.fill" : "quote.bubble")
-                        }
-                        .accessibilityLabel(isShowingLyrics ? "Hide lyrics" : "Show lyrics")
-                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -145,46 +137,40 @@ struct NowPlayingView: View {
     @ViewBuilder
     private var content: some View {
         if let track = store.player.currentTrack {
-            if isShowingLyrics {
-                // The lyrics panel scrolls itself; the transport stays fixed.
-                VStack(spacing: 20) {
-                    routeIndicator
-                    LyricsPanel()
-                    playerControls(for: track)
-                }
-                .padding(.bottom, 24)
-            } else {
-                // One fixed stack, Apple-Music-shaped: the artwork and
-                // the controls are children of the same layout and move
-                // as one unit — scrolling one means scrolling both, and
-                // when everything fits nothing scrolls at all. The
-                // artwork is the flexible element: it yields height
-                // before the controls do, so Up Next, large Dynamic
-                // Type and the badges squeeze the cover, never the
-                // transport.
-                GeometryReader { geo in
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            artwork(for: track)
+            // One fixed stack, BitChord-structured: the flexible region
+            // (artwork / lyrics / queue — one at a time), then header,
+            // scrubber, transport and dock as siblings, so nothing can
+            // scroll independently. When everything fits, nothing
+            // scrolls at all.
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(spacing: 18) {
+                        mainRegion(track)
+                        if !isShowingLyrics {
                             trackHeader(track)
-                            routeIndicator
-                            // A live stream has no timeline — a dead
-                            // zero-length scrubber would only look
-                            // broken. The LIVE badge takes its place.
-                            if !track.isRadio {
-                                scrubber
-                            }
-                            playerControls(for: track)
                         }
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: geo.size.height,
-                            alignment: .top
+                        routeIndicator
+                        // A live stream has no timeline — a dead
+                        // zero-length scrubber would only look
+                        // broken. The LIVE badge takes its place.
+                        if !track.isRadio {
+                            scrubber
+                        }
+                        playerControls(for: track)
+                        PlayerDock(
+                            isShowingLyrics: $isShowingLyrics,
+                            isShowingQueue: $isShowingQueue,
+                            onSleepTimer: { isShowingSleepTimer = true }
                         )
-                        .padding(.top, 8)
                     }
-                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: geo.size.height,
+                        alignment: .top
+                    )
+                    .padding(.top, 8)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
         } else {
             ContentUnavailableView(
@@ -193,6 +179,30 @@ struct NowPlayingView: View {
                 description: Text("Pick a station to start listening.")
             )
         }
+    }
+
+    /// The player's flexible region: the artwork, the lyrics panel or
+    /// the queue panel — one at a time, swapping in place with
+    /// BitChord's 420 ms travel (the queue rises from the bottom while
+    /// the artwork sinks away; panels mount through the transition,
+    /// not before it). Whatever occupies the slot yields height to the
+    /// controls, never the reverse — the fixed-stack property.
+    @ViewBuilder
+    private func mainRegion(_ track: Track) -> some View {
+        ZStack {
+            if isShowingLyrics {
+                LyricsPanel()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if isShowingQueue {
+                PlayerQueuePanel()
+                    .padding(.horizontal, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                artwork(for: track)
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Everything below the artwork/lyrics region: ad badge, LIVE badge,
@@ -216,7 +226,6 @@ struct NowPlayingView: View {
                 // `radio.<uuid>` token.
                 FeedbackBar(accent: theme.colors.accent)
             }
-            upNext
             confirmation
             if let message = store.player.errorMessage {
                 Text(message)
@@ -300,12 +309,16 @@ struct NowPlayingView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         // The flexible square: it grows with the space left over and
-        // yields it again when the controls need room (Up Next expanded,
-        // large Dynamic Type) — the Apple-Music artwork behavior.
+        // yields it again when the controls need room (large Dynamic
+        // Type, the badges) — the Apple-Music artwork behavior.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
         .shadow(color: theme.colors.accent.color.opacity(0.18), radius: 40, y: 8)
         .padding(.horizontal, 28)
+        // BitChord's sleeve: the artwork settles 12% smaller while
+        // paused, springing back with the same easing the panels use.
+        .scaleEffect(store.player.isPlaying ? 1 : 0.88)
+        .animation(Self.sleeveAnimation, value: store.player.isPlaying)
     }
 
     /// Apple-Music-style block: left-aligned title, artist in the
@@ -599,57 +612,6 @@ struct NowPlayingView: View {
                 .background(Theme.playerSurface, in: Capsule())
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .accessibilityAddTraits(.isStaticText)
-        }
-    }
-
-    /// Pithos-style "Up Next": the next few tracks the queue will play.
-    /// Collapsed to a one-line header (with the immediate next title);
-    /// expanding reveals up to four rows. Hidden while nothing is queued.
-    @ViewBuilder
-    private var upNext: some View {
-        let upcoming = Array(store.player.upcomingTracks.prefix(4))
-        if !upcoming.isEmpty {
-            DisclosureGroup(isExpanded: $isShowingUpNext) {
-                ForEach(upcoming) { track in
-                    HStack(spacing: 12) {
-                        CachedArtwork(
-                            urlString: track.artworkUrl,
-                            cornerRadius: 6,
-                            fallbackSystemImage: "music.note"
-                        )
-                        .frame(width: 38, height: 38)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(track.title)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                            Text(track.artist)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        if track.isAdvertisement {
-                            Text("AD")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.yellow)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Text("Up Next")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(theme.colors.accent.color)
-                    Text(upcoming.first?.title ?? "")
-                        .font(.footnote)
-                        .lineLimit(1)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .accessibilityLabel(
-                "Up next: \(upcoming.map(\.title).joined(separator: ", "))"
-            )
         }
     }
 }

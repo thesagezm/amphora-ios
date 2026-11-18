@@ -428,7 +428,65 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — P1 of the BitChord round: the mesh backdrop.** the full
+**This push — P2 of the BitChord round: the player structure.** the
+full player's shell is BitChord's now: one flexible region that swaps
+between artwork, lyrics and queue, a frosted dock row, and the sleeve
+spring.
+
+- **`Amphora/UI/PlayerDock.swift` (new)** — four frosted discs
+  (`.ultraThinMaterial` circles, 44 pt, accent when active) under the
+  transport: **lyrics, queue, sleep timer, output**. The dock owns the
+  secondary toggles, so the toolbar above is back to ellipsis + Done —
+  the lyrics bubble and the AirPlay toolbar items are gone (the mini
+  player keeps its own AirPlay). Panel toggles share BitChord's 420 ms
+  timing curve and are mutually exclusive: opening one closes the
+  other. Pandora variations preserved as dock rules: a radio stream
+  hides the queue disc (no queue) and shows lyrics only once the
+  station's song is identified; the sleep disc carries the running
+  timer in its label and stays accent-tinted while it counts down; the
+  sleep-timer sheet stays owned by `NowPlayingView` (the disc reports
+  intent only).
+- **`Amphora/UI/PlayerQueuePanel.swift` (new)** — the frosted queue
+  panel replacing the old Up Next disclosure: numbered rows (artwork,
+  title, artist, AD badge) in a `.regularMaterial` card with a
+  hairline border, the "Up Next + immediate title" header the
+  disclosure carried, and an honest empty state. **Read-only by
+  protocol** — Pandora's station queue is server-driven, rows cannot
+  be reordered or jumped-to arbitrarily, so rows are not tappable (the
+  disclosure's VoiceOver "up next" summary is kept as the panel's
+  label).
+- **`NowPlayingView`** — the layout is one fixed stack again, now with
+  a single flexible `mainRegion`: artwork / lyrics / queue swap in
+  place (the queue rises from the bottom while the artwork sinks away,
+  420 ms; lyrics/queue move up from the bottom edge, artwork returns
+  with a 0.96 scale + fade). The header hides in lyrics mode as
+  before; the scrubber stays live under all panels because playback
+  continues. The artwork gains **BitChord's sleeve spring**: it
+  settles 12% smaller while paused and springs back over 500 ms on
+  the CubicBezier(0.215, 0.61, 0.355, 1) easing.
+- **Scrubber settle tolerance — evaluated, deliberately not adopted:**
+  BitChord holds the drag target until the player's position agrees
+  (their position source lags ~2 Hz). Re-reading `PlayerService.seek`
+  (PlayerService.swift:325) shows ours lands `elapsed = target`
+  immediately — the stale-position snap-back the tolerance exists for
+  does not exist here. No code added for a bug we do not have.
+- Per-frame cost: unchanged — transitions are 420 ms tweens; the
+  sleeve is one scaleEffect keyed on `isPlaying`; frosted materials
+  render statically.
+
+Local verification: the three touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (379/379 stands). The app
+target compiles on CI only.
+
+**Device expectation**: open the player → the artwork shrinks slightly
+when paused and springs back; the four frosted discs sit under the
+transport (lyrics opens the panel, queue rises over the artwork's
+place, sleep opens the sheet, output opens the route picker); the
+queue panel lists the station's upcoming tracks with AD rows marked;
+opening lyrics closes the queue and vice versa; the top bar is
+ellipsis + Done only.
+
+**Previous push — P1 of the BitChord round: the mesh backdrop.** the full
 player's ambient scene is now BitChord's artwork-driven mesh instead of
 the linear gradient + the accent-glow ellipse.
 
