@@ -14,7 +14,40 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
-**2026-11-12 feedback round (this session's driver):** seven asks, mapped
+**2026-11-19 BitChord adoption round (this session's driver):** the user
+pointed at BitChord (kushagrasinghx — Kotlin/Compose YouTube Music client,
+Apple-Music-inspired, 6.9k★) and asked which features to upgrade, adopt,
+or replace. Direction: **the player and lyrics interface are replaced by
+BitChord's in their entirety**, keeping every Pandora variation (thumbs,
+skip limits, ads, radio handling, quality chip, station identity, the
+translation/romanization machinery). Researched against BitChord's
+NowPlayingScreen/PlayerLyrics/PlayerDock/MiniPlayer sources. Frost is
+in (native materials, no new dependency), mesh via iOS 18's native
+`MeshGradient`. The frosted finish supersedes the 2026-10-24 "matte
+player" instruction on the player + mini player surfaces only — the
+rest of the app stays matte.
+
+Queue: **P1** mesh backdrop → **P2** player structure (sleeve springs,
+frosted dock, queue panel, scrubber) → **P3** gestures (fling-to-skip,
+drag-to-queue) → **M1** mini player (frosted pill, swipe-skip, artwork
+handoff) → **L1** lyrics scroll engine → **L2** swept lines → **L3**
+sub-lines & toggles → **A1** lyrics offset sheet → **A2** sleep
+"stop after this track" → **A3** stats-for-nerds sheet.
+
+Adopted later (not this batch): ListenBrainz scrobbling, playback
+speed 0.5–2×. Skipped with reasons (recorded so nobody re-evaluates):
+canvas/music videos, lossless module sources, per-network quality
+ceilings, offline downloads (no Pandora source / tokenized session
+streams); Google/Spotify/Discord/Listen-Together (different service);
+bit-perfect USB + system EQ (iOS manages output); local library;
+word-exact timing providers (lrclib is line-timed — the sweep
+interpolates word positions across the line, same visual treatment).
+
+**CI state entering the round:** the `bb9190e` rerun from 2026-11-12
+decided the prior round — **Core Tests ✅ and iOS Build ✅ both green**;
+the IPA artifact carries all seven 2026-11-12 fixes. No repair work.
+
+**2026-11-12 feedback round (prior session's driver):** seven asks, mapped
 to units. Root causes all diagnosed against the code this session; one
 lookup verified live (iTunes Search returns a *different* artist as its
 top answer for a French song — the artwork refusal firing correctly on
@@ -395,7 +428,45 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**Repair (this push — the probe compiles on macOS):** the Sendable
+**This push — P1 of the BitChord round: the mesh backdrop.** the full
+player's ambient scene is now BitChord's artwork-driven mesh instead of
+the linear gradient + the accent-glow ellipse.
+
+- **`Amphora/UI/MeshBackdrop.swift` (new)** — a 3×3 `MeshGradient`
+  (iOS 18, native — no dependency) fed purely from PandoraCore's
+  `ArtworkColors`: `backgroundTop` carries the top band,
+  `backgroundBottom` the floor, the accent pools mid-left as the
+  room's light, the dominant color fills the right field, and the
+  corners dim toward black (vignette). The mixing math is
+  palette-space (`dim`/`mix` on `PaletteColor`) — the four core colors
+  derive all nine, so `ArtworkThemeController` is untouched.
+- **The seam** — points are static; on a track change the colors glide
+  to the new palette in one 0.65 s eased animation (`ArtworkColors` is
+  the `animation(value:)` identity) — the room re-lights instead of
+  cutting. Grayscale covers and ads keep the previous palette
+  (controller semantics unchanged).
+- **Status-bar contrast** — BitChord's artwork-luminance band: when
+  the top stop's relative luminance (the core's own math) rises past
+  0.45, a soft top scrim fades in up to 0.38 alpha, so the white
+  status glyphs survive bright covers. A dark cover needs nothing.
+- **`NowPlayingView`** — `Theme.playerBackground` and the
+  `AmbientGlow` ellipse are replaced by the one mesh view;
+  `AmbientGlow` is deleted and `Theme.playerBackground` is removed
+  from `Theme.swift` (its only caller is gone).
+- Per-frame cost: zero — the mesh is static per palette and redraws
+  only when the palette changes (Priority 2 safe).
+
+Local verification: the three touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (379/379 stands, build
+green in Docker). The app target compiles on CI only.
+
+**Device expectation**: open the full player on a colorful track →
+the backdrop is a deep mesh scene tinted by the cover, brightest at
+the mid-left pool; skip to a differently-coloured track → the scene
+glides into the new palette instead of cutting; a bright cover may
+add a soft dark band behind the status icons.
+
+**Repair (prior push — the probe compiles on macOS):** the Sendable
 repair's iOS Build failed in `RadioMetadataProbe.swift` — the probe
 fed `parser.consume(data)` from a `for try await data in bytes` loop,
 but `URLSession.AsyncBytes` yields **single bytes** (`Element == UInt8`

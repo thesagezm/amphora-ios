@@ -292,17 +292,6 @@ enum Theme {
             endPoint: .bottom
         )
     }
-
-    /// The full player's ambient backdrop, derived from the current
-    /// artwork (brand fallback before artwork loads). Deliberately
-    /// independent of the theme — the artwork colors the player.
-    static func playerBackground(_ colors: ArtworkColors) -> LinearGradient {
-        LinearGradient(
-            colors: [colors.backgroundTop.color, colors.backgroundBottom.color],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
 }
 
 extension PaletteColor {

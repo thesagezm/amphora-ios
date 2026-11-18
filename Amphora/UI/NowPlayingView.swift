@@ -29,10 +29,11 @@ struct NowPlayingView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.playerBackground(theme.colors).ignoresSafeArea()
-                AmbientGlow(color: theme.colors.accent.color)
+                // BitChord's artwork-driven mesh scene: the palette's
+                // deep stops carry the floor, the accent pools as the
+                // light, and the palette glides across tracks.
+                MeshBackdrop(colors: theme.colors)
                     .ignoresSafeArea()
-                    .allowsHitTesting(false)
                 content
             }
             .navigationTitle(store.currentStation?.name ?? "Now Playing")
@@ -681,22 +682,5 @@ private struct LiveBadge: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Live radio stream")
-    }
-}
-
-/// A soft ellipse of the artwork accent above the player's gradient —
-/// the "light in the room" effect. Static per track (no per-tick state),
-/// so the blur renders once.
-private struct AmbientGlow: View {
-    let color: Color
-
-    var body: some View {
-        GeometryReader { geo in
-            Ellipse()
-                .fill(color.opacity(0.20))
-                .frame(width: geo.size.width * 1.1, height: geo.size.width * 0.9)
-                .blur(radius: 80)
-                .offset(y: -geo.size.height * 0.18)
-        }
     }
 }
