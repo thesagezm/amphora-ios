@@ -428,7 +428,64 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — M1 of the BitChord round: the frosted mini player.** the
+**This push — L1 of the BitChord round: the lyrics scroll engine.** the
+lyrics now run on BitChord's clock: interpolated position, run-up
+scrolling, browse-with-resume, gap dots, skeleton loading, and the
+immersive controls fade.
+
+- **`Amphora/Player/LyricClock.swift` (new)** — the interpolated
+  playhead. `elapsed` advances in 0.5 s steps; the clock spreads each
+  step across the frames between readings (drift clamped at 1 s so a
+  suspended app never races the audio), frozen while paused. To make
+  it sound, **every `elapsed` write now stamps `elapsedSampledAt`**
+  via the new single writer `setElapsed(_:)` (observer tick, seek,
+  reset — ten sites in `PlayerService`, now one method). Deliberate
+  design note: a computed-`elapsed` wrapper was considered and
+  **rejected** — the `@Observable` macro skips `_`-prefixed backing
+  storage and does not transform computed properties, so views would
+  have silently stopped observing `elapsed`. The stored property +
+  writer-method shape keeps observation intact.
+- **`LyricsPanel`** — the engine: a zero-size trigger view inside its
+  own `TimelineView(.animation)` reads the clock per frame and drives
+  (a) the **highlight** — switching exactly when the clock crosses a
+  line, not up to half a second later — and (b) the **run-up scroll**,
+  450 ms before each line on BitChord's settle curve
+  (CubicBezier(0.41, 0, 0.12, 0.99), 400 ms). The rows live outside
+  the TimelineView, so the per-frame evaluation never re-diffs the
+  row list (BitChord's own perf lesson, applied structurally).
+- **Drag-to-browse** — a simultaneous drag stands the auto-scroll
+  down; five idle seconds after the last drag it snaps back to the
+  live line. Every drag replaces the owned resume task (no `.task`
+  modifier — the launch-crash rule stands). Tap-to-seek cancels
+  browsing and seeks immediately.
+- **Instrumental gaps** — inter-line spaces longer than 8 s draw
+  BitChord's three dots, each filling over its third of the window
+  and resting at quarter opacity before its turn. Each dots row
+  carries its own TimelineView, so the per-frame fill stays local.
+- **Skeleton loading** — the spinner is gone; seven lyric-width bars
+  shimmer on BitChord's 1.4 s sweep, pulsing gently under Reduce
+  Motion.
+- **Controls fade** — in lyrics mode the scrubber, transport and
+  feedback fade out after five idle seconds and return on any panel
+  interaction (the panel reports through `onUserInteraction`); the
+  dock always stays — it is the way out. Outside lyrics mode nothing
+  ever fades.
+- Translation/romanization rendering, plain lyrics and the
+  unavailable-retry state are unchanged (L3 restyles the sub-lines).
+- `PlayerService` is the only non-UI change; PandoraCore untouched.
+
+Local verification: the four touched files parse-clean in the
+`swift:6.0` container. The app target compiles on CI only.
+
+**Device expectation**: open lyrics on a synced song → the highlight
+lands on the sung line and the panel scrolls to the *next* line just
+before it starts; drag the list — nothing yanks back, and ~5 s after
+letting go it eases back to the live line; long instrumental gaps
+show three dots filling in; the transport fades away while you read
+and comes back when you touch the panel; loading shows shimmering
+bars, not a spinner.
+
+**Previous push — M1 of the BitChord round: the frosted mini player.** the
 card is BitChord's pill now, with the gestures, minus one flourish
 recorded honestly below.
 

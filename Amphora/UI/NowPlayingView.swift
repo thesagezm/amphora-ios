@@ -37,6 +37,19 @@ struct NowPlayingView: View {
     /// The artwork sleeve's live drag translation (BitChord's damped
     /// follow) — cleared and sprung home automatically by the state.
     @GestureState private var sleeveDrag: CGSize = .zero
+    /// BitChord's lyrics-mode controls: after five idle seconds in the
+    /// lyrics panel the transport, scrubber and feedback fade out for
+    /// immersion; any interaction in the panel (or the dock) brings
+    /// them back. The dock always stays — it is the way out.
+    @State private var areLyricsControlsHidden = false
+    @State private var lyricsIdleTask: Task<Void, Never>?
+
+    /// Whether the scrubber/transport/feedback chrome should render —
+    /// everything but the lyrics panel itself. The chrome is opaque
+    /// (never hidden) outside lyrics mode.
+    private var lyricsControlsVisible: Bool {
+        !isShowingLyrics || !areLyricsControlsHidden
+    }
 
     var body: some View {
         NavigationStack {
@@ -158,8 +171,14 @@ struct NowPlayingView: View {
                         // broken. The LIVE badge takes its place.
                         if !track.isRadio {
                             scrubber
+                                .opacity(lyricsControlsVisible ? 1 : 0)
+                                .allowsHitTesting(lyricsControlsVisible)
+                                .animation(.easeInOut(duration: 0.3), value: lyricsControlsVisible)
                         }
                         playerControls(for: track)
+                            .opacity(lyricsControlsVisible ? 1 : 0)
+                            .allowsHitTesting(lyricsControlsVisible)
+                            .animation(.easeInOut(duration: 0.3), value: lyricsControlsVisible)
                         PlayerDock(
                             isShowingLyrics: $isShowingLyrics,
                             isShowingQueue: $isShowingQueue,
@@ -174,6 +193,14 @@ struct NowPlayingView: View {
                     .padding(.top, 8)
                 }
                 .scrollBounceBehavior(.basedOnSize)
+            }
+            .onChange(of: isShowingLyrics) { _, showing in
+                if showing {
+                    noteLyricsInteraction()
+                } else {
+                    lyricsIdleTask?.cancel()
+                    areLyricsControlsHidden = false
+                }
             }
         } else {
             ContentUnavailableView(
@@ -194,7 +221,7 @@ struct NowPlayingView: View {
     private func mainRegion(_ track: Track) -> some View {
         ZStack {
             if isShowingLyrics {
-                LyricsPanel()
+                LyricsPanel(onUserInteraction: { noteLyricsInteraction() })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if isShowingQueue {
                 PlayerQueuePanel()
@@ -337,6 +364,21 @@ struct NowPlayingView: View {
         )
         .scaleEffect(sleeveDrag == .zero ? 1 : 0.94)
         .animation(.interactiveSpring(response: 0.28), value: sleeveDrag)
+    }
+
+    /// BitChord's lyrics idle clock: an interaction reveals the
+    /// controls and restarts the five-second countdown to fade them.
+    /// The owned task is replaced on every interaction, so a held
+    /// engagement keeps the chrome up.
+    private func noteLyricsInteraction() {
+        guard isShowingLyrics else { return }
+        lyricsIdleTask?.cancel()
+        areLyricsControlsHidden = false
+        lyricsIdleTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            areLyricsControlsHidden = true
+        }
     }
 
     /// The sleeve's gestures, Pandora-adapted from BitChord's: a

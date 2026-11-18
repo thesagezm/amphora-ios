@@ -45,10 +45,22 @@ final class PlayerService {
             }
         }
     }
-    /// Playback position in seconds.
+    /// Playback position in seconds. Writes go through `setElapsed`,
+    /// which also stamps *when* the reading was taken: the lyrics'
+    /// clock interpolates between the 0.5 s observer steps
+    /// (`LyricClock`), which is only sound if the timestamp travels
+    /// with the value.
     private(set) var elapsed: TimeInterval = 0
+    /// Reference-date time of the last `elapsed` write.
+    private(set) var elapsedSampledAt: TimeInterval = 0
     /// Track length in seconds (from Pandora's `trackLength`).
     private(set) var duration: TimeInterval = 0
+
+    /// The single writer for `elapsed` — observer tick, seek, reset.
+    private func setElapsed(_ seconds: TimeInterval) {
+        elapsed = seconds
+        elapsedSampledAt = Date.timeIntervalSinceReferenceDate
+    }
     private(set) var errorMessage: String?
 
     /// The name of the external output the audio is playing through —
@@ -188,7 +200,7 @@ final class PlayerService {
         }
         slots = newSlots
         currentTrack = track
-        elapsed = 0
+        setElapsed(0)
         duration = TimeInterval(track.duration)
         errorMessage = nil
         activateAudioSession()
@@ -215,7 +227,7 @@ final class PlayerService {
         slots = [Slot(track: track, item: item)]
         player.insert(item, after: nil)
         currentTrack = track
-        elapsed = 0
+        setElapsed(0)
         duration = 0
         errorMessage = nil
         activateAudioSession()
@@ -241,7 +253,7 @@ final class PlayerService {
             if slots.count == 1 {
                 // The queue was empty — this track starts right away.
                 currentTrack = track
-                elapsed = 0
+                setElapsed(0)
                 duration = TimeInterval(track.duration)
                 player.play()
                 state = .playing
@@ -259,12 +271,12 @@ final class PlayerService {
         slots.removeFirst()
         if let next = slots.first {
             currentTrack = next.track
-            elapsed = 0
+            setElapsed(0)
             duration = TimeInterval(next.track.duration)
             state = player.timeControlStatus == .paused ? PlaybackState.paused : PlaybackState.playing
         } else {
             currentTrack = nil
-            elapsed = 0
+            setElapsed(0)
             duration = 0
             state = .idle
         }
@@ -322,7 +334,7 @@ final class PlayerService {
             toleranceBefore: .zero,
             toleranceAfter: .zero
         )
-        elapsed = target
+        setElapsed(target)
     }
 
     /// Track length in seconds; falls back to the player item's duration
@@ -338,7 +350,7 @@ final class PlayerService {
         finishOutgoingTrack()
         resetQueue()
         currentTrack = nil
-        elapsed = 0
+        setElapsed(0)
         duration = 0
         state = .idle
         wantsToPlay = false
@@ -503,7 +515,7 @@ final class PlayerService {
             let seconds = time.seconds
             Task { @MainActor [weak self] in
                 guard let self, seconds.isFinite else { return }
-                self.elapsed = max(0, Double(seconds))
+                self.setElapsed(max(0, Double(seconds)))
             }
         }
     }
@@ -622,12 +634,12 @@ final class PlayerService {
         onTrackEnded?()
         if let next = slots.first {
             currentTrack = next.track
-            elapsed = 0
+            setElapsed(0)
             duration = TimeInterval(next.track.duration)
             state = .playing
         } else {
             currentTrack = nil
-            elapsed = 0
+            setElapsed(0)
             duration = 0
             state = .idle
         }
