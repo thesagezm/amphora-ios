@@ -16,6 +16,10 @@
 
 import Foundation
 
+/// Main-actor by construction: it reads the player's position state,
+/// and every caller (the lyrics' timeline views) runs on the main
+/// actor anyway.
+@MainActor
 enum LyricClock {
     /// The display position at wall-clock `date`: the last reading
     /// plus the time since it was taken, frozen while paused.

@@ -181,7 +181,12 @@ struct LyricsPanel: View {
                         }
                 }
             }
-            .id(lyrics)
+            // The scroll view's identity is the lyrics' first line — a
+            // new song resets the scroll and re-runs the landing scroll
+            // (a re-fetch of the same song keeps the position, which is
+            // right). `Lyrics` is only Equatable; the first line's id
+            // is the identity without dragging Hashable into the core.
+            .id(lyrics.lines.first?.id ?? "")
             // Drag-to-browse: the auto-scroll stands down while the
             // reader is in control and resumes after the idle window.
             .simultaneousGesture(
