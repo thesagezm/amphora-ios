@@ -34,6 +34,9 @@ struct NowPlayingView: View {
     /// The volume while the slider is being dragged. The level is
     /// applied live, but it is only written to disk when the drag ends.
     @State private var draftVolume: Double?
+    /// The artwork sleeve's live drag translation (BitChord's damped
+    /// follow) — cleared and sprung home automatically by the state.
+    @GestureState private var sleeveDrag: CGSize = .zero
 
     var body: some View {
         NavigationStack {
@@ -199,6 +202,7 @@ struct NowPlayingView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
                 artwork(for: track)
+                    .gesture(sleeveGesture(for: track))
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
             }
         }
@@ -319,6 +323,48 @@ struct NowPlayingView: View {
         // paused, springing back with the same easing the panels use.
         .scaleEffect(store.player.isPlaying ? 1 : 0.88)
         .animation(Self.sleeveAnimation, value: store.player.isPlaying)
+        // BitChord's damped follow: the sleeve tracks the finger at a
+        // third of its travel, dips slightly while held, and springs
+        // home when the finger lifts.
+        .offset(
+            x: abs(sleeveDrag.width) > abs(sleeveDrag.height)
+                ? sleeveDrag.width * 0.35 : 0,
+            y: abs(sleeveDrag.width) > abs(sleeveDrag.height)
+                ? 0
+                // The collapse only pulls down — never up into the
+                // header.
+                : min(max(sleeveDrag.height, -40), 120) * 0.35
+        )
+        .scaleEffect(sleeveDrag == .zero ? 1 : 0.94)
+        .animation(.interactiveSpring(response: 0.28), value: sleeveDrag)
+    }
+
+    /// The sleeve's gestures, Pandora-adapted from BitChord's: a
+    /// deliberate leftward fling skips to the next track; a downward
+    /// drag collapses the artwork into the queue panel. Both are
+    /// radio-aware — a live stream has no next track and no queue, so
+    /// neither gesture fires on one (a rightward fling has nothing to
+    /// go back to either: Pandora's playlist only advances).
+    private func sleeveGesture(for track: Track) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .updating($sleeveDrag) { value, state, _ in
+                state = value.translation
+            }
+            .onEnded { value in
+                let horizontal = value.translation.width
+                let vertical = value.translation.height
+                if abs(horizontal) > abs(vertical) {
+                    guard !track.isRadio, horizontal < -72 else { return }
+                    Haptics.medium()
+                    store.send(.skipToNext)
+                } else if vertical > 90, !track.isRadio {
+                    Haptics.light()
+                    withAnimation(PlayerDock.panelAnimation) {
+                        isShowingQueue = true
+                        isShowingLyrics = false
+                    }
+                }
+            }
     }
 
     /// Apple-Music-style block: left-aligned title, artist in the

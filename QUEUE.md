@@ -428,7 +428,39 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — P2 of the BitChord round: the player structure.** the
+**This push — P3 of the BitChord round: the sleeve gestures.** the
+artwork is now a drag handle, BitChord-style, with every rule Pandora
+requires.
+
+- **Damped follow** — while dragging, the sleeve tracks the finger at
+  ×0.35 (down only: clamped at 120 pt so it can never slide up into
+  the header), dips 6% while held, and springs home on lift
+  (`@GestureState` + interactiveSpring — the follow and the settle are
+  one modifier, no recomposition of the artwork's content).
+- **Leftward fling skips** — a deliberate leftward travel past 72 pt
+  skips to the next track with the skip haptic. **A rightward fling is
+  deliberately inert**: Pandora's playlist only advances — there is no
+  backward skip to gesture.
+- **Downward drag opens the queue** — travel past 90 pt collapses the
+  artwork into the frosted queue panel (the same 420 ms panel clock).
+- **Radio is exempt from both** — a live stream has no next track and
+  no queue, so neither gesture fires on one; the sleeve still follows
+  the finger damped, but every release is a no-op. VoiceOver users
+  lose nothing: the dock discs carry both actions as buttons.
+- Gestures live on the artwork branch of `mainRegion`
+  (`sleeveGesture(for:)`), so the lyrics and queue panels — which
+  scroll — never fight them.
+
+Local verification: `NowPlayingView.swift` parse-clean in the
+`swift:6.0` container; PandoraCore untouched (379/379 stands). The app
+target compiles on CI only.
+
+**Device expectation**: drag the artwork sideways — it follows at a
+third of the travel and springs home; flick it left firmly → next
+track with a haptic; drag it down → the queue panel rises in its
+place; on a radio station neither fling nor drag-down does anything.
+
+**Previous push — P2 of the BitChord round: the player structure.** the
 full player's shell is BitChord's now: one flexible region that swaps
 between artwork, lyrics and queue, a frosted dock row, and the sleeve
 spring.
