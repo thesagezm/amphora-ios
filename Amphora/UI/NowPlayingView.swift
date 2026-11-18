@@ -514,6 +514,15 @@ struct NowPlayingView: View {
 
     private var scrubber: some View {
         VStack(spacing: 6) {
+            // BitChord's strip: the sung line rides above the scrubber
+            // while the lyrics panel is closed — tapping it opens the
+            // lyrics. Nothing renders while there are no lyrics.
+            CurrentLyricStrip(onOpenLyrics: {
+                withAnimation(PlayerDock.panelAnimation) {
+                    isShowingLyrics = true
+                    isShowingQueue = false
+                }
+            })
             PlayerScrubber(
                 elapsed: store.player.elapsed,
                 duration: store.player.duration,

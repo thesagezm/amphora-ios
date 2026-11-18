@@ -428,7 +428,58 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — L2 of the BitChord round: the swept line.** the sung
+**Repair riding first (`0e5137f`):** the L1 iOS Build failed on two
+lines — `LyricClock` read `PlayerService`'s main-actor state from a
+nonisolated enum (now `@MainActor`; every caller is a timeline view on
+the main actor) and the scroll view's `.id(lyrics)` needed Hashable
+(`Lyrics` is Equatable-only — the first line's id is the scroll
+identity now, no Hashable dragged into the core). L2's build inherited
+both failures; this repair carries L2's code as well, so **`0e5137f`'s
+runs decide the round through L2**.
+
+**This push — L3 of the BitChord round: sub-lines, discs, and the
+strip.** the last lyrics piece.
+
+- **Disc toggles** (`LyricsPanel`) — the old Translate button bar is
+  BitChord's disc row now: frosted 34 pt discs on 44 pt hit targets
+  (BitChord's 34 dp discs sit below the app's touch-target floor —
+  recorded as the deliberate difference). The **translation disc**:
+  ask for it, spinner while translating (disabled — no phantom
+  haptics), accent-filled while the English lines are on screen, tap
+  again to hide them; gone when the song is already English (the
+  status text says why). The **romanization disc** appears only when
+  some line actually carries one and toggles the reading line the
+  same way. Failure text sits left with the retry on the disc — the
+  translation machinery, states and alignment contract are untouched;
+  only the surface changed.
+- **Sub-line motion** — BitChord's 540 ms rise-and-fade: the English
+  lines (and plain-text translation) rise in and out with the disc
+  toggles, and their visibility is a panel state, so all rows move
+  together in one animation.
+- **`Amphora/UI/CurrentLyricStrip.swift` (new)** — the sung line rides
+  above the scrubber while the lyrics panel is closed (BitChord's
+  strip), on the same interpolated clock, in a fixed-height strip so
+  the scrubber never shifts between lines; tapping it opens the
+  lyrics. Radio's identified song rides the same synthetic-track
+  lyrics path, so its line strips in too; a song without lyrics
+  reserves nothing.
+- **Unavailable-hold — deliberately not adopted:** BitChord holds
+  "no lyrics" five seconds then fades (their probe retries silently);
+  ours offers an explicit Retry, which is the better answer to a
+  failed lookup. Decision recorded, not an omission.
+
+Local verification: the three touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (379/379 stands). The app
+target compiles on CI only.
+
+**Device expectation**: open lyrics on a French song → the bubble
+discs sit top-right; tap the translation disc → English lines rise
+in under each original; tap again → they fade out; a Japanese song
+also shows the globe disc for the romanization; with the panel
+closed, the sung line rides above the scrubber and a tap on it opens
+the lyrics.
+
+**Previous push — L2 of the BitChord round: the swept line.** the sung
 line now carries BitChord's signature wavefront — a bright highlight
 sweeping word by word behind a feathered wipe, with the dim remainder
 beneath and a blurred glow riding the crossing.

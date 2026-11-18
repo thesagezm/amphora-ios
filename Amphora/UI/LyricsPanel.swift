@@ -46,6 +46,11 @@ struct LyricsPanel: View {
     /// The owned resume task — cancelled and replaced on every drag,
     /// cancelled when the panel goes away.
     @State private var browseResumeTask: Task<Void, Never>?
+    /// BitChord's sub-line toggles: the romanization and the English
+    /// translation are readable on demand and hideable again — the
+    /// discs above the panel carry both states.
+    @State private var isRomanizationVisible = true
+    @State private var isTranslationVisible = true
 
     var body: some View {
         Group {
@@ -67,69 +72,155 @@ struct LyricsPanel: View {
         }
     }
 
-    /// The translate control: a **Translate** button while there is
-    /// something to translate, a "Translating…" state while the request
-    /// is in flight, and the result once it is known — translated,
-    /// already English, or failed (with a retry).
+    /// The sub-line control bar — BitChord's discs, adapted: the
+    /// romanization and the English translation toggle as frosted
+    /// discs on the right, the state text sits on the left. A disc
+    /// shows a spinner while its request is in flight. The 34 pt disc
+    /// rides a 44 pt hit target — BitChord's 34 dp discs are below the
+    /// app's touch-target floor.
     private var translationBar: some View {
         HStack(spacing: 12) {
-            translationStatus
+            statusText
             Spacer(minLength: 0)
-            translateButton
+            if romanizationAvailable {
+                disc(
+                    icon: "globe",
+                    isActive: isRomanizationVisible,
+                    isLoading: false,
+                    label: isRomanizationVisible
+                        ? "Hide romanization" : "Show romanization"
+                ) {
+                    withAnimation(Self.subLineAnimation) {
+                        isRomanizationVisible.toggle()
+                    }
+                }
+            }
+            translationDisc
         }
         .padding(.horizontal, 28)
         .padding(.bottom, 10)
     }
 
-    @ViewBuilder
-    private var translationStatus: some View {
+    /// Whether any line carries a romanization — the disc earns its
+    /// place only when there is something to toggle.
+    private var romanizationAvailable: Bool {
+        store.lyrics?.lines.contains { !($0.romanization ?? "").isEmpty } == true
+    }
+
+    /// The English text under each line: on screen only when the
+    /// translation exists and the disc has not hidden it.
+    private var isTranslationShown: Bool {
+        store.lyricsTranslationState == .translated && isTranslationVisible
+    }
+
+    private var statusText: some View {
         switch store.lyricsTranslationState {
-        case .none:
-            EmptyView()
         case .translating:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Translating…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        case .translated:
-            Label("Translated", systemImage: "checkmark.circle.fill")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(theme.colors.accent.color)
+            Text("Translating…")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         case .alreadyEnglish:
-            Label("Already in English", systemImage: "character.bubble")
+            Text("Already in English")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
+            Text(message)
                 .font(.footnote)
                 .foregroundStyle(.yellow)
+        case .none, .translated:
+            EmptyView()
         }
     }
 
     @ViewBuilder
-    private var translateButton: some View {
+    private var translationDisc: some View {
         switch store.lyricsTranslationState {
         case .none, .failed:
-            Button {
-                Haptics.light()
+            // Something to ask for, or a failed request to retry.
+            disc(
+                icon: "character.bubble",
+                isActive: false,
+                isLoading: false,
+                label: store.lyricsTranslationState == .none
+                    ? "Translate the lyrics into English"
+                    : "Retry the translation"
+            ) {
                 noteInteraction()
                 store.send(.translateLyrics)
-            } label: {
-                Label(
-                    store.lyricsTranslationState == .none ? "Translate" : "Retry",
-                    systemImage: "character.bubble"
-                )
             }
-            .buttonStyle(.bordered)
-            .tint(theme.colors.accent.color)
-            .accessibilityLabel("Translate the lyrics into English")
-        case .translating, .translated, .alreadyEnglish:
+        case .translating:
+            // A no-op disc — the spinner is the whole message, so the
+            // button is disabled and never haptic-fires.
+            disc(icon: "character.bubble", isActive: false, isLoading: true, label: "Translating") {
+            }
+            .disabled(true)
+        case .translated:
+            disc(
+                icon: "character.bubble",
+                isActive: isTranslationVisible,
+                isLoading: false,
+                label: isTranslationVisible
+                    ? "Hide the translation" : "Show the translation"
+            ) {
+                withAnimation(Self.subLineAnimation) {
+                    isTranslationVisible.toggle()
+                }
+            }
+        case .alreadyEnglish:
+            // Nothing to ask for — the status text says why.
             EmptyView()
         }
     }
+
+    /// BitChord's disc: a 34 pt circle with a spinner while loading,
+    /// accent-filled while its content is on screen. The frosted
+    /// material matches the player's dock discs.
+    private func disc(
+        icon: String,
+        isActive: Bool,
+        isLoading: Bool,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            Haptics.light()
+            action()
+        } label: {
+            ZStack {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(.primary)
+                } else {
+                    Image(systemName: icon)
+                        .font(.body.weight(.semibold))
+                }
+            }
+            .foregroundStyle(isActive ? Theme.accentGlyph : Color.primary)
+            .frame(width: 34, height: 34)
+            .background(
+                isActive
+                    ? AnyShapeStyle(Theme.accent)
+                    : AnyShapeStyle(.ultraThinMaterial),
+                in: Circle()
+            )
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+
+    /// BitChord's sub-line motion: 540 ms rise-and-fade when a
+    /// translation or romanization toggles on.
+    static let subLineAnimation = Animation.timingCurve(
+        0.215, 0.61, 0.355, 1, duration: 0.54
+    )
+
+    static let subLineTransition: AnyTransition = .opacity.combined(
+        with: .offset(y: -6)
+    )
 
     @ViewBuilder
     private func content(for lyrics: Lyrics) -> some View {
@@ -267,7 +358,7 @@ struct LyricsPanel: View {
                     .foregroundStyle(Color.primary)
                     .lineLimit(3)
             }
-            if let romanization = line.romanization, !romanization.isEmpty {
+            if isRomanizationVisible, let romanization = line.romanization, !romanization.isEmpty {
                 // Non-Latin-script lyrics: the original script stays as
                 // a reference line, the romanization is the reading
                 // line the user sings along with (accent-tinted), and
@@ -280,19 +371,23 @@ struct LyricsPanel: View {
                             : theme.colors.accent.color.opacity(0.7)
                     )
                     .lineLimit(3)
-                if let translation = line.translation, !translation.isEmpty {
+                if isTranslationShown, let translation = line.translation, !translation.isEmpty {
                     Text(translation)
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary.opacity(0.8))
                         .lineLimit(3)
+                        .transition(Self.subLineTransition)
                 }
-            } else if let translation = line.translation, !translation.isEmpty {
+            } else if isTranslationShown, let translation = line.translation, !translation.isEmpty {
                 Text(translation)
                     .font(.subheadline)
                     .foregroundStyle(Color.secondary.opacity(0.8))
                     .lineLimit(3)
+                    .transition(Self.subLineTransition)
             }
         }
+        .animation(Self.subLineAnimation, value: isTranslationShown)
+        .animation(Self.subLineAnimation, value: isRomanizationVisible)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -407,7 +502,8 @@ struct LyricsPanel: View {
     // MARK: - Plain lyrics
 
     /// Un-synchronised lyrics: the original words, with the English
-    /// translation underneath once it has been fetched.
+    /// translation underneath once it has been fetched — toggleable
+    /// like the synced sub-lines.
     private func plainLyrics(_ plain: String, translation: String?) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -415,15 +511,17 @@ struct LyricsPanel: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .lineSpacing(6)
-                if let translation, !translation.isEmpty {
+                if isTranslationShown, let translation, !translation.isEmpty {
                     Divider()
                         .padding(.vertical, 2)
                     Text(translation)
                         .font(.title3)
                         .foregroundStyle(.primary)
                         .lineSpacing(6)
+                        .transition(Self.subLineTransition)
                 }
             }
+            .animation(Self.subLineAnimation, value: isTranslationShown)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 28)
             .padding(.vertical, 32)
