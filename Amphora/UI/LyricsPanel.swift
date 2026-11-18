@@ -200,7 +200,7 @@ struct LyricsPanel: View {
                 ForEach(lyricElements(lyrics)) { element in
                     switch element {
                     case .line(let index):
-                        lineRow(lyrics.lines[index], isActive: index == highlightIndex)
+                        lineRow(lyrics, index: index, highlightIndex: highlightIndex)
                     case .gap(let start, let end):
                         GapDotsRow(start: start, end: end)
                             .id("gap-\(start)-\(end)")
@@ -213,21 +213,60 @@ struct LyricsPanel: View {
         .scrollIndicators(.hidden)
     }
 
-    /// The active line is highlighted and kept centred; tapping a line
-    /// seeks to its start. (The sweep rendering arrives with L2 — the
-    /// highlight is line-accurate already.)
-    private func lineRow(_ line: LyricLine, isActive: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    /// BitChord's falloff from the sung line — static per row, so a
+    /// distant line renders once and never again until the distance
+    /// changes. Alphas from their table; the blur ramps only in the
+    /// near field and vanishes beyond it.
+    private func falloffAlpha(_ distance: Int?, isActive: Bool) -> Double {
+        guard !isActive else { return 1 }
+        switch distance ?? 99 {
+        case 1: 0.8
+        case 2: 0.7
+        case 3: 0.58
+        case 4: 0.46
+        default: 0.35
+        }
+    }
+
+    private func falloffBlur(_ distance: Int?, isActive: Bool) -> CGFloat {
+        guard !isActive else { return 0 }
+        switch distance ?? 99 {
+        case 1, 2: 1
+        case 3: 1.7
+        case 4: 2.4
+        default: 0
+        }
+    }
+
+    /// One lyric line. The sung line is BitChord's swept line — the
+    /// bright wavefront crossing word by word, unsung text dim beneath;
+    /// every other line is static text at its falloff. Tapping a line
+    /// seeks to its start.
+    private func lineRow(
+        _ lyrics: Lyrics, index: Int, highlightIndex: Int?
+    ) -> some View {
+        let line = lyrics.lines[index]
+        let isActive = index == highlightIndex
+        let distance = highlightIndex.map { abs($0 - index) }
+        return VStack(alignment: .leading, spacing: 4) {
+            if isActive {
+                SweptLine(
+                    text: line.text,
+                    start: line.timestamp,
+                    end: nextLineStart(lyrics, after: index),
+                    font: .title3.weight(.bold)
+                )
+            } else {
+                Text(line.text)
+                    .font(.title3.weight(.regular))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(3)
+            }
             if let romanization = line.romanization, !romanization.isEmpty {
                 // Non-Latin-script lyrics: the original script stays as
                 // a reference line, the romanization is the reading
                 // line the user sings along with (accent-tinted), and
                 // the English translation sits beneath both.
-                Text(line.text)
-                    .font(.subheadline)
-                    .foregroundStyle(
-                        isActive ? Color.secondary : Color.secondary.opacity(0.6)
-                    )
                 Text(romanization)
                     .font(.title3.weight(isActive ? .semibold : .regular))
                     .foregroundStyle(
@@ -235,27 +274,20 @@ struct LyricsPanel: View {
                             ? theme.colors.accent.color
                             : theme.colors.accent.color.opacity(0.7)
                     )
+                    .lineLimit(3)
                 if let translation = line.translation, !translation.isEmpty {
                     Text(translation)
                         .font(.subheadline)
-                        .foregroundStyle(
-                            isActive ? Color.secondary : Color.secondary.opacity(0.6)
-                        )
+                        .foregroundStyle(Color.secondary.opacity(0.8))
+                        .lineLimit(3)
                 }
-            } else {
-                Text(line.text)
-                    .font(.title3.weight(isActive ? .semibold : .regular))
-                    .foregroundStyle(isActive ? Color.primary : Color.secondary)
-                if let translation = line.translation, !translation.isEmpty {
-                    Text(translation)
-                        .font(.subheadline)
-                        .foregroundStyle(
-                            isActive ? Color.secondary : Color.secondary.opacity(0.6)
-                        )
-                }
+            } else if let translation = line.translation, !translation.isEmpty {
+                Text(translation)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.secondary.opacity(0.8))
+                    .lineLimit(3)
             }
         }
-        .lineLimit(3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -264,7 +296,21 @@ struct LyricsPanel: View {
             browseResumeTask?.cancel()
             store.player.seek(to: line.timestamp)
         }
+        .opacity(falloffAlpha(distance, isActive: isActive))
+        .blur(radius: falloffBlur(distance, isActive: isActive))
+        .accessibilityElement(children: .combine)
         .accessibilityHint("Double-tap to jump here")
+    }
+
+    /// The sweep window's end: the next line's start, or a short hold
+    /// for a last line or a repeated timestamp.
+    private func nextLineStart(_ lyrics: Lyrics, after index: Int) -> TimeInterval {
+        let next = lyrics.lines.index(after: index)
+        if next < lyrics.lines.endIndex,
+            lyrics.lines[next].timestamp > lyrics.lines[index].timestamp {
+            return lyrics.lines[next].timestamp
+        }
+        return lyrics.lines[index].timestamp + 4
     }
 
     private func scrollTo(

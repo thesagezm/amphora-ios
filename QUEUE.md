@@ -428,7 +428,54 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — L1 of the BitChord round: the lyrics scroll engine.** the
+**This push — L2 of the BitChord round: the swept line.** the sung
+line now carries BitChord's signature wavefront — a bright highlight
+sweeping word by word behind a feathered wipe, with the dim remainder
+beneath and a blurred glow riding the crossing.
+
+- **`Amphora/UI/SweptLyricLine.swift` (new)** — the line is a **flow
+  of words** (`WordFlow`, a Layout-protocol word-wrap that respects
+  RTL), and each word carries BitChord's three copies: the dim unsung
+  remainder, a blurred glow alive only while the wavefront crosses
+  the word, and the bright copy masked to the word's sung fraction
+  behind a feathered ramp (~1.5 characters, as BitChord feathers).
+  **Wrap-safe by construction**: each word's mask lives in its own
+  bounds, so a line breaking across two visual rows never shifts the
+  highlight — the row-aware clipping machinery BitChord needed falls
+  out of the per-word structure here. Word boundaries are
+  interpolated across the line's window weighted by word length
+  (line-timed data has no word timings — the sweep is the honest
+  interpolation, recorded in the round's skip list). The sung word
+  lifts 2 pt as the wavefront passes and stays lifted.
+- **Perf shape** — only the sung line runs a `TimelineView`, and it is
+  `.animation(paused: !isPlaying)` — per-frame work is the sweeping
+  word's mask alone, and *zero* while paused. Every other line is
+  static, rendered once per distance change, at BitChord's falloff
+  table (α 0.8 / 0.7 / 0.58 / 0.46, blur 1 / 1 / 1.7 / 2.4 pt in the
+  near field only).
+- **`LyricsPanel`** — the sung line renders through `SweptLine`; the
+  sweep window is the line's own start to the next line's start (a
+  short hold for the last line or a repeated timestamp). The
+  romanization (accent reading line) and translation sub-lines stay
+  beneath the sweep; L3 animates them. VoiceOver reads the swept
+  line once — the three stacked copies are collapsed to one labelled
+  element.
+- Letter-by-letter swell (`GrowingWord`'s per-glyph sampling) is
+  **deliberately not adopted** — it needs per-glyph measurement
+  machinery, and the word rise + feather carry the effect; recorded
+  so it is a decision, not an omission.
+
+Local verification: the two touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (379/379 stands). The
+app target compiles on CI only.
+
+**Device expectation**: play a synced song, open lyrics — the sung
+line's words brighten in a soft wavefront that trails a feathered
+edge, each word lifting slightly as it is sung and keeping a faint
+glow while it crosses; lines above and below fade progressively and
+soften with distance; nothing moves while paused.
+
+**Previous push — L1 of the BitChord round: the lyrics scroll engine.** the
 lyrics now run on BitChord's clock: interpolated position, run-up
 scrolling, browse-with-resume, gap dots, skeleton loading, and the
 immersive controls fade.
