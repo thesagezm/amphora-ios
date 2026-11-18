@@ -428,7 +428,52 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — P3 of the BitChord round: the sleeve gestures.** the
+**This push — M1 of the BitChord round: the frosted mini player.** the
+card is BitChord's pill now, with the gestures, minus one flourish
+recorded honestly below.
+
+- **The pill** — fully-rounded `.ultraThinMaterial` (the same frost
+  family as the player's dock; materials fall back to opaque under
+  Reduce Transparency by themselves), a 0.5 pt `Theme.stroke` hairline
+  (scheme-aware — the white hairline BitChord draws would vanish on
+  the light themes), the floating shadow kept. 40 pt artwork, the
+  drawn glyph family unchanged (play/stop/next), AirPlay kept — a
+  deliberate earlier choice (output switching from any screen).
+- **Edge-fade titles** — BitChord's `fadeOverflow` instead of a
+  marquee. The gradient mask is applied to the text *column*, not the
+  texts: a short title's intrinsic width never reaches the 88%
+  location, so nothing fades unless the line actually runs out of
+  room.
+- **Gestures** — one detector decides at release: a deliberate
+  leftward swipe (72 pt) skips to the next track; an upward pull (60
+  pt) opens the full player with a light haptic. The bar follows the
+  pull on a decaying curve (rate falls off over 72 pt) and springs
+  home. **Radio is exempt from the swipe** — no next track exists,
+  and stopping the stream stays the deliberate button it is today.
+- **The loading spinner — deliberately not adopted yet**: BitChord's
+  spinner keys on a per-track loading state; the player exposes no
+  such state (only per-feature store flags), and inventing one means
+  PlayerService work outside a UI unit. Queued as a small follow-up if
+  wanted.
+- **The artwork flight — deferred**: BitChord's cover flies between
+  the pill and the full player because their phone-side player and
+  mini player live in separate windows and the dock drives it in
+  screen coordinates. Ours is a SwiftUI sheet — `matchedGeometryEffect`
+  cannot fly across a sheet boundary — so the honest options are a
+  custom cross-host overlay (real machinery, needs device testing) or
+  the pull-then-present transition this unit ships. Follow-up if the
+  flight is wanted.
+
+Local verification: `MiniPlayer.swift` parse-clean in the `swift:6.0`
+container; PandoraCore untouched (379/379 stands). The app target
+compiles on CI only.
+
+**Device expectation**: the card is a frosted pill above the tab bar;
+long titles fade at the edge instead of truncating hard; flick it
+left → next track; pull it up → the player opens; on a radio station
+the flick is inert; tap still opens, all buttons still work.
+
+**Previous push — P3 of the BitChord round: the sleeve gestures.** the
 artwork is now a drag handle, BitChord-style, with every rule Pandora
 requires.
 
