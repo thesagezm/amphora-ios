@@ -12,6 +12,18 @@ and the implementation directly in this session.
 device 2026-10-23 "everything so far works". M3–M5 device check pending —
 superseded by the crash report below.)
 
+**Where the pipeline stands (2026-11-19 handover):** this session landed
+the BitChord round's last two adopted items and the M6 work that was
+queued — **W3** (the word-exact sweep + the letter swell, on top of
+W1/W2's core math and the Musixmatch provider), **playback speed
+0.5–2×**, **Last.fm upgraded to BitChord's** (the crossing scrobble,
+the three switches, the three rule sliders — in place of the planned
+ListenBrainz client, which the user dropped), and **offline
+awareness** (the first M6 slice). Everything from this session and the
+BitChord round before it is **awaiting the user's device test**. The
+next unit is **F1 — the mini-player artwork flight** (see "Next unit —
+F1" in In Flight / Last Push).
+
 ## User Feedback Pending
 
 **2026-11-19 Last.fm direction (this session's driver):** "instead of
@@ -447,6 +459,49 @@ names, `a7dbe49`); sleep timer never fired (`a7dbe49`); bookmark buttons
 gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
+
+**CI state at the handover (2026-11-19, later):** the repair
+(`2446ccb`, the `.spectral` fix) is **Core Tests ✅ and iOS Build ✅**
+— so the playback-speed and Last.fm code compiles. The Last.fm push's
+own iOS Build failed only with the inherited `.spectralMixer` error and
+is superseded by that repair. The offline unit (`b148b16`) is Core ✅,
+its iOS Build in flight at the handover (not waited on; it carries the
+repair, so nothing else can fail there but its own code). **No
+outstanding repair.** PandoraCore 409/409 green in Docker.
+
+**Next unit — F1 (the mini-player artwork flight):** the last deferred
+BitChord item, and the one remaining adoption gap in the player
+surface. The problem is structural: the full player is a **sheet** and
+the mini player lives in the tab hierarchy, so `matchedGeometryEffect`
+cannot fly the cover between them — BitChord's does, because their
+phone-side player and mini player share a window.
+
+- Two honest options, and the choice is the unit's first decision:
+  **(a) a cross-host overlay** — a `UIWindow` above the sheet hosting
+  the flying cover, driven by the two hosts' screen-space frames
+  (real machinery, and untestable here); **(b) a one-host flight** —
+  the full player's own artwork starts at the mini player's last
+  known global frame and flies into place (the mini player is hidden
+  behind the sheet, so the flight reads as the cover arriving from the
+  pill's spot), and the "Done" button flies it back before the sheet
+  dismisses. (b) touches one host, degrades gracefully (an
+  interactive swipe-down just fades, as today), and needs no third
+  window — but the *landing* on the way back is covered by the
+  sheet's backdrop unless the backdrop fades first.
+- Whoever takes it: build it conservatively, keep the plain artwork
+  as the fallback, and be explicit in the record that **the flight
+  cannot be judged without the user's device** — it is animation,
+  not behavior, and AGENTS.md priority 2 says cut an animation that
+  costs responsiveness or cannot be justified.
+- The rest of the standing queue after it: M6 robustness continues
+  (the offline unit is the first; the session-expiry path is done),
+  and the long-session soak (artwork/lyrics cache bounds) is the
+  natural next M6 slice.
+- **Everything from this session is awaiting the user's device test:**
+  the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
+  word-exact sweep + the letter swell), the playback speed, the
+  Last.fm upgrade, and the offline state. When feedback arrives it
+  jumps the queue.
 
 **This push — M6: the app knows it is offline.** the standing
 robustness work (M6 lists "offline" explicitly), and the first unit
@@ -3459,54 +3514,60 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-0. **2026-11-11 round (this session's driver):** Unit A (the Pandora ↔
-   radio player handover) ✅ landed → **Unit B** (the lyrics **Translate**
-   button — explicit, with a "Translating…" state, a retry, and
-   plain-text lyrics translated too) ✅ **landed in this push** → **Unit
-   C1** (the portable ICY now-playing metadata parser in PandoraCore) →
-   **Unit C2** (the app-side radio metadata probe + the identified
-   song's title, artwork and lyrics in the player, updating by itself
-   and with a manual **Identify** button). Root causes and details are
-   in User Feedback Pending at the top.
-1. **GUI round (user request 2026-11-07 — this session's driver):**
-   Unit 1 Last.fm fix ✅ → Unit 2 radio artwork ✅ → Unit 3
-   sophisticated player ✅ → **Unit 4 Settings/GUI polish ✅**
-   (volume persistence, Settings data management, the list press
-   feedback, the station name in the Now Playing header). Unit details
-   and root causes are in User Feedback Pending at the top.
-2. **User device test of the next IPA** — the player first (transport,
-   volume slider, LIVE badge, radio controls), then radio artwork
-   (every station row shows a monogram tile or its real logo; the full
-   player and the lock screen show the same), then Last.fm (Settings →
-   Last.fm → Connect with real credentials; it must now succeed and
-   show the live scrobble status line), then the radio flow (R1–R5,
-   test list in In Flight / Last Push) and the older pending round
-   (light mode, history ratings, lyrics fallbacks, romanization,
-   AirPlay).
-3. **Bookmarks on device** — user reports they don't work; protocol
-   verified against pydora. If the device test still fails, the
-   Diagnostics log decides the next step.
-4. **Persist the playback volume** — ✅ landed (the slider's level now
-   survives a relaunch).
-5. **Skip-limit awareness** — ✅ landed (typed core error, a SKIP LIMIT
-   badge in the player, the station row marked, and no prefetch
-   hammering while the limit is reached).
-6. **Explicit-content indicator** — ✅ landed at the only level the
-   protocol supports (an account-level badge, since the legacy API has
-   no per-track explicit flag).
-7. Anything red on the next `gh run list` — repair first.
+0. **F1 — the mini-player artwork flight** (the last deferred
+   BitChord item): the cover flying between the mini player pill and
+   the full player. The design decision (a cross-host overlay window
+   vs a one-host flight), the constraints and the honesty caveat are
+   in **"Next unit — F1"** at the top of In Flight / Last Push. **It
+   needs the user's device to judge** — it is animation, not behavior.
+1. **M6 robustness, continued** — the offline unit landed; the next
+   natural slices are the long-session soak (artwork/lyrics cache
+   bounds) and the session-expiry path under a slow network.
+2. **User device test of the next IPA** — the whole pile is untested:
+   the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
+   word-exact sweep + the letter swell), the playback speed, the
+   Last.fm upgrade (the crossing scrobble, the switches, the rule
+   sliders) and the offline state. Test order: the player first
+   (transport, volume slider, LIVE badge, radio controls, the frosted
+   dock and queue panel, the sleeve gestures), then the lyrics panel
+   (the swept line, the letter swell, the translation/romanization
+   discs, the offset sheet), then Last.fm (connect with real
+   credentials → the now-playing line → the scrobble landing
+   mid-song), then playback speed, then the radio flow and the older
+   pending round (light mode, history ratings, lyrics fallbacks,
+   romanization, AirPlay).
+3. **Bookmarks on device** — the user reported they don't work; the
+   protocol was verified against pydora. If the device test still
+   fails, the Diagnostics log decides the next step.
+4. Anything red on the next `gh run list` — repair first.
+5. **ListenBrainz — dropped** (the user chose the Last.fm upgrade
+   instead, 2026-11-19); not to be revisited without a new request.
+6. **The mini-player artwork flight's siblings** — BitChord's loading
+   spinner in the mini player (needs a per-track loading state the
+   player does not expose) and the queue's artwork — stay unadopted
+   and are recorded as decisions, not omissions.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — confirm the
-GUI-polish and Now-Playing pushes are green, then **install the IPA on
-the phone** and run the device-test checklist below.
+offline unit's iOS Build is green, then start **F1** (the artwork
+flight) or wait for the user's device feedback, which jumps the
+queue.
 
-**CI state at the end of this session:** Unit A (`8f066a6`) ✅ Core
-Tests 42527855898 + iOS Build 42527855907 · the skip-limit push was
-red on the iOS Build (`4e1aa1f`, one type error) and the explicit-
-content push inherited it (`8cc40ed`) — **both are covered by the
-repair push (`4dd965d`), which is ✅ green** (Core Tests 42531317700 +
-iOS Build 42531317702) · the GUI-polish push (`473bc78`) and the
-Now-Playing push (`399a7f4`) were in flight at handover.
+**CI state at the handover (2026-11-19):** the repair push (`2446ccb`)
+is ✅ Core Tests + ✅ iOS Build — the playback-speed and Last.fm code
+compiles. The Last.fm push's own iOS Build failed only with the
+inherited `.spectralMixer` error and is superseded by that repair. The
+offline unit (`b148b16`) was Core ✅ with its iOS Build in flight at
+the handover (it carries the repair, so only its own code can fail
+there). PandoraCore **409/409** green in Docker.
+
+**Local verification is available again**: the `swift:6.0` Docker image
+is on this host, so `cd PandoraCore && docker run --rm -v "$PWD:/w" -w
+/w/PandoraCore swift:6.0 swift test` runs the core suite in seconds
+(**409/409 green** at the handover — 407 before this session's Last.fm
+unit, +2 net). The mount **must** be `/w` — the module cache was
+compiled under that path. App-target files can be parse-checked with
+`swiftc -parse -swift-version 6`; **type errors still only surface on
+CI** (this session's `.spectralMixer` was exactly that).
 
 **Local verification is available again**: the `swift:6.0` Docker image
 is on this host, so `cd PandoraCore && docker run --rm -u 1000:1000 -v
