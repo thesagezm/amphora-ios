@@ -69,26 +69,29 @@ struct TransportGlyph: View {
     }
 
     var body: some View {
-        if let rendered {
-            rendered
+        if let layout {
+            TransportIconShape(icon: layout.icon)
+                .fill(color)
+                .frame(width: layout.size.width, height: layout.size.height)
+                .scaleEffect(y: layout.squash)
         } else {
             Color.clear
                 .frame(width: max(1, size), height: max(1, size))
         }
     }
 
-    /// The glyph at BitChord's proportions, or `nil` when the path data
-    /// failed to parse (never expected — the strings are constants).
-    @ViewBuilder
-    private var rendered: some View {
-        if let icon = Self.icon(for: kind), let bounds = icon.bounds,
-           bounds.width > 0, bounds.height > 0 {
-            let frame = Self.frame(bounds: bounds, kind: kind, size: size)
-            TransportIconShape(icon: icon)
-                .fill(color)
-                .frame(width: frame.width, height: frame.height)
-                .scaleEffect(y: Self.squash(of: kind))
-        }
+    /// The glyph laid out at BitChord's proportions, or `nil` when the
+    /// path data failed to parse (never expected — the strings are
+    /// constants).
+    private var layout: (icon: TransportIcon, size: CGSize, squash: CGFloat)? {
+        guard let bounds = Self.icon(for: kind).bounds,
+              bounds.width > 0, bounds.height > 0
+        else { return nil }
+        return (
+            icon: Self.icon(for: kind),
+            size: Self.frame(bounds: bounds, kind: kind, size: size),
+            squash: Self.squash(of: kind)
+        )
     }
 
     /// The glyph's frame, at BitChord's boxes scaled so the play

@@ -294,7 +294,7 @@ public enum TransportIconPaths {
         let centerX = from.x + dx / 2 + side * distance * normalX
         let centerY = from.y + dy / 2 + side * distance * normalY
 
-        var start = angle(of: from, around: (centerX, centerY))
+        let start = angle(of: from, around: (centerX, centerY))
         var end = angle(of: to, around: (centerX, centerY))
         if sweep == 1 {
             while end <= start { end += 360 }
