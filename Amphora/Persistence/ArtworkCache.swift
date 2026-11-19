@@ -33,6 +33,14 @@
 //    base64 name can exceed the file-system name limit for long signed
 //    image URLs (Amazon URLs carry a long `?token=`), which made every
 //    write fail and forced a re-download on every appearance.
+//  - **The disk tier is bounded.** The memory tier evicts under pressure;
+//    the disk tier had no bound at all, so a long session grew
+//    `Caches/Amphora/Artwork/` without limit. The rule itself lives in
+//    `PandoraCore` (`DiskCacheBounds` — pure Foundation, unit-tested
+//    there): expired files go first, then the oldest files until the
+//    cache is back under its ceiling. The actor keeps a running byte
+//    total, so the directory is only swept when the cache has actually
+//    outgrown its bounds — never on every write.
 //
 
 import CryptoKit
@@ -51,6 +59,20 @@ actor ArtworkCache {
     /// waste.
     private static let maxPixelSize: CGFloat = 1200
 
+    /// The disk tier's ceiling: 128 MB of artwork bytes.
+    ///
+    /// The memory tier is bounded by `NSCache` (120 images / 64 MB) and
+    /// evicts under pressure; the disk tier had no bound at all, so a
+    /// long session — Station Thumb, a few hundred stations, hours of
+    /// radio — grew `Caches/Amphora/Artwork/` without limit. 128 MB
+    /// holds a very large library of covers while still putting a floor
+    /// under the disk the app may take.
+    static let diskByteLimit = 128 * 1024 * 1024
+
+    /// Artwork older than this is dropped on the next sweep (30 days).
+    /// Stale covers are never worth the space.
+    static let diskMaxAge: TimeInterval = 30 * 24 * 60 * 60
+
     /// Decoded images, keyed by URL string. NSCache evicts under pressure
     /// — the disk tier still has the bytes, so a re-decode is cheap.
     private let memory = NSCache<NSString, UIImage>()
@@ -60,7 +82,24 @@ actor ArtworkCache {
 
     /// In-flight fetches, so N concurrent requests for the same URL cause
     /// one download.
-    private var inFlight: [String: Task<UIImage?, Never>] = [:]
+    private var inFlight: [String: Task<(UIImage, Data)?, Never>] = [:]
+
+    /// What the disk tier holds: every file's name, size and write date.
+    ///
+    /// The index is what keeps the write path free of directory
+    /// listings — the ceiling is checked against the running byte total,
+    /// and only a cache that has actually outgrown its bounds is swept.
+    private var diskIndex: [String: DiskCacheBounds.Entry] = [:]
+
+    /// The disk tier's running total, in bytes.
+    private var diskBytes = 0
+
+    /// The write date of the oldest file in the index — the age rule's
+    /// trigger.
+    private var oldestDiskDate: Date?
+
+    /// Whether the index has been read from the directory yet.
+    private var didIndexDisk = false
 
     init(directory: URL? = nil) {
         memory.countLimit = 120
@@ -96,22 +135,25 @@ actor ArtworkCache {
         }
 
         if let task = inFlight[key] {
-            return await task.value
+            guard let (image, _) = await task.value else { return nil }
+            memory.setObject(image, forKey: key as NSString, cost: Self.imageCost(image))
+            return image
         }
 
         // The task runs on the actor; the download suspends it while it
         // waits, so other requests keep flowing.
-        let task = Task<UIImage?, Never> { [directory] in
-            guard let (image, data) = await Self.fetchImage(from: candidates) else { return nil }
-            Self.writeToDisk(data: data, key: key, directory: directory)
-            return image
+        let task = Task<(UIImage, Data)?, Never> {
+            await Self.fetchImage(from: candidates)
         }
         inFlight[key] = task
-        let image = await task.value
+        let fetched = await task.value
         inFlight[key] = nil
-        if let image {
-            memory.setObject(image, forKey: key as NSString, cost: Self.imageCost(image))
-        }
+        guard let (image, data) = fetched else { return nil }
+        Self.writeToDisk(data: data, key: key, directory: directory)
+        // The disk tier keeps its own bounds: the write is counted, and
+        // a cache that has outgrown them is swept (oldest first).
+        recordDiskWrite(name: Self.fileName(for: key), byteCount: data.count)
+        memory.setObject(image, forKey: key as NSString, cost: Self.imageCost(image))
         return image
     }
 
@@ -229,15 +271,13 @@ actor ArtworkCache {
 
     /// How many bytes the disk tier occupies. Reported in Settings so the
     /// user can see what the cache costs before clearing it.
+    ///
+    /// The directory is read fresh here (the Settings row asks rarely);
+    /// the file system is the truth — the OS may purge `Caches/` between
+    /// launches.
     func diskUsage() -> Int {
-        guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.fileSizeKey]
-        ) else { return 0 }
-        return contents.reduce(into: 0) { total, url in
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            total += size
-        }
+        indexDiskFromDirectory()
+        return diskBytes
     }
 
     /// Empties both tiers: the decoded images and the cached bytes on
@@ -253,10 +293,140 @@ actor ArtworkCache {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil
-        ) else { return }
+        ) else {
+            diskIndex = [:]
+            diskBytes = 0
+            oldestDiskDate = nil
+            didIndexDisk = true
+            return
+        }
         for url in contents {
             try? FileManager.default.removeItem(at: url)
         }
+        diskIndex = [:]
+        diskBytes = 0
+        oldestDiskDate = nil
+        didIndexDisk = true
         AppLog.info("artwork cache cleared", .artwork)
+    }
+
+    // MARK: - The disk tier's bounds
+
+    /// Reads the cache directory into the index — once per launch. The
+    /// index is what keeps the write path free of directory listings.
+    private func indexDiskIfNeeded() {
+        guard !didIndexDisk else { return }
+        indexDiskFromDirectory()
+    }
+
+    /// Reads the cache directory into the index: every file's name, size
+    /// and write date, plus the running byte total and the oldest date.
+    private func indexDiskFromDirectory() {
+        didIndexDisk = true
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: Array(keys)
+        ) else {
+            diskIndex = [:]
+            diskBytes = 0
+            oldestDiskDate = nil
+            return
+        }
+        var index: [String: DiskCacheBounds.Entry] = [:]
+        var total = 0
+        var oldest: Date?
+        for url in contents {
+            let values = try? url.resourceValues(forKeys: keys)
+            let name = url.lastPathComponent
+            let size = values?.fileSize ?? 0
+            let date = values?.contentModificationDate ?? Date.distantPast
+            index[name] = DiskCacheBounds.Entry(
+                name: name,
+                byteCount: size,
+                modifiedAt: date
+            )
+            total += size
+            if let current = oldest {
+                oldest = min(current, date)
+            } else {
+                oldest = date
+            }
+        }
+        diskIndex = index
+        diskBytes = total
+        oldestDiskDate = oldest
+    }
+
+    /// Records a file just written to the disk tier, then checks whether
+    /// the tier has outgrown its bounds.
+    private func recordDiskWrite(name: String, byteCount: Int) {
+        indexDiskIfNeeded()
+        let date = Date()
+        if let previous = diskIndex[name] {
+            diskBytes -= previous.byteCount
+        }
+        diskIndex[name] = DiskCacheBounds.Entry(
+            name: name,
+            byteCount: byteCount,
+            modifiedAt: date
+        )
+        diskBytes += byteCount
+        if let oldest = oldestDiskDate {
+            oldestDiskDate = min(oldest, date)
+        } else {
+            oldestDiskDate = date
+        }
+        sweepDiskIfNeeded()
+    }
+
+    /// Sweeps the disk tier when it has outgrown its bounds. The trigger
+    /// is cheap — the running byte total and the oldest file's date — so
+    /// the common case (a cache well inside its bounds) costs no
+    /// file-system work at all.
+    private func sweepDiskIfNeeded() {
+        let bounds = DiskCacheBounds(
+            byteLimit: Self.diskByteLimit,
+            maxAge: Self.diskMaxAge
+        )
+        guard bounds.needsSweep(
+            totalBytes: diskBytes,
+            oldestModifiedAt: oldestDiskDate
+        ) else { return }
+        sweepDisk(using: bounds)
+    }
+
+    /// Deletes the files the rule names, oldest first.
+    ///
+    /// The rule itself lives in `PandoraCore` (`DiskCacheBounds`) — pure
+    /// Foundation, so it is unit-tested there; this is the I/O half.
+    private func sweepDisk(using bounds: DiskCacheBounds) {
+        // The index is the trigger; the file system is the truth (the OS
+        // may have purged files while the app was not running).
+        indexDiskFromDirectory()
+        let plan = bounds.evictionPlan(entries: Array(diskIndex.values))
+        guard !plan.isEmpty else { return }
+        var reclaimed = 0
+        for entry in plan {
+            let url = directory.appendingPathComponent(entry.name, isDirectory: false)
+            do {
+                try FileManager.default.removeItem(at: url)
+                reclaimed += entry.byteCount
+            } catch {
+                // Already gone (the OS purged it) — nothing to reclaim.
+            }
+            diskIndex.removeValue(forKey: entry.name)
+        }
+        diskBytes = max(0, diskBytes - reclaimed)
+        recomputeOldestDiskDate()
+        AppLog.info(
+            "artwork cache swept: \(plan.count) file(s), \(reclaimed) bytes reclaimed",
+            .artwork
+        )
+    }
+
+    /// Recomputes the oldest file's date after a sweep.
+    private func recomputeOldestDiskDate() {
+        oldestDiskDate = diskIndex.values.map(\.modifiedAt).min()
     }
 }

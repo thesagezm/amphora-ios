@@ -18,13 +18,29 @@ queued — **W3** (the word-exact sweep + the letter swell, on top of
 W1/W2's core math and the Musixmatch provider), **playback speed
 0.5–2×**, **Last.fm upgraded to BitChord's** (the crossing scrobble,
 the three switches, the three rule sliders — in place of the planned
-ListenBrainz client, which the user dropped), and **offline
-awareness** (the first M6 slice). Everything from this session and the
-BitChord round before it is **awaiting the user's device test**. **F1 —
-the mini-player artwork flight — landed in this push** (see In Flight /
-Last Push).
+ListenBrainz client, which the user dropped), **offline
+awareness** (the first M6 slice), **F1 — the mini-player artwork
+flight**, and **the artwork cache's disk-tier ceiling** (the long-
+session soak, first half). Everything from this session and the
+BitChord round before it is **awaiting the user's device test**. The
+next unit is **the playback control icons, copied from BitChord
+exactly** (the user's feedback of 2026-11-19 — see User Feedback
+Pending).
 
 ## User Feedback Pending
+
+**2026-11-19 playback control icons (this session's driver — jumps the
+queue):** "the playback control icons copy exactly those from bitchord".
+Today's transport is a **drawn glyph family** — the 2026-11-10 round's
+Unit B (`Amphora/UI/TransportGlyph.swift`: play, pause, next, stop,
+back-15, hand-drawn as shapes so they would match one design language).
+The user wants **BitChord's own icons, copied exactly**: read the fork's
+`NowPlayingScreen` / `PlayerDock` sources for the precise icons they
+use (SF Symbol names or vector assets) and adopt them verbatim in the
+full player, the mini player and the Home hero. The icons change; the
+layout, the behaviour and the radio branch (LIVE badge, stop instead of
+next) do not. It is the unit right after the artwork cache's disk
+ceiling; detail in "Next unit" under In Flight / Last Push.
 
 **2026-11-19 Last.fm direction (this session's driver):** "instead of
 adding listenbrainz, make the current last fm like the one in bitchord
@@ -597,52 +613,72 @@ away without a new build.
   the typecheck (CI only) and the flight itself, which needs the
   device.
 
-**Next unit — M6: the long-session soak (the artwork cache's disk
-tier).** M6's robustness work continues: the offline unit is in, the
-session-expiry path is done, and the next slice is the one the app
-grows into by itself — the caches. The artwork cache's **memory** tier
-is already bounded (NSCache: 120 images / 64 MB) and evicts under
-pressure, but its **disk** tier is not: every artwork the app has ever
-seen is written to `Caches/Amphora/Artwork/` and nothing ever evicts
-it, so a long session (Station Thumb, a few hundred stations, hours of
-radio) grows that directory without limit. The unit: give the disk
-tier a ceiling (size and/or age), evict oldest-first, and show the
-ceiling in Settings next to the existing disk-usage line. The lyrics
-side is the second half of the slice — the provider chain's in-memory
-cache gets the same treatment if it turns out to be unbounded.
+**This push — M6: the artwork cache's disk tier gets a ceiling.** The
+long-session soak, first half. The memory tier was already bounded
+(NSCache: 120 images / 64 MB); the disk tier was not — every artwork
+the app has ever seen stayed in `Caches/Amphora/Artwork/` forever, so a
+long session (Station Thumb, a few hundred stations, hours of radio)
+grew that directory without limit. Now it is bounded.
 
-- **Survey done (2026-11-19, this session — read it before coding):**
-  `Amphora/Persistence/ArtworkCache.swift` is the whole story: the
-  actor holds an `NSCache` (bounded: 120 items / 64 MB) and a disk
-  directory of SHA-256-named files (`fileName(for:)`, written by
-  `writeToDisk`, read by `readFromDisk`). The only housekeeping today
-  is `diskUsage()` (a directory listing for the Settings row) and
-  `clear()`. `SettingsView.artworkCacheRow` shows "Clear Artwork
-  Cache" + the size (`AppStore.artworkCacheBytes`, refreshed by
-  `refreshArtworkCacheSize()` / `clearArtworkCache()`), so the
-  ceiling has a home to be shown in.
-  The shape this unit wants: a **portable, testable** eviction rule in
-  `PandoraCore` (pure Foundation, no UIKit — it is the future
-  Android-port surface), e.g. a `DiskCacheBounds` helper that takes
-  `(url, size, modifiedDate)` entries and returns the files to delete
-  oldest-first until the total is under the limit; the app's actor
-  calls it after a write and deletes what it names; the ceiling and
-  the current usage both surface in the Settings row. The rule is
-  worth **unit tests in PandoraCore** (the CI runs those) — the app
-  target has no test target of its own.
-  Do not sweep the directory on every write: keep a running byte
-  total and sweep when it crosses the limit (or every N writes).
-- The rest of the standing queue after it: M6 robustness continues
-  (the session-expiry path **under a slow network** is the other open
-  one — the re-login must not fight a slow link), then the deferred
-  BitChord siblings: the mini-player's loading spinner (which needs a
-  per-track loading state the player does not expose yet) and the
-  queue's artwork.
+- **The rule lives in `PandoraCore` (pure Foundation, unit-tested
+  there):** `PandoraCore/Sources/PandoraCore/DiskCacheBounds.swift` —
+  `DiskCacheBounds` with a byte ceiling and an age ceiling, and
+  `evictionPlan(entries:now:)` that returns the files to delete:
+  expired files first, then the oldest files until the cache is back
+  under its byte ceiling (ties broken by name, so the plan is
+  reproducible). `needsSweep(totalBytes:oldestModifiedAt:)` is the
+  cheap trigger. **16 new core tests** (425/425 green in Docker): under
+  / at / over the ceiling, oldest-first, the name tie-break, the age
+  rule (a file exactly at the age ceiling is still in date), the two
+  rules together (an expired file does not force an extra removal), the
+  totals and the trigger.
+- **The app does the I/O** (`Amphora/Persistence/ArtworkCache.swift`):
+  the actor keeps an in-memory index of the disk tier (name, size,
+  write date), a running byte total and the oldest file's date. A
+  write updates the index; the sweep trigger is checked against those
+  numbers, so **the directory is not listed on every write** — the
+  listing happens only when the cache has actually outgrown its
+  bounds (and the sweep re-reads the directory first, because the file
+  system is the truth: the OS may purge `Caches/` between launches).
+  The fetch task now returns the bytes with the image, so the write
+  and the counting happen on the actor, in order, after the download.
+- **The ceiling: 128 MB, and 30 days.** 128 MB holds a very large
+  library of covers while putting a floor under the disk the app may
+  take; artwork older than 30 days is dropped on the next sweep.
+- **Settings → Library** — the row now reads "12.4 MB of 128 MB" and
+  the section footer explains the rule ("the oldest covers are dropped
+  first"). The number is read fresh from the directory when the row
+  refreshes, so it is the truth, not the running total.
+- **The lyrics side of the slice — surveyed, not yet done:** the
+  provider chain's in-memory cache is `AppStore.lyricsCache`, a plain
+  dictionary with one entry per track token and **no bound** — the
+  second half of this slice, queued below.
+
+**Next unit — the playback control icons, copied from BitChord exactly.**
+The user's feedback (2026-11-19): "the playback control icons copy
+exactly those from bitchord". Today's transport is a **drawn glyph
+family** — the 2026-11-10 round's Unit B (`Amphora/UI/TransportGlyph.swift`:
+play, pause, next, stop, back-15, hand-drawn as shapes so they would
+match one design language). The user wants BitChord's own icons
+instead. The unit: read BitChord's `NowPlayingScreen` / `PlayerDock`
+sources (the fork: kushagrasinghx/BitChord) for the exact icons they
+use — the SF Symbol names or the vector assets — and adopt them
+verbatim in the full player, the mini player and the Home hero.
+Deliberate: the icons change, the layout and the behaviour do not; the
+radio branch (LIVE badge, stop instead of next) stays.
+
+- The rest of the standing queue after it: the **second half of the
+  soak** (bound `AppStore.lyricsCache` — the same rule, a count
+  ceiling, oldest-first), then M6 robustness (the session-expiry path
+  **under a slow network** — the re-login must not fight a slow link),
+  then the deferred BitChord siblings: the mini-player's loading
+  spinner (which needs a per-track loading state the player does not
+  expose yet) and the queue's artwork.
 - **Everything from this session is awaiting the user's device test:**
   the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
   word-exact sweep + the letter swell), the playback speed, the
-  Last.fm upgrade, the offline state, and now the artwork flight.
-  When feedback arrives it jumps the queue.
+  Last.fm upgrade, the offline state, the artwork flight, and now the
+  artwork cache's ceiling. When feedback arrives it jumps the queue.
 
 **Next unit — F1 (the mini-player artwork flight):** the last deferred
 BitChord item, and the one remaining adoption gap in the player
@@ -3689,20 +3725,25 @@ toolbar) → Copy → paste.
 
 ## Pending Queue
 
-0. **F1 — the mini-player artwork flight** (the last deferred
-   BitChord item): the cover flying between the mini player pill and
-   the full player. The design decision (a cross-host overlay window
-   vs a one-host flight), the constraints and the honesty caveat are
-   in **"Next unit — F1"** at the top of In Flight / Last Push. **It
-   needs the user's device to judge** — it is animation, not behavior.
-1. **M6 robustness, continued** — the offline unit landed; the next
-   natural slices are the long-session soak (artwork/lyrics cache
-   bounds) and the session-expiry path under a slow network.
-2. **User device test of the next IPA** — the whole pile is untested:
+0. **F1 — the mini-player artwork flight — LANDED** (`99861ee`, CI
+   ✅ Core + ✅ iOS). It needs the user's device to judge — it is
+   animation, not behavior.
+1. **The playback control icons, copied from BitChord exactly** — the
+   user's feedback of 2026-11-19; it jumps the queue. Detail in "Next
+   unit" at the top of In Flight / Last Push.
+2. **M6 robustness, continued** — the artwork cache's disk tier landed
+   (this push); next: bound `AppStore.lyricsCache` (the soak's second
+   half — an unbounded per-track dictionary), then the session-expiry
+   path under a slow network.
+3. **The deferred BitChord siblings** — the mini-player's loading
+   spinner (needs a per-track loading state the player does not expose
+   yet) and the queue's artwork.
+4. **User device test of the next IPA** — the whole pile is untested:
    the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
    word-exact sweep + the letter swell), the playback speed, the
    Last.fm upgrade (the crossing scrobble, the switches, the rule
-   sliders) and the offline state. Test order: the player first
+   sliders), the offline state, the artwork flight, and the artwork
+   cache's ceiling. Test order: the player first
    (transport, volume slider, LIVE badge, radio controls, the frosted
    dock and queue panel, the sleeve gestures), then the lyrics panel
    (the swept line, the letter swell, the translation/romanization
@@ -3711,21 +3752,17 @@ toolbar) → Copy → paste.
    mid-song), then playback speed, then the radio flow and the older
    pending round (light mode, history ratings, lyrics fallbacks,
    romanization, AirPlay).
-3. **Bookmarks on device** — the user reported they don't work; the
+5. **Bookmarks on device** — the user reported they don't work; the
    protocol was verified against pydora. If the device test still
    fails, the Diagnostics log decides the next step.
-4. Anything red on the next `gh run list` — repair first.
-5. **ListenBrainz — dropped** (the user chose the Last.fm upgrade
+6. Anything red on the next `gh run list` — repair first.
+7. **ListenBrainz — dropped** (the user chose the Last.fm upgrade
    instead, 2026-11-19); not to be revisited without a new request.
-6. **The mini-player artwork flight's siblings** — BitChord's loading
-   spinner in the mini player (needs a per-track loading state the
-   player does not expose) and the queue's artwork — stay unadopted
-   and are recorded as decisions, not omissions.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — confirm the
-offline unit's iOS Build is green, then start **F1** (the artwork
-flight) or wait for the user's device feedback, which jumps the
-queue.
+artwork-cache unit's iOS Build is green, then start **the playback
+control icons** (the user's feedback) or wait for the user's device
+feedback, which jumps the queue.
 
 **CI state at the handover (2026-11-19):** the repair push (`2446ccb`)
 is ✅ Core Tests + ✅ iOS Build — the playback-speed and Last.fm code

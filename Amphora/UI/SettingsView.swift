@@ -175,7 +175,11 @@ struct SettingsView: View {
         } header: {
             sectionHeader("Library", icon: "externaldrive")
         } footer: {
-            Text("Both live on this device only — clearing them never changes your Pandora account.")
+            Text(
+                "Both live on this device only — clearing them never changes your Pandora account."
+                    + "\n\nThe artwork cache keeps at most \(cacheLimitSummary) on disk;"
+                    + " the oldest covers are dropped first."
+            )
         }
     }
 
@@ -219,7 +223,17 @@ struct SettingsView: View {
     private var cacheSummary: String {
         let bytes = store.artworkCacheBytes
         if bytes == 0 { return "Empty" }
-        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        let used = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        return "\(used) of \(cacheLimitSummary)"
+    }
+
+    /// The artwork cache's ceiling on disk — the same number the cache
+    /// itself enforces, so the row never promises more than it keeps.
+    private var cacheLimitSummary: String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(ArtworkCache.diskByteLimit),
+            countStyle: .file
+        )
     }
 
     // MARK: Support / About / Account
