@@ -428,6 +428,57 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**This push — W2 of the word-timing adoption: the Musixmatch
+provider.** the first skip the user reinstated, now real: the sweep
+follows **word-exact timings** when the source has them.
+
+- **`PandoraCore/Sources/PandoraCore/MusixmatchLyrics.swift` (new)** —
+  the protocol derived from BitChord's GPL-3 Musixmatch client (the
+  reference the project names for rich sync), nothing guessed:
+  `token.get` behind a signed request for a random GUID;
+  `track.search` scored on title/artist/duration; `track.richsync.get`
+  (the word tier — its body is a JSON array of lines
+  `{ts, te, x, l: [{c, o}]}`); `track.subtitle.get` as the line-timed
+  fallback, converted to LRC and parsed by the shared parser.
+- **Every API request is signed**: `<normalized url><UTC yyyyMMdd>`
+  HMAC-SHA256 (CryptoSwift — already in the tree for Blowfish, no new
+  dependency), the base64 signature percent-encoded with
+  `signature_protocol=sha256`. The signing secret is the web client's
+  rotating one — read from the page's `_app-*.js` chunk
+  (base64-reversed) when reachable, a static fallback when the page is
+  briefly down. A **401/402 inside a successful HTTP response** means
+  the token expired: both moving credentials refresh and the request
+  retries once — the session manager's retry-once semantics, mirrored.
+- **The ingestion is distrustful, in two layers.** Track choice: best
+  score among ten candidates, refused below 40 (title, artist and
+  duration all failed — never guessed; the Céline/Olivier class of
+  wrong answer stays impossible). Word choice: fragments carry their
+  own spacing, which is the only thing saying where a word stops — a
+  fragment that neither ends in whitespace nor is followed by
+  whitespace continues the word in hand; Han/kana/Thai/full-width
+  scripts are written without spaces, so their fragments stay words of
+  their own; a whitespace-only fragment closes the word.
+- **Chain position: first.** When Musixmatch answers with rich sync,
+  the lyrics carry word timings and the sweep is word-exact; when it
+  fails (no match, no rich sync, dead token, blocked network) the
+  chain falls through to lrclib exactly as before. The per-track
+  lyrics cache dedups within the session, so the extra hop is paid at
+  most once per song.
+- **15 new tests** (407/407 green in Docker): rich-sync ingestion
+  (fragments → words with timestamps, syllable glue, the unspaced-
+  script exemption, blank-fragment flush, sort order, malformed body),
+  the scoring (exact beats loose; the below-floor refusal), the track
+  search decode, a **known-answer HMAC vector** (computed with
+  hashlib independently), the space normalization, the in-band auth
+  detection, and the subtitle→LRC conversion.
+
+Local verification: PandoraCore **407/407 green** in Docker.
+
+**Device expectation**: play a popular track (Musixmatch coverage is
+wide) — the sweep now snaps to each word's real start instead of
+interpolating across the line; songs Musixmatch does not cover fall
+back to lrclib and interpolate exactly as before.
+
 **This push — A3 of the BitChord round: the track stats sheet.**
 BitChord's "stats for nerds", adapted to what Pandora actually
 exposes.

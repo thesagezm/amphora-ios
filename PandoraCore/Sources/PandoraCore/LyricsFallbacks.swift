@@ -374,10 +374,14 @@ public struct LyricsProviderChain: LyricsProviding, Sendable {
         self.providers = providers
     }
 
-    /// The chain Amphora uses: exact match → fuzzy search → a second
-    /// database.
+    /// The chain Amphora uses: word-exact timings first (Musixmatch's
+    /// rich sync — the swept line follows real word starts when it
+    /// answers), then lrclib's exact match → fuzzy search → a second
+    /// database. A provider that fails or finds nothing falls through
+    /// quietly.
     public static func defaultChain() -> LyricsProviderChain {
         LyricsProviderChain(providers: [
+            MusixmatchLyricsProvider(),
             LRCLibClient(),
             LRCLibSearchClient(),
             LyricsOvhClient()
