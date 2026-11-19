@@ -128,6 +128,7 @@ struct LyricsPanel: View {
         store.lyricsTranslationState == .translated && isTranslationVisible
     }
 
+    @ViewBuilder
     private var statusText: some View {
         switch store.lyricsTranslationState {
         case .translating:
