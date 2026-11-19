@@ -1,30 +1,67 @@
 import SwiftUI
+import PandoraCore
 
-/// The transport's icon family, drawn rather than borrowed.
+/// The playback-control icon family, copied exactly from BitChord.
 ///
-/// The system's filled media glyphs read chunky at transport sizes —
-/// `play.fill` rendered at 58 pt bold is a heavy wedge and the
-/// double-triangle `forward.fill` looks dated (the user called them
-/// "substandard"). These five glyphs are drawn to one design language
-/// instead: soft-rounded corners, matched visual weight across the
-/// family, and every proportion derived from the square the glyph is
-/// drawn in — so play at 16 pt and play at 44 pt are the same icon,
-/// scaled.
+/// The user's direction (2026-11-19): "the playback control icons copy
+/// exactly those from bitchord". The shapes are BitChord's own transport
+/// drawables — `ic_player_play`, `ic_player_pause`, `ic_player_next`,
+/// `ic_player_previous` (960×960 viewports) — their `pathData` verbatim
+/// in `TransportIconPaths` (PandoraCore), rendered here 1:1.
+///
+/// The sizing relationships are BitChord's too, verbatim: their
+/// `TransportRow` renders the play/pause drawables in a 74dp box and the
+/// skip drawables in a 53dp box squashed to 0.85 height
+/// (`PLAYER_SKIP_HEIGHT_SCALE`), "so the pair reads lower and longer
+/// next to the play button". This view's `size` is the play glyph's
+/// rendered height — the family's yardstick — and the skip glyphs scale
+/// themselves against it exactly as BitChord's do.
+///
+/// One deliberate difference: BitChord's mini player mixes Material's
+/// `PlayArrow`/`Pause` into the same slots. Amphora keeps the copied
+/// family on every surface — mini player, hero tiles, full player — so
+/// the app reads as one design language.
+///
+/// Two glyphs BitChord does not ship, and how they are handled:
+///
+/// - **Stop** (the radio branch's trailing button): drawn in the
+///   family's language — a 480-unit square with the pause bars' 40-unit
+///   corner radius — and rendered at the skip glyphs' height, so the
+///   radio slot matches the song slot.
+/// - **Back 15**: there is no BitChord back-15, so the family's
+///   `ic_player_previous` takes the slot, exactly as it leads BitChord's
+///   own transport row. The action stays Pandora's back-15 (radio has no
+///   previous track to skip to) and the VoiceOver label says what the
+///   button does, not what the glyph resembles.
 struct TransportGlyph: View {
     enum Kind {
-        case play, pause, next, stop, back15
+        case play, pause, next, previous, stop
     }
 
+    /// The four copied drawables plus the family-language stop, parsed
+    /// once and reused by every surface.
+    private static let play = TransportIconPaths.icon(TransportIconPaths.playData)
+    private static let pause = TransportIconPaths.icon(TransportIconPaths.pauseData)
+    private static let next = TransportIconPaths.icon(TransportIconPaths.nextData)
+    private static let previous = TransportIconPaths.icon(TransportIconPaths.previousData)
+    private static let stop = TransportIconPaths.icon(TransportIconPaths.stopData)
+
+    /// BitChord's transport constants, verbatim: the skip drawables'
+    /// 53dp box against the play drawable's 74dp box, and their
+    /// `PLAYER_SKIP_HEIGHT_SCALE`.
+    private static let skipBoxToPlayBox: CGFloat = 53 / 74
+    private static let skipHeightScale: CGFloat = 0.85
+
     let kind: Kind
-    /// The side of the square the glyph is drawn within.
+    /// The rendered height of the play glyph's ink — every other glyph
+    /// in the family scales against it.
     var size: CGFloat
     var color: Color = .primary
 
     /// Explicit init on purpose: the synthesized memberwise init would
-    /// demand the `kind:` label, and the whole point of the family is
-    /// terse call sites — `TransportGlyph(.play, size: 44)` and
-    /// `TransportGlyph(.back15, size: 27)` in the transports, with the
-    /// color where the glyph sits on the accent fill instead of white.
+    /// demand the `kind:` label, and the family's point is terse call
+    /// sites — `TransportGlyph(.play, size: 32)` in the transports, with
+    /// the color where the glyph sits on the accent fill.
     init(_ kind: Kind, size: CGFloat, color: Color = .primary) {
         self.kind = kind
         self.size = size
@@ -32,152 +69,123 @@ struct TransportGlyph: View {
     }
 
     var body: some View {
-        switch kind {
-        case .play:
-            RoundedTriangle()
-                .fill(color)
-                .frame(width: size * 0.92, height: size)
-        case .pause:
-            HStack(spacing: size * 0.16) {
-                pauseBar
-                pauseBar
-            }
-            .frame(height: size)
-        case .next:
-            HStack(spacing: size * 0.07) {
-                RoundedTriangle()
-                    .fill(color)
-                    .frame(width: size * 0.62, height: size * 0.96)
-                RoundedRectangle(cornerRadius: size * 0.06, style: .continuous)
-                    .fill(color)
-                    .frame(width: size * 0.13, height: size * 0.96)
-            }
-            .frame(height: size)
-        case .stop:
-            RoundedRectangle(cornerRadius: size * 0.16, style: .continuous)
-                .fill(color)
-                .frame(width: size * 0.74, height: size * 0.74)
-        case .back15:
-            BackFifteenGlyph(size: size, color: color)
-        }
-    }
-
-    /// One pause bar: a slim rounded rectangle, full height.
-    private var pauseBar: some View {
-        RoundedRectangle(cornerRadius: size * 0.055, style: .continuous)
-            .fill(color)
-            .frame(width: size * 0.20, height: size * 0.96)
-    }
-}
-
-/// A right-pointing triangle with softened corners. The corner radius
-/// is proportional to the triangle's own size, so the play glyph and
-/// the triangle inside the next glyph round identically at any scale.
-private struct RoundedTriangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        roundedPolygon(
-            [
-                CGPoint(x: rect.minX, y: rect.minY),
-                CGPoint(x: rect.maxX, y: rect.midY),
-                CGPoint(x: rect.minX, y: rect.maxY),
-            ],
-            cornerRadius: min(rect.width, rect.height) * 0.10
-        )
-    }
-}
-
-/// A closed polygon with each corner softened by a quadratic curve —
-/// the edge is trimmed `cornerRadius` short of the vertex on both
-/// sides and the vertex itself becomes the curve's control point.
-private func roundedPolygon(_ points: [CGPoint], cornerRadius: CGFloat) -> Path {
-    var path = Path()
-    let count = points.count
-    guard count >= 3 else { return path }
-    for i in 0..<count {
-        let previous = points[(i + count - 1) % count]
-        let current = points[i]
-        let next = points[(i + 1) % count]
-        let toPrevious = CGPoint(x: previous.x - current.x, y: previous.y - current.y)
-        let toNext = CGPoint(x: next.x - current.x, y: next.y - current.y)
-        let previousLength = max(hypot(toPrevious.x, toPrevious.y), 0.001)
-        let nextLength = max(hypot(toNext.x, toNext.y), 0.001)
-        // Never trim past the middle of the adjoining edges.
-        let trim = min(cornerRadius, previousLength / 2, nextLength / 2)
-        let start = CGPoint(
-            x: current.x + toPrevious.x / previousLength * trim,
-            y: current.y + toPrevious.y / previousLength * trim
-        )
-        let end = CGPoint(
-            x: current.x + toNext.x / nextLength * trim,
-            y: current.y + toNext.y / nextLength * trim
-        )
-        if i == 0 {
-            path.move(to: start)
+        if let rendered {
+            rendered
         } else {
-            path.addLine(to: start)
+            Color.clear
+                .frame(width: max(1, size), height: max(1, size))
         }
-        path.addQuadCurve(to: end, control: current)
     }
-    path.closeSubpath()
-    return path
-}
 
-/// "Back 15 seconds": a nearly-full circle with the gap at the upper
-/// left and the arrowhead at the top pointing counterclockwise, the
-/// number inside — the shape language of the system's gobackward.15,
-/// drawn to match the family's weight.
-private struct BackFifteenGlyph: View {
-    let size: CGFloat
-    let color: Color
-
-    var body: some View {
-        ZStack {
-            BackFifteenArc()
-                .stroke(
-                    color,
-                    style: StrokeStyle(lineWidth: size * 0.12, lineCap: .round)
-                )
-            BackFifteenArrowhead()
+    /// The glyph at BitChord's proportions, or `nil` when the path data
+    /// failed to parse (never expected — the strings are constants).
+    @ViewBuilder
+    private var rendered: some View {
+        if let icon = Self.icon(for: kind), let bounds = icon.bounds,
+           bounds.width > 0, bounds.height > 0 {
+            let frame = Self.frame(bounds: bounds, kind: kind, size: size)
+            TransportIconShape(icon: icon)
                 .fill(color)
-            Text("15")
-                .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
-                .foregroundStyle(color)
+                .frame(width: frame.width, height: frame.height)
+                .scaleEffect(y: Self.squash(of: kind))
         }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+    }
+
+    /// The glyph's frame, at BitChord's boxes scaled so the play
+    /// glyph's ink stands `size` tall.
+    private static func frame(bounds: VectorBounds, kind: Kind, size: CGFloat) -> CGSize {
+        let viewport = CGFloat(TransportIconPaths.viewport)
+        guard let playBounds = play.bounds, playBounds.height > 0 else {
+            return CGSize(width: max(1, size), height: max(1, size))
+        }
+        // The box that renders the play drawable's ink `size` tall.
+        let playBox = size * viewport / CGFloat(playBounds.height)
+        switch kind {
+        case .play, .pause:
+            return CGSize(
+                width: playBox * CGFloat(bounds.width) / viewport,
+                height: playBox * CGFloat(bounds.height) / viewport
+            )
+        case .next, .previous:
+            let skipBox = playBox * skipBoxToPlayBox
+            return CGSize(
+                width: skipBox * CGFloat(bounds.width) / viewport,
+                height: skipBox * CGFloat(bounds.height) / viewport
+            )
+        case .stop:
+            // BitChord ships no stop; ours renders at the skip glyphs'
+            // rendered (squashed) height, so the radio slot matches the
+            // song slot.
+            let skipInkHeight = CGFloat(next.bounds?.height ?? bounds.height)
+            let side = playBox * skipBoxToPlayBox * skipHeightScale
+                * skipInkHeight / viewport
+            return CGSize(width: side, height: side)
+        }
+    }
+
+    /// BitChord squashes the skip glyphs to 0.85 height — visually only
+    /// (`graphicsLayer`): the layout box keeps the drawable's height,
+    /// the rendered glyph reads lower and longer. `scaleEffect` is
+    /// SwiftUI's identical mechanism.
+    private static func squash(of kind: Kind) -> CGFloat {
+        kind == .next || kind == .previous ? skipHeightScale : 1
+    }
+
+    private static func icon(for kind: Kind) -> TransportIcon {
+        switch kind {
+        case .play: return play
+        case .pause: return pause
+        case .next: return next
+        case .previous: return previous
+        case .stop: return stop
+        }
     }
 }
 
-/// 290° of circle ending at the top, sweeping counterclockwise: the
-/// gap lands in the upper left and the direction of travel at the end
-/// (the top) is leftward — where the arrowhead sits.
-private struct BackFifteenArc: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.addArc(
-            center: CGPoint(x: rect.midX, y: rect.midY),
-            radius: min(rect.width, rect.height) * 0.40,
-            startAngle: .degrees(200),
-            endAngle: .degrees(-90),
-            clockwise: false
-        )
-        return path
-    }
-}
+/// Renders a parsed icon 1:1: the ink bounds stretch to the frame — a
+/// uniform stretch for every glyph (each frame is the ink's own aspect,
+/// and the skip squash is applied *outside*, as BitChord applies it), so
+/// the arcs stay true arcs.
+private struct TransportIconShape: Shape {
+    let icon: TransportIcon
 
-/// The arrowhead at the top of the back-15 arc, pointing left
-/// (counterclockwise) — the direction the arc ends travelling. The
-/// tip extends past the arc's end and the base overlaps the stroke's
-/// round cap, so the two read as one stroke.
-private struct BackFifteenArrowhead: Shape {
     func path(in rect: CGRect) -> Path {
-        let size = min(rect.width, rect.height)
-        // The arc ends at the top of the circle (midX, midY - 0.40 size).
+        guard let bounds = icon.bounds, bounds.width > 0, bounds.height > 0 else {
+            return Path()
+        }
+        let scaleX = rect.width / CGFloat(bounds.width)
+        let scaleY = rect.height / CGFloat(bounds.height)
+        func point(_ x: Double, _ y: Double) -> CGPoint {
+            CGPoint(
+                x: rect.minX + CGFloat(x - bounds.minX) * scaleX,
+                y: rect.minY + CGFloat(y - bounds.minY) * scaleY
+            )
+        }
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX - size * 0.135, y: rect.midY - size * 0.40))
-        path.addLine(to: CGPoint(x: rect.midX + size * 0.01, y: rect.midY - size * 0.495))
-        path.addLine(to: CGPoint(x: rect.midX + size * 0.01, y: rect.midY - size * 0.305))
-        path.closeSubpath()
+        for subpath in icon.subpaths {
+            for segment in subpath.segments {
+                switch segment {
+                case .move(let x, let y):
+                    path.move(to: point(x, y))
+                case .line(let x, let y):
+                    path.addLine(to: point(x, y))
+                case .arc(
+                    let centerX, let centerY, let radius,
+                    let start, let end, let clockwiseOnScreen):
+                    path.addArc(
+                        center: point(centerX, centerY),
+                        radius: CGFloat(radius) * scaleX,
+                        startAngle: .degrees(start),
+                        endAngle: .degrees(end),
+                        // A clockwise-on-screen sweep is SwiftUI's
+                        // counterclockwise flag — see VectorSegment.
+                        clockwise: !clockwiseOnScreen
+                    )
+                case .close:
+                    path.closeSubpath()
+                }
+            }
+        }
         return path
     }
 }

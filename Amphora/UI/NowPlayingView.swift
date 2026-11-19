@@ -983,7 +983,10 @@ struct NowPlayingView: View {
                     Haptics.light()
                     store.player.skipBackward(by: 15)
                 } label: {
-                    TransportGlyph(.back15, size: 27)
+                    // BitChord's previous glyph leads their transport
+                    // row; the action stays Pandora's back-15 (there is
+                    // no previous track to skip to on radio).
+                    TransportGlyph(.previous, size: 32)
                         .frame(width: 56, height: 56)
                 }
                 .buttonStyle(PressableButtonStyle())
@@ -1018,7 +1021,10 @@ struct NowPlayingView: View {
                     store.send(.skipToNext)
                 }
             } label: {
-                TransportGlyph(track.isRadio ? .stop : .next, size: 27)
+                // `size` is the family's yardstick (the play glyph's
+                // height); the skip glyphs scale themselves against it,
+                // exactly as BitChord's transport row does.
+                TransportGlyph(track.isRadio ? .stop : .next, size: 32)
                     .frame(width: 56, height: 56)
             }
             .buttonStyle(PressableButtonStyle())

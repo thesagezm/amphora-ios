@@ -20,27 +20,23 @@ W1/W2's core math and the Musixmatch provider), **playback speed
 the three switches, the three rule sliders — in place of the planned
 ListenBrainz client, which the user dropped), **offline
 awareness** (the first M6 slice), **F1 — the mini-player artwork
-flight**, and **the artwork cache's disk-tier ceiling** (the long-
-session soak, first half). Everything from this session and the
-BitChord round before it is **awaiting the user's device test**. The
-next unit is **the playback control icons, copied from BitChord
-exactly** (the user's feedback of 2026-11-19 — see User Feedback
-Pending).
+flight**, **the artwork cache's disk-tier ceiling** (the long-session
+soak, first half), and **the playback control icons, copied from
+BitChord exactly** (the user's feedback, landed this push). Everything
+from this session and the BitChord round before it is **awaiting the
+user's device test**. The next unit is **bounding the lyrics cache**
+(the soak's second half — see "Next unit" under In Flight / Last Push).
 
 ## User Feedback Pending
 
-**2026-11-19 playback control icons (this session's driver — jumps the
-queue):** "the playback control icons copy exactly those from bitchord".
-Today's transport is a **drawn glyph family** — the 2026-11-10 round's
-Unit B (`Amphora/UI/TransportGlyph.swift`: play, pause, next, stop,
-back-15, hand-drawn as shapes so they would match one design language).
-The user wants **BitChord's own icons, copied exactly**: read the fork's
-`NowPlayingScreen` / `PlayerDock` sources for the precise icons they
-use (SF Symbol names or vector assets) and adopt them verbatim in the
-full player, the mini player and the Home hero. The icons change; the
-layout, the behaviour and the radio branch (LIVE badge, stop instead of
-next) do not. It is the unit right after the artwork cache's disk
-ceiling; detail in "Next unit" under In Flight / Last Push.
+**2026-11-19 playback control icons — LANDED (this push):** "the
+playback control icons copy exactly those from bitchord". BitChord's
+four transport drawables (`ic_player_play` / `ic_player_pause` /
+`ic_player_next` / `ic_player_previous`) are copied verbatim and
+rendered on every surface at BitChord's own sizing relationships; the
+hand-drawn family is gone. Full detail in In Flight / Last Push —
+including the two glyphs BitChord does not ship (stop, back-15) and
+how they were handled. Device test pending.
 
 **2026-11-19 Last.fm direction (this session's driver):** "instead of
 adding listenbrainz, make the current last fm like the one in bitchord
@@ -654,31 +650,85 @@ grew that directory without limit. Now it is bounded.
   dictionary with one entry per track token and **no bound** — the
   second half of this slice, queued below.
 
-**Next unit — the playback control icons, copied from BitChord exactly.**
+**This push — the playback control icons, copied from BitChord exactly.**
 The user's feedback (2026-11-19): "the playback control icons copy
-exactly those from bitchord". Today's transport is a **drawn glyph
-family** — the 2026-11-10 round's Unit B (`Amphora/UI/TransportGlyph.swift`:
-play, pause, next, stop, back-15, hand-drawn as shapes so they would
-match one design language). The user wants BitChord's own icons
-instead. The unit: read BitChord's `NowPlayingScreen` / `PlayerDock`
-sources (the fork: kushagrasinghx/BitChord) for the exact icons they
-use — the SF Symbol names or the vector assets — and adopt them
-verbatim in the full player, the mini player and the Home hero.
-Deliberate: the icons change, the layout and the behaviour do not; the
-radio branch (LIVE badge, stop instead of next) stays.
+exactly those from bitchord". The drawn glyph family (the 2026-11-10
+round's Unit B) is replaced by BitChord's own transport drawables,
+rendered 1:1.
 
-- The rest of the standing queue after it: the **second half of the
-  soak** (bound `AppStore.lyricsCache` — the same rule, a count
-  ceiling, oldest-first), then M6 robustness (the session-expiry path
-  **under a slow network** — the re-login must not fight a slow link),
-  then the deferred BitChord siblings: the mini-player's loading
-  spinner (which needs a per-track loading state the player does not
-  expose yet) and the queue's artwork.
+- **The shapes are BitChord's, verbatim** — `ic_player_play`,
+  `ic_player_pause`, `ic_player_next`, `ic_player_previous` (960×960
+  viewports, Material-Symbols-rounded geometry), fetched from the
+  fork's `sharedUi/src/commonMain/composeResources/drawable/` and kept
+  as `pathData` strings in
+  `PandoraCore/Sources/PandoraCore/TransportIconPaths.swift` (new). A
+  small SVG-path interpreter (the M/L/A/Z subset the drawables use,
+  absolute only) turns each string into platform-neutral segments —
+  arcs as true arcs with derived centers — plus the **derived ink
+  bounds** (every line endpoint and arc extreme: the rounded corners
+  bulge past their vertices, so play's real ink is 494.2 viewport
+  units tall, not the 476 the vertex coordinates suggest).
+  **15 new core tests** (440/440 green in Docker): the subpath/segment
+  structure, a known-answer arc (play's apex: center (669.0, 480.0),
+  r 56, sweep ±56.88°), the four bounds vectors, and the
+  malformed/unsupported rejections (relative commands, elliptical
+  arcs, truncated parameters, the too-small-radius scaling). The
+  bounds math was cross-checked against an independent Python
+  implementation before the vectors were written down.
+- **The sizing relationships are BitChord's too, verbatim**
+  (`PlayerControls.kt`): their `TransportRow` renders play/pause in a
+  **74dp box** and the skip drawables in a **53dp box squashed to
+  0.85 height** (`PLAYER_SKIP_HEIGHT_SCALE`) "so the pair reads lower
+  and longer next to the play button". `TransportGlyph`'s `size`
+  stays the call sites' yardstick — the play glyph's rendered height
+  (32 full player, 23 hero, 17 mini) — and the skip glyphs scale
+  themselves against it (53/74 of the box, then the 0.85 squash via
+  `scaleEffect`, BitChord's `graphicsLayer` mechanism). The full
+  player's side call sites now pass 32 (the play glyph's height)
+  instead of 27.
+- **The two glyphs BitChord does not ship:** **stop** (radio's
+  trailing button) is drawn in the family's language — a 480-unit
+  square with the pause bars' 40-unit corner radius — at the skip
+  glyphs' rendered height; **back-15** — BitChord has no such button,
+  so the family's `ic_player_previous` takes the slot, exactly as it
+  leads BitChord's transport row. The action stays Pandora's back-15
+  (radio has no previous track to skip to) and the VoiceOver label
+  stays "Back 15 seconds".
+- **The deliberate difference:** BitChord's mini player mixes
+  Material's `PlayArrow`/`Pause` into its slots; Amphora keeps the
+  copied family on every surface (mini, hero, full player) so the app
+  reads as one design language.
+- Deleted: the whole hand-drawn family (RoundedTriangle,
+  roundedPolygon, BackFifteenGlyph/arc/arrowhead). Layout, frames,
+  gestures, haptics and behaviour untouched.
+
+Device expectation: the full player's transport reads as BitChord's —
+the rounded play triangle, two rounded pause bars, the wide
+double-triangle next sitting lower than it is wide, the
+double-triangle back button on the left; the mini player and the hero
+tiles carry the same shapes smaller; radio keeps its stop square.
+Everything else about the player behaves as before.
+
+**Next unit — the long-session soak, second half: bound the lyrics
+cache.** The artwork cache's disk tier is bounded; the other cache
+that grows with a long session is `AppStore.lyricsCache` — a plain
+dictionary keyed by track token, one entry per song heard, **no
+ceiling** (small per entry — text — but unbounded in principle). The
+shape: a small portable bounded-cache type in PandoraCore (count
+ceiling, oldest-first eviction, the `PlayHistory.trim` pattern), the
+store's lookups and writes going through it, unit tests in the core.
+Then M6 robustness continues (the session-expiry path **under a slow
+network** — the re-login must not fight a slow link), then the
+deferred BitChord siblings: the mini-player's loading spinner (which
+needs a per-track loading state the player does not expose yet) and
+the queue's artwork.
+
 - **Everything from this session is awaiting the user's device test:**
   the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
   word-exact sweep + the letter swell), the playback speed, the
-  Last.fm upgrade, the offline state, the artwork flight, and now the
-  artwork cache's ceiling. When feedback arrives it jumps the queue.
+  Last.fm upgrade, the offline state, the artwork flight, the
+  artwork cache's ceiling, and now the BitChord icons. When feedback
+  arrives it jumps the queue.
 
 **Next unit — F1 (the mini-player artwork flight):** the last deferred
 BitChord item, and the one remaining adoption gap in the player
@@ -3728,13 +3778,14 @@ toolbar) → Copy → paste.
 0. **F1 — the mini-player artwork flight — LANDED** (`99861ee`, CI
    ✅ Core + ✅ iOS). It needs the user's device to judge — it is
    animation, not behavior.
-1. **The playback control icons, copied from BitChord exactly** — the
-   user's feedback of 2026-11-19; it jumps the queue. Detail in "Next
-   unit" at the top of In Flight / Last Push.
-2. **M6 robustness, continued** — the artwork cache's disk tier landed
-   (this push); next: bound `AppStore.lyricsCache` (the soak's second
-   half — an unbounded per-track dictionary), then the session-expiry
-   path under a slow network.
+1. **The playback control icons — LANDED (this push)** — BitChord's
+   transport drawables copied verbatim; detail in In Flight / Last
+   Push. Device test pending.
+2. **M6 robustness, continued** — the artwork cache's disk tier and
+   the BitChord icons landed (this push); next: **bound
+   `AppStore.lyricsCache`** (the soak's second half — an unbounded
+   per-track dictionary), then the session-expiry path under a slow
+   network.
 3. **The deferred BitChord siblings** — the mini-player's loading
    spinner (needs a per-track loading state the player does not expose
    yet) and the queue's artwork.
@@ -3742,16 +3793,16 @@ toolbar) → Copy → paste.
    the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
    word-exact sweep + the letter swell), the playback speed, the
    Last.fm upgrade (the crossing scrobble, the switches, the rule
-   sliders), the offline state, the artwork flight, and the artwork
-   cache's ceiling. Test order: the player first
-   (transport, volume slider, LIVE badge, radio controls, the frosted
-   dock and queue panel, the sleeve gestures), then the lyrics panel
-   (the swept line, the letter swell, the translation/romanization
-   discs, the offset sheet), then Last.fm (connect with real
-   credentials → the now-playing line → the scrobble landing
-   mid-song), then playback speed, then the radio flow and the older
-   pending round (light mode, history ratings, lyrics fallbacks,
-   romanization, AirPlay).
+   sliders), the offline state, the artwork flight, the artwork
+   cache's ceiling and the BitChord icons. Test order: the player
+   first (transport, volume slider, LIVE badge, radio controls, the
+   frosted dock and queue panel, the sleeve gestures), then the
+   lyrics panel (the swept line, the letter swell, the
+   translation/romanization discs, the offset sheet), then Last.fm
+   (connect with real credentials → the now-playing line → the
+   scrobble landing mid-song), then playback speed, then the radio
+   flow and the older pending round (light mode, history ratings,
+   lyrics fallbacks, romanization, AirPlay).
 5. **Bookmarks on device** — the user reported they don't work; the
    protocol was verified against pydora. If the device test still
    fails, the Diagnostics log decides the next step.
@@ -3759,10 +3810,10 @@ toolbar) → Copy → paste.
 7. **ListenBrainz — dropped** (the user chose the Last.fm upgrade
    instead, 2026-11-19); not to be revisited without a new request.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — confirm the
-artwork-cache unit's iOS Build is green, then start **the playback
-control icons** (the user's feedback) or wait for the user's device
-feedback, which jumps the queue.
+**FIRST ACTION next session:** `gh run list --limit 5` — confirm this
+push's iOS Build is green, then start **bounding the lyrics cache**
+(the soak's second half) or wait for the user's device feedback,
+which jumps the queue.
 
 **CI state at the handover (2026-11-19):** the repair push (`2446ccb`)
 is ✅ Core Tests + ✅ iOS Build — the playback-speed and Last.fm code
