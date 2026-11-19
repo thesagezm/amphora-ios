@@ -334,21 +334,21 @@ struct LyricsPanel: View {
     private func falloffAlpha(_ distance: Int?, isActive: Bool) -> Double {
         guard !isActive else { return 1 }
         switch distance ?? 99 {
-        case 1: 0.8
-        case 2: 0.7
-        case 3: 0.58
-        case 4: 0.46
-        default: 0.35
+        case 1: return 0.8
+        case 2: return 0.7
+        case 3: return 0.58
+        case 4: return 0.46
+        default: return 0.35
         }
     }
 
     private func falloffBlur(_ distance: Int?, isActive: Bool) -> CGFloat {
         guard !isActive else { return 0 }
         switch distance ?? 99 {
-        case 1, 2: 1
-        case 3: 1.7
-        case 4: 2.4
-        default: 0
+        case 1, 2: return 1
+        case 3: return 1.7
+        case 4: return 2.4
+        default: return 0
         }
     }
 
