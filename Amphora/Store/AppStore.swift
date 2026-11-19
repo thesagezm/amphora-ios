@@ -105,6 +105,16 @@ final class AppStore {
         case authenticateLastFm(username: String, password: String)
         case signOutLastFm
         case setScrobblingEnabled(Bool)
+        /// BitChord's scrobbling switches and the rule knobs — the
+        /// account can stay connected while scrobbles are off, and the
+        /// threshold (min share of the song, capped in seconds) and
+        /// the shortest scrobbleable song are the user's to set.
+        case setScrobbleTracks(Bool)
+        case setScrobbleNowPlaying(Bool)
+        case setScrobblePrimaryArtistOnly(Bool)
+        case setScrobbleMinDuration(Int)
+        case setScrobbleDelayPercent(Double)
+        case setScrobbleMaxDelaySeconds(Int)
         case signOutPandora
         /// Wipe the local play history (device-local; Pandora's own
         /// listening data is untouched).
@@ -306,9 +316,6 @@ final class AppStore {
     private var confirmationTask: Task<Void, Never>?
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
-    /// When the current track started playing — Last.fm scrobbles want
-    /// the start time, not the scrobble time.
-    private var trackStartedAt = Date()
 
     /// Disk persistence for the history (Codable-to-disk, per AGENTS.md).
     private let historyStore: HistoryStore
@@ -341,6 +348,16 @@ final class AppStore {
         let scrobbler = Scrobbler()
         self.scrobbler = scrobbler
         scrobbler.isEnabled = preferences.scrobblingEnabled
+        // BitChord's scrobbling switches and rule knobs. A `nil` in
+        // the preferences file means "the default" — the behaviour
+        // before these switches existed (scrobbles on, now-playing on,
+        // full artist credits, 30 s / 50 % / 180 s).
+        scrobbler.scrobbleTracks = preferences.scrobbleTracks ?? true
+        scrobbler.nowPlayingEnabled = preferences.scrobbleNowPlaying ?? true
+        scrobbler.primaryArtistOnly = preferences.scrobblePrimaryArtistOnly ?? false
+        scrobbler.minDuration = TimeInterval(preferences.scrobbleMinDuration ?? 30)
+        scrobbler.delayPercent = preferences.scrobbleDelayPercent ?? 0.5
+        scrobbler.maxDelaySeconds = TimeInterval(preferences.scrobbleMaxDelaySeconds ?? 180)
         // The scrobbler flips its own enable flag on sign-in, sign-out
         // and session expiry — persist every one of those flips, or a
         // fresh sign-in would be forgotten on the next launch.
@@ -416,26 +433,35 @@ final class AppStore {
             // loadLyrics guard clears any state from a Pandora track);
             // the per-track cache makes repeat listens free.
             self.loadLyrics(for: track)
-            // Last.fm: profile "now playing" at track start (radio has
-            // no songs to scrobble). The scrobble itself fires from
-            // `onTrackFinished` (the pithos rule needs the reached
-            // position of the outgoing track).
+            // Last.fm: arm the pending scrobble at track start (radio
+            // has no songs to scrobble) and push the "now playing"
+            // line. The scrobble itself goes out when the *playing*
+            // position crosses the track's threshold — the tick
+            // callback below.
             if let track, !track.isRadio {
-                self.trackStartedAt = Date()
-                self.scrobbler.nowPlaying(track)
+                self.scrobbler.trackStarted(track, startedAt: Date())
+            } else {
+                // No song is playing any more — a pending scrobble is
+                // dropped (the track never earned one).
+                self.scrobbler.trackCleared()
             }
         }
-        // A track stopping (end, skip, station switch) is the scrobble
-        // moment — pithos evaluates its rule at song-ended.
+        // A track stopping (end, skip, station switch) is the fallback
+        // scrobble moment: the crossing check has normally fired long
+        // before, but a threshold the song only reaches at its very end
+        // (a 100 % delay) lands here.
         player.onTrackFinished.append { [weak self] track, reachedPosition in
             guard let self else { return }
             // A live stream earns no scrobble — there is no song.
             guard !track.isRadio else { return }
-            self.scrobbler.scrobbleIfEarned(
-                track: track,
-                reachedPosition: reachedPosition,
-                startedAt: self.trackStartedAt
-            )
+            self.scrobbler.trackFinished(track: track, reachedPosition: reachedPosition)
+        }
+        // The scrobbler's crossing check. The position advances only
+        // while the player plays, so the threshold comparison is
+        // BitChord's pause-aware scrobble timer without the timer
+        // machinery — and it follows the playback speed, too.
+        player.onPlaybackTick.append { [weak self] position in
+            self?.scrobbler.playbackTick(position: position)
         }
     }
 
@@ -591,6 +617,30 @@ final class AppStore {
         case .setScrobblingEnabled(let enabled):
             scrobbler.isEnabled = enabled
             preferences.scrobblingEnabled = enabled
+            preferencesStore.save(preferences)
+        case .setScrobbleTracks(let enabled):
+            scrobbler.scrobbleTracks = enabled
+            preferences.scrobbleTracks = enabled
+            preferencesStore.save(preferences)
+        case .setScrobbleNowPlaying(let enabled):
+            scrobbler.nowPlayingEnabled = enabled
+            preferences.scrobbleNowPlaying = enabled
+            preferencesStore.save(preferences)
+        case .setScrobblePrimaryArtistOnly(let enabled):
+            scrobbler.primaryArtistOnly = enabled
+            preferences.scrobblePrimaryArtistOnly = enabled
+            preferencesStore.save(preferences)
+        case .setScrobbleMinDuration(let seconds):
+            scrobbler.minDuration = TimeInterval(seconds)
+            preferences.scrobbleMinDuration = seconds
+            preferencesStore.save(preferences)
+        case .setScrobbleDelayPercent(let percent):
+            scrobbler.delayPercent = percent
+            preferences.scrobbleDelayPercent = percent
+            preferencesStore.save(preferences)
+        case .setScrobbleMaxDelaySeconds(let seconds):
+            scrobbler.maxDelaySeconds = TimeInterval(seconds)
+            preferences.scrobbleMaxDelaySeconds = seconds
             preferencesStore.save(preferences)
         case .signOutPandora:
             signOut()

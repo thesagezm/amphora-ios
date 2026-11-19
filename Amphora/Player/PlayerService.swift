@@ -135,6 +135,12 @@ final class PlayerService {
     var onTrackChanged: [(Track?) -> Void] = []
     /// Fired when the playback state changed (play/pause/buffering/failed).
     var onPlaybackStateChanged: [() -> Void] = []
+    /// Fired on every playback tick (about twice a second of *playing*
+    /// time) with the new position — the scrobbler's crossing check
+    /// rides it: `elapsed` advances only while the player plays, so a
+    /// threshold comparison is BitChord's pause-aware scrobble timer
+    /// without any timer machinery.
+    var onPlaybackTick: [(TimeInterval) -> Void] = []
     /// Fired when a track stops being the current one — natural end,
     /// user skip, station switch or stop — with how far into it playback
     /// reached. The scrobbler's policy input (pithos evaluates its rule
@@ -556,6 +562,7 @@ final class PlayerService {
             Task { @MainActor [weak self] in
                 guard let self, seconds.isFinite else { return }
                 self.setElapsed(max(0, Double(seconds)))
+                for observer in self.onPlaybackTick { observer(self.elapsed) }
             }
         }
     }

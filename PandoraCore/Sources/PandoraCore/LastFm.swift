@@ -34,11 +34,14 @@
 //  - Errors (JSON): `{"error": <code>, "message": "…"}` — 4 auth
 //    failed, 9 invalid session key, 10 invalid API key, 13 invalid
 //    signature, 29 rate limit exceeded.
-//  - Scrobble rule (pithos `plugins/lastfm.py` `_on_song_ended`):
-//    scrobble when the track is not an ad, is longer than 30 s, and was
-//    played past 240 s or past its midpoint —
-//    `not is_ad and duration > 30 and (position > 240 or position >
-//    duration / 2)`. `ScrobblePolicy` implements exactly that.
+//  - Scrobble rule — BitChord's (`ScrobbleManager.kt`), adopted 2026-
+//    11-19 in place of pithos's end-of-track rule: a song earns its
+//    scrobble once the listener has been *playing* it for
+//    min(delayPercent × duration, maxDelaySeconds) — the crossing of
+//    the threshold, not the end of the song. All three knobs are
+//    user-tunable there (min duration 30 s, 50 %, 180 s); the same
+//    defaults are kept here. The pithos/Pandora variation — an
+//    advertisement never scrobbles — is kept on top.
 //
 
 import Foundation
@@ -113,18 +116,64 @@ public enum LastFmSigning {
 
 public enum ScrobblePolicy {
 
-    /// Pithos's scrobble decision (`plugins/lastfm.py`): the track is not
-    /// an advertisement, is longer than 30 seconds, and was played past
-    /// 240 seconds or past its midpoint. `position` is how far into the
-    /// track playback reached when it ended (natural end or skip).
+    /// The playing-time position at which a track earns its scrobble:
+    /// min(delayPercent × duration, maxDelaySeconds) — BitChord's
+    /// rule, with its defaults. `nil` when the track can never earn
+    /// one (an advertisement, or not longer than `minDuration`).
+    ///
+    /// The caller compares the *playing* position against this on
+    /// every playback tick — `elapsed` advances only while playing,
+    /// so a tick comparison is BitChord's pause-aware timer without
+    /// the timer machinery.
+    public static func scrobbleThreshold(
+        duration: TimeInterval,
+        isAdvertisement: Bool,
+        minDuration: TimeInterval = 30,
+        delayPercent: Double = 0.5,
+        maxDelaySeconds: TimeInterval = 180
+    ) -> TimeInterval? {
+        guard !isAdvertisement, duration > minDuration else { return nil }
+        return min(duration * delayPercent, maxDelaySeconds)
+    }
+
+    /// Whether `position` (the playing time reached) has crossed the
+    /// track's scrobble threshold. Parameters carry BitChord's
+    /// defaults; the app passes the user's settings.
     public static func shouldScrobble(
         duration: TimeInterval,
         position: TimeInterval,
-        isAdvertisement: Bool
+        isAdvertisement: Bool,
+        minDuration: TimeInterval = 30,
+        delayPercent: Double = 0.5,
+        maxDelaySeconds: TimeInterval = 180
     ) -> Bool {
-        !isAdvertisement
-            && duration > 30
-            && (position > 240 || position > duration / 2)
+        guard
+            let threshold = scrobbleThreshold(
+                duration: duration,
+                isAdvertisement: isAdvertisement,
+                minDuration: minDuration,
+                delayPercent: delayPercent,
+                maxDelaySeconds: maxDelaySeconds
+            )
+        else { return false }
+        return position >= threshold
+    }
+
+    /// BitChord's primary-artist credit split ("scrobble primary
+    /// artist only"): the first credited artist, for services that
+    /// mishandle joint credits. Splits on ", " / " & " / " ＆ " — the
+    /// original value survives when no separator is present, so
+    /// "AC/DC" stays intact (a slash is not a separator), and a
+    /// leading separator falls back to the whole credit.
+    public static func primaryArtist(_ artist: String) -> String {
+        // ", " / " & " / " ＆ " — BitChord's separators verbatim. A
+        // "feat." credit is deliberately not split (theirs doesn't
+        // either).
+        let separator = /\s*,\s*|\s+&\s+|\s+＆\s+/
+        guard let match = artist.firstMatch(of: separator) else { return artist }
+        let prefix = artist[..<match.range.lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return prefix.isEmpty ? artist : prefix
     }
 }
 

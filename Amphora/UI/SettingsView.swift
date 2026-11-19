@@ -115,9 +115,10 @@ struct SettingsView: View {
         } footer: {
             Text(
                 "Scrobbles what you play to your Last.fm profile. "
-                    + "Tracks shorter than 30 seconds never scrobble; "
-                    + "a track counts once you've played past half of it "
-                    + "or four minutes — whichever comes first."
+                    + "A track counts once you've played past the "
+                    + "threshold below — half of it, or three minutes, "
+                    + "whichever comes first. Tracks shorter than the "
+                    + "minimum never scrobble."
             )
         }
     }
@@ -307,6 +308,15 @@ private struct LastFmSettings: View {
         Group {
             Toggle("Scrobble to Last.fm", isOn: enabledBinding)
                 .amphoraCardRow()
+            // BitChord's switches: the account can stay connected while
+            // no scrobble goes out, the profile line can be left alone,
+            // and joint credits can be stripped to the first artist.
+            Toggle("Scrobble Tracks", isOn: scrobbleTracksBinding)
+                .amphoraCardRow()
+            Toggle("Primary Artist Only", isOn: primaryArtistBinding)
+                .amphoraCardRow()
+            Toggle("Now Playing", isOn: nowPlayingBinding)
+                .amphoraCardRow()
             HStack {
                 Text("Signed in as \(name)")
                     .foregroundStyle(.secondary)
@@ -338,6 +348,37 @@ private struct LastFmSettings: View {
                 }
                 .amphoraCardRow()
             }
+            // The rule (BitChord's sliders): the shortest song that
+            // scrobbles, the share of it that counts, and the cap on
+            // the wait.
+            Text("Scrobble Timing")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .amphoraCardRow()
+            timingSlider(
+                title: "Shortest song",
+                valueText: "\(Int(store.scrobbler.minDuration))s",
+                value: minDurationBinding,
+                range: 15...120,
+                step: 5,
+                onCommit: { store.send(.setScrobbleMinDuration(Int($0))) }
+            )
+            timingSlider(
+                title: "Counts after",
+                valueText: "\(Int((store.scrobbler.delayPercent * 100).rounded()))% of it",
+                value: delayPercentBinding,
+                range: 0.1...1,
+                step: 0.1,
+                onCommit: { store.send(.setScrobbleDelayPercent($0)) }
+            )
+            timingSlider(
+                title: "At most",
+                valueText: "\(Int(store.scrobbler.maxDelaySeconds))s",
+                value: maxDelayBinding,
+                range: 30...300,
+                step: 10,
+                onCommit: { store.send(.setScrobbleMaxDelaySeconds(Int($0))) }
+            )
             Button(role: .destructive) {
                 store.send(.signOutLastFm)
                 password = ""
@@ -346,6 +387,37 @@ private struct LastFmSettings: View {
             }
             .amphoraCardRow()
         }
+    }
+
+    /// One timing slider: its label, the live value and the slider.
+    /// The value moves live (the rule follows at once) and is written
+    /// to disk once, when the drag ends.
+    private func timingSlider(
+        title: String,
+        valueText: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        onCommit: @escaping (Double) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.footnote.weight(.medium))
+                Spacer()
+                Text(valueText)
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: range, step: step) { editing in
+                guard !editing else { return }
+                onCommit(value.wrappedValue)
+            }
+            .tint(Theme.accentText)
+            .accessibilityLabel(title)
+            .accessibilityValue(valueText)
+        }
+        .amphoraCardRow()
     }
 
     private var credentialsRows: some View {
@@ -389,6 +461,48 @@ private struct LastFmSettings: View {
         Binding(
             get: { store.scrobbler.isEnabled },
             set: { store.send(.setScrobblingEnabled($0)) }
+        )
+    }
+
+    private var scrobbleTracksBinding: Binding<Bool> {
+        Binding(
+            get: { store.scrobbler.scrobbleTracks },
+            set: { store.send(.setScrobbleTracks($0)) }
+        )
+    }
+
+    private var primaryArtistBinding: Binding<Bool> {
+        Binding(
+            get: { store.scrobbler.primaryArtistOnly },
+            set: { store.send(.setScrobblePrimaryArtistOnly($0)) }
+        )
+    }
+
+    private var nowPlayingBinding: Binding<Bool> {
+        Binding(
+            get: { store.scrobbler.nowPlayingEnabled },
+            set: { store.send(.setScrobbleNowPlaying($0)) }
+        )
+    }
+
+    private var minDurationBinding: Binding<Double> {
+        Binding(
+            get: { store.scrobbler.minDuration },
+            set: { store.scrobbler.minDuration = $0 }
+        )
+    }
+
+    private var delayPercentBinding: Binding<Double> {
+        Binding(
+            get: { store.scrobbler.delayPercent },
+            set: { store.scrobbler.delayPercent = $0 }
+        )
+    }
+
+    private var maxDelayBinding: Binding<Double> {
+        Binding(
+            get: { store.scrobbler.maxDelaySeconds },
+            set: { store.scrobbler.maxDelaySeconds = $0 }
         )
     }
 }

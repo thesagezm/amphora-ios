@@ -14,6 +14,18 @@ superseded by the crash report below.)
 
 ## User Feedback Pending
 
+**2026-11-19 Last.fm direction (this session's driver):** "instead of
+adding listenbrainz, make the current last fm like the one in bitchord
+fork". So: **no ListenBrainz** (dropped), and Amphora's existing
+Last.fm becomes BitChord's — read from the fork's own sources
+(`LastFM.kt`, `ScrobbleManager.kt`, `PrimaryArtist.kt`,
+`AccountAndScrobblingScreen.kt`, `AppSettings.kt`), feature by feature:
+the crossing scrobble (the scrobble goes out *during* the song, at
+min(50 % of it, 180 s) of *playing* time — their pause-aware rule),
+the rule sliders, the three switches (scrobble tracks / primary
+artist only / now playing), and their credit split. Lands in this
+push; details and the deliberate differences in In Flight / Last Push.
+
 **2026-11-19 BitChord adoption round (this session's driver):** the user
 pointed at BitChord (kushagrasinghx — Kotlin/Compose YouTube Music client,
 Apple-Music-inspired, 6.9k★) and asked which features to upgrade, adopt,
@@ -34,8 +46,12 @@ handoff) → **L1** lyrics scroll engine → **L2** swept lines → **L3**
 sub-lines & toggles → **A1** lyrics offset sheet → **A2** sleep
 "stop after this track" → **A3** stats-for-nerds sheet.
 
-Adopted later (not this batch): ListenBrainz scrobbling, playback
-speed 0.5–2×. Skipped with reasons (recorded so nobody re-evaluates):
+Adopted later: **playback speed 0.5–2× (landed 2026-11-19)** and
+**ListenBrainz scrobbling — dropped by the user 2026-11-19**: "instead
+of adding listenbrainz, make the current last fm like the one in
+bitchord" (the existing Last.fm was upgraded to BitChord's instead —
+see In Flight / Last Push). Skipped with reasons (recorded so nobody
+re-evaluates):
 canvas/music videos, lossless module sources, per-network quality
 ceilings, offline downloads (no Pandora source / tokenized session
 streams); Google/Spotify/Discord/Listen-Together (different service);
@@ -432,7 +448,79 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — playback speed 0.5–2×.** the first of the BitChord
+**This push — Last.fm like BitChord's: the crossing scrobble, the
+switches, the rule sliders.** the user's direction (2026-11-19):
+"instead of adding listenbrainz, make the current last fm like the one
+in bitchord". Read from the fork itself — `data/scrobbling/LastFM.kt`,
+`data/scrobbling/ScrobbleManager.kt`,
+`data/scrobbling/PrimaryArtist.kt`, `ui/screens/
+AccountAndScrobblingScreen.kt`, `data/settings/AppSettings.kt` — and
+adopted feature by feature, not guessed.
+
+- **The rule changed shape** — pithos's end-of-track rule ("scrobble
+  when the song ended, if it had passed 240 s or its midpoint") is
+  replaced by **BitChord's**: the scrobble goes out *during* the song,
+  when the **playing** position crosses
+  min(delayPercent × duration, maxDelaySeconds) — 50 % or 180 s by
+  default. The crossing rides the playback tick (`PlayerService`'s
+  new `onPlaybackTick`, about twice a second of playing time): the
+  position advances only while the player plays, so a paused song
+  never crosses — BitChord's pause-aware timer, expressed as a
+  comparison, with no timer machinery. **The Pandora ad exclusion is
+  kept on top** (BitChord has no ads): an advertisement never
+  scrobbles.
+- **`PandoraCore` — `ScrobblePolicy` is parameterized** (core only, no
+  UI): `scrobbleThreshold(duration:isAdvertisement:minDuration:
+  delayPercent:maxDelaySeconds:)` returns the crossing position (nil
+  when the track can never earn one), `shouldScrobble` compares
+  against it, and `primaryArtist(_:)` strips joint credits with
+  BitChord's separators **verbatim** (`, ` / ` & ` / ` ＆ ` — a
+  "feat." credit is deliberately not split, and "AC/DC" stays
+  intact). 409/409 green in Docker: the pithos-rule test was replaced
+  by three (the crossing rule's vectors, the tunable parameters, the
+  credit split).
+- **The app — the Scrobbler owns the pending scrobble**: `trackStarted`
+  arms it (threshold from the current settings) and pushes the
+  now-playing line; `playbackTick` fires the scrobble at the
+  crossing; `trackFinished` is the fallback for a threshold only the
+  very end reaches (a 100 % delay on a short song); `trackCleared`
+  drops it (stop, station switch, an emptied queue). The timestamp
+  stays the song's **start** time either way.
+- **Three switches, three sliders (BitChord's Settings surface)** —
+  "Scrobble Tracks", "Primary Artist Only", "Now Playing" toggles,
+  and the timing sliders: shortest song (15…120 s, default 30),
+  counts after (10…100 %, default 50), at most (30…300 s, default
+  180). The sliders move the rule live and are written to disk once,
+  when the drag ends (the volume slider's pattern). The Preferences
+  keys are optional-on-purpose (`nil` = the default), so a file
+  written before them still decodes.
+- **Deliberate differences from the fork, recorded**: the switches are
+  independent here (BitChord forces now-playing off when scrobbling
+  is off); the defaults preserve today's behaviour (scrobbles and
+  now-playing on — theirs default both off for a fresh account);
+  the crossing is **position**-based, so it follows the playback speed
+  (their wall-clock timer does not — Last.fm's rule is about listening
+  time, so ours is the more faithful reading); no API-key/secret/
+  endpoint fields — the fork keeps those in build config, not in its
+  Last.fm screen, so the user-facing surface matches while our
+  Pithos public key pair keeps working.
+- **Skipped, with the reason**: `trackNumber` — Pandora carries no
+  track number, so there is nothing to send.
+
+Local verification: the five touched app files parse-clean in the
+`swift:6.0` container; PandoraCore 409/409 in Docker. The app target
+typechecks on CI only.
+
+**Device expectation**: sign in to Last.fm → play a 4-minute song →
+the profile shows the song as *now playing*, and about two minutes in
+(half of it — the cap is 3 minutes) the scrobble lands while it is
+still playing; pause for a minute and the crossing waits for the
+playing time to catch up; skip early and nothing is scrobbled; the
+Settings sliders move the threshold (100 % makes a song scrobble only
+at its very end; "Primary Artist Only" sends "Alice" for "Alice,
+Bob"); every switch and slider survives a relaunch.
+
+**Previous push — playback speed 0.5–2×.** the first of the BitChord
 "adopted later" items (user-approved scope, recorded in the round's
 skip/adopt list).
 

@@ -47,6 +47,28 @@ struct Preferences: Codable, Equatable {
     /// carry it (the player pins them to 1×) — a live edge cannot be
     /// outpaced.
     var playbackRate: Float? = nil
+    /// Whether scrobbles are submitted (BitChord's "scrobble tracks"
+    /// switch, separate from the account being connected). Optional on
+    /// purpose: `nil` means "yes" — the behaviour before the switch
+    /// existed.
+    var scrobbleTracks: Bool? = nil
+    /// Whether the "now playing" line is pushed to the profile
+    /// (BitChord's switch). Optional on purpose: `nil` means "yes".
+    var scrobbleNowPlaying: Bool? = nil
+    /// Whether only the first credited artist is scrobbled (BitChord's
+    /// "primary artist only" — joint credits stripped). Optional on
+    /// purpose: `nil` means "no".
+    var scrobblePrimaryArtistOnly: Bool? = nil
+    /// The shortest song that earns a scrobble, in seconds (BitChord's
+    /// slider, 15…120; default 30). Optional on purpose: `nil` means
+    /// 30.
+    var scrobbleMinDuration: Int? = nil
+    /// The share of the song that earns a scrobble (BitChord's slider,
+    /// 0.1…1.0; default 0.5). Optional on purpose: `nil` means 0.5.
+    var scrobbleDelayPercent: Double? = nil
+    /// The cap on the scrobble delay, in seconds (BitChord's slider,
+    /// 30…300; default 180). Optional on purpose: `nil` means 180.
+    var scrobbleMaxDelaySeconds: Int? = nil
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.

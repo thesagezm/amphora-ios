@@ -2,13 +2,19 @@
 //  Scrobbler.swift
 //  Amphora
 //
-//  Last.fm scrobbling for the app target — composition of the
-//  PandoraCore `LastFmClient` with the pithos playback semantics:
+//  Last.fm scrobbling for the app target — the PandoraCore
+//  `LastFmClient` with BitChord's playback semantics (adopted
+//  2026-11-19):
 //
-//  - `nowPlaying` when a track starts (pithos `_on_song_changed`).
-//  - one `track.scrobble` when a track stops being the current one
-//    (natural end, skip, station switch), if pithos's rule
-//    (`ScrobblePolicy`) says it was earned (pithos `_on_song_ended`).
+//  - `nowPlaying` when a track starts, unless the now-playing switch
+//    is off.
+//  - one `track.scrobble` when the *playing* position crosses the
+//    track's threshold — min(delayPercent × duration, maxDelaySeconds)
+//    of the song, the default 50 % or 180 s — so the scrobble goes
+//    out while the song is still playing, the way BitChord's
+//    pause-aware timer does. The position advances only while the
+//    player plays, so a paused song never crosses; the song's
+//    *start* time is the Last.fm timestamp either way.
 //
 //  The session key is a secret — Keychain only, never UserDefaults.
 //  The enable preference is a non-secret and lives in `Preferences`
@@ -48,6 +54,23 @@ final class Scrobbler {
     /// Master switch, persisted via `AppStore`'s preferences. Only
     /// meaningful while signed in.
     var isEnabled = false
+    /// BitChord's "scrobble tracks" switch — the account can stay
+    /// connected while no scrobble is submitted (now-playing only).
+    var scrobbleTracks = true
+    /// BitChord's "now playing" switch.
+    var nowPlayingEnabled = true
+    /// BitChord's "primary artist only" switch — joint credits are
+    /// stripped to the first artist ("Alice, Bob" → "Alice"), for
+    /// services that mishandle them. Off by default: the split is
+    /// faithful to BitChord, so "Simon & Garfunkel" becomes "Simon"
+    /// when it is on.
+    var primaryArtistOnly = false
+    /// The rule knobs (BitChord's sliders). The defaults are theirs: a
+    /// song of 30 s or longer, scrobbled once it has been *played* for
+    /// min(50 % of it, 180 s).
+    var minDuration: TimeInterval = 30
+    var delayPercent: Double = 0.5
+    var maxDelaySeconds: TimeInterval = 180
     /// Fires when the scrobbler itself flips the enable flag (sign-in
     /// enables it, a rejected session key or sign-out disables it).
     /// `AppStore` persists the preference here — without it, a fresh
@@ -67,6 +90,15 @@ final class Scrobbler {
     private(set) var lastActivity: String?
     /// True when `lastActivity` is an error rather than a success.
     private(set) var lastActivityIsError = false
+
+    /// The track whose scrobble is still pending, the playing position
+    /// at which it earns one, and when it started playing. `nil` when
+    /// nothing is pending (radio, a cleared queue, or the scrobble
+    /// already went out).
+    private var pendingTrack: Track?
+    private var pendingThreshold: TimeInterval?
+    private var pendingStartedAt: Date?
+    private var didScrobble = false
 
     init(keychain: KeychainStore = KeychainStore()) {
         self.keychain = keychain
@@ -128,9 +160,71 @@ final class Scrobbler {
 
     // MARK: - Playback hooks
 
+    /// A track started playing: arms the pending scrobble (the
+    /// threshold from the current settings) and — when the switch is
+    /// on — pushes the "now playing" line to the profile.
+    ///
+    /// The threshold is the crossing point of BitChord's rule: the
+    /// scrobble goes out *during* the song, not when it ends.
+    func trackStarted(_ track: Track, startedAt: Date) {
+        pendingTrack = track
+        pendingStartedAt = startedAt
+        didScrobble = false
+        pendingThreshold = ScrobblePolicy.scrobbleThreshold(
+            duration: TimeInterval(track.duration),
+            isAdvertisement: track.isAdvertisement,
+            minDuration: minDuration,
+            delayPercent: delayPercent,
+            maxDelaySeconds: maxDelaySeconds
+        )
+        guard nowPlayingEnabled else { return }
+        updateNowPlaying(track)
+    }
+
+    /// The current track is gone (stop, station switch, an emptied
+    /// queue): the pending scrobble is dropped — a track that never
+    /// crossed its threshold earns nothing.
+    func trackCleared() {
+        pendingTrack = nil
+        pendingThreshold = nil
+        pendingStartedAt = nil
+        didScrobble = false
+    }
+
+    /// A playback tick (about twice a second of playing time). When
+    /// the position crosses the pending track's threshold, the
+    /// scrobble goes out — BitChord's pause-aware timer, expressed as
+    /// a comparison: the position advances only while the player
+    /// plays, so a paused song never crosses.
+    func playbackTick(position: TimeInterval) {
+        guard isReady, scrobbleTracks, !didScrobble else { return }
+        guard let track = pendingTrack, let threshold = pendingThreshold else { return }
+        guard position >= threshold else { return }
+        submit(track: track, startedAt: pendingStartedAt)
+    }
+
+    /// The track stopped being current (natural end, skip, station
+    /// switch). The crossing check has normally fired long before;
+    /// this is the fallback for a threshold the song only reaches at
+    /// its very end (a 100 % delay on a short song).
+    func trackFinished(track: Track, reachedPosition: TimeInterval) {
+        defer { trackCleared() }
+        guard isReady, scrobbleTracks, !didScrobble else { return }
+        guard let pending = pendingTrack, pending.trackToken == track.trackToken else { return }
+        guard let threshold = pendingThreshold else { return }
+        guard reachedPosition >= threshold else {
+            AppLog.debug(
+                "last.fm: not scrobbling \"\(track.title)\" (threshold \(Int(threshold))s not reached)",
+                .playback
+            )
+            return
+        }
+        submit(track: track, startedAt: pendingStartedAt)
+    }
+
     /// `track.updateNowPlaying` for a track that just started. Never
     /// blocks or disturbs playback.
-    func nowPlaying(_ track: Track) {
+    private func updateNowPlaying(_ track: Track) {
         guard isReady, !track.isAdvertisement else { return }
         let key = sessionKey()
         guard !key.isEmpty else { return }
@@ -139,7 +233,7 @@ final class Scrobbler {
             do {
                 try await client.updateNowPlaying(
                     sessionKey: key,
-                    artist: track.artist,
+                    artist: scrobbleArtist(track),
                     track: track.title,
                     album: track.album,
                     duration: TimeInterval(track.duration)
@@ -152,37 +246,26 @@ final class Scrobbler {
         }
     }
 
-    /// Scrobbles the track that just stopped being current (natural end,
-    /// skip, station switch) if pithos's rule says it was earned.
-    /// `startedAt` is when the track began playing — Last.fm wants the
-    /// start time, not the scrobble time.
-    func scrobbleIfEarned(track: Track, reachedPosition: TimeInterval, startedAt: Date) {
-        guard isReady else { return }
-        let duration = TimeInterval(track.duration)
-        guard ScrobblePolicy.shouldScrobble(
-            duration: duration,
-            position: reachedPosition,
-            isAdvertisement: track.isAdvertisement
-        ) else {
-            AppLog.debug(
-                "last.fm: not scrobbling \"\(track.title)\" (rule not met, reached \(Int(reachedPosition))s)",
-                .playback
-            )
-            return
-        }
+    /// `track.scrobble` — one scrobble, carrying the song's *start*
+    /// time as the timestamp (Last.fm wants the start, not the
+    /// crossing). One attempt per song: a failure surfaces in the
+    /// Settings status line rather than being retried in a loop.
+    private func submit(track: Track, startedAt: Date?) {
+        guard let startedAt else { return }
         let key = sessionKey()
         guard !key.isEmpty else { return }
+        didScrobble = true
         let timestamp = Int(startedAt.timeIntervalSince1970)
         AppLog.info("last.fm: scrobbling \"\(track.title)\" — \(track.artist)")
         Task {
             do {
                 try await client.scrobble(
                     sessionKey: key,
-                    artist: track.artist,
+                    artist: scrobbleArtist(track),
                     track: track.title,
                     album: track.album,
                     timestamp: timestamp,
-                    duration: duration
+                    duration: TimeInterval(track.duration)
                 )
                 self.lastActivity = "Scrobbled: \(track.title)"
                 self.lastActivityIsError = false
@@ -190,6 +273,12 @@ final class Scrobbler {
                 self.handle(error, while: track.title)
             }
         }
+    }
+
+    /// The artist to scrobble: with BitChord's "primary artist only"
+    /// switch on, joint credits are stripped to the first artist.
+    private func scrobbleArtist(_ track: Track) -> String {
+        primaryArtistOnly ? ScrobblePolicy.primaryArtist(track.artist) : track.artist
     }
 
     // MARK: - Internals

@@ -370,21 +370,71 @@ final class LastFmTests: XCTestCase {
         }
     }
 
-    // MARK: - Scrobble policy (pithos rule)
+    // MARK: - Scrobble policy (BitChord's crossing rule)
 
-    func testPolicyMirrorsPithosRule() {
-        // Ads never scrobble.
+    func testPolicyMirrorsBitChordRule() {
+        // Ads never scrobble, at any position.
         XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 200, position: 200, isAdvertisement: true))
-        // Tracks of 30 s or shorter never scrobble (pithos: duration > 30).
+        // Tracks of 30 s or shorter never scrobble (BitChord:
+        // duration <= minSongDuration).
         XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 30, position: 30, isAdvertisement: false))
-        // Past the midpoint, but not at it.
-        XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 100, position: 50, isAdvertisement: false))
-        XCTAssertTrue(ScrobblePolicy.shouldScrobble(duration: 100, position: 50.5, isAdvertisement: false))
-        // Past 240 s, but not at it.
-        XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 600, position: 240, isAdvertisement: false))
-        XCTAssertTrue(ScrobblePolicy.shouldScrobble(duration: 600, position: 241, isAdvertisement: false))
-        // Early skip: neither rule met.
-        XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 600, position: 30, isAdvertisement: false))
+        // A 4-minute song: threshold = min(50 % · 240, 180) = 120 s.
+        // The crossing fires at the threshold, not after it.
+        XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 240, position: 119, isAdvertisement: false))
+        XCTAssertTrue(ScrobblePolicy.shouldScrobble(duration: 240, position: 120, isAdvertisement: false))
+        // A 10-minute song: the 180 s cap binds before the midpoint
+        // (min(300, 180) = 180).
+        XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 600, position: 179, isAdvertisement: false))
+        XCTAssertTrue(ScrobblePolicy.shouldScrobble(duration: 600, position: 180, isAdvertisement: false))
+        // Just over the 30 s floor: threshold = min(15.5, 180) = 15.5.
+        XCTAssertFalse(ScrobblePolicy.shouldScrobble(duration: 31, position: 15, isAdvertisement: false))
+        XCTAssertTrue(ScrobblePolicy.shouldScrobble(duration: 31, position: 16, isAdvertisement: false))
+    }
+
+    func testPolicyTunableParameters() {
+        // The app passes the user's sliders: min 60 s, 75 %, max 300 s.
+        // A 10-minute song: threshold = min(450, 300) = 300 s.
+        XCTAssertFalse(ScrobblePolicy.shouldScrobble(
+            duration: 600, position: 299, isAdvertisement: false,
+            minDuration: 60, delayPercent: 0.75, maxDelaySeconds: 300
+        ))
+        XCTAssertTrue(ScrobblePolicy.shouldScrobble(
+            duration: 600, position: 300, isAdvertisement: false,
+            minDuration: 60, delayPercent: 0.75, maxDelaySeconds: 300
+        ))
+        // minDuration gates by duration, not position: a 50 s song
+        // never earns a scrobble under a 60 s floor.
+        XCTAssertNil(ScrobblePolicy.scrobbleThreshold(
+            duration: 50, isAdvertisement: false,
+            minDuration: 60, delayPercent: 0.5, maxDelaySeconds: 180
+        ))
+        // Ads have no threshold at all.
+        XCTAssertNil(ScrobblePolicy.scrobbleThreshold(duration: 600, isAdvertisement: true))
+        // Default threshold of the defaults: 4-minute song → 120 s.
+        XCTAssertEqual(ScrobblePolicy.scrobbleThreshold(duration: 240, isAdvertisement: false), 120)
+    }
+
+    func testPrimaryArtistCreditSplit() {
+        // BitChord's separators: ", " / " & " / full-width " ＆ " —
+        // the comma needs no surrounding spaces, both ampersand forms
+        // require them (verbatim from their regex).
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("Alice, Bob"), "Alice")
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("Alice,Bob"), "Alice")
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("Alice & Bob"), "Alice")
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("Alice ＆ Bob"), "Alice")
+        // Glued ampersands are not separators, faithfully.
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("Alice＆Bob"), "Alice＆Bob")
+        // A slash is not a separator — "AC/DC" stays intact.
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("AC/DC"), "AC/DC")
+        // A "feat." credit is deliberately not split (BitChord's
+        // separators don't carry it either).
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("Alice feat. Bob"), "Alice feat. Bob")
+        // A leading separator would produce a blank first credit —
+        // fall back to the whole value.
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("& Garfunkel"), "& Garfunkel")
+        // The documented cost, kept from BitChord: joint names split
+        // too — the toggle is user-controlled and defaults off.
+        XCTAssertEqual(ScrobblePolicy.primaryArtist("Simon & Garfunkel"), "Simon")
     }
 
     // MARK: - Form encoding
