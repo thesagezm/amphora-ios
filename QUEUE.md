@@ -460,14 +460,31 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**CI state at the handover (2026-11-19, later):** the repair
-(`2446ccb`, the `.spectral` fix) is **Core Tests ✅ and iOS Build ✅**
-— so the playback-speed and Last.fm code compiles. The Last.fm push's
-own iOS Build failed only with the inherited `.spectralMixer` error and
-is superseded by that repair. The offline unit (`b148b16`) is Core ✅,
-its iOS Build in flight at the handover (not waited on; it carries the
-repair, so nothing else can fail there but its own code). **No
-outstanding repair.** PandoraCore 409/409 green in Docker.
+**CI state at the handover (2026-11-19, later):** the **F1 push
+(`99861ee`, "The mini player's cover flies into the player and back")
+is Core Tests ✅ (run `44504428938`) and iOS Build ✅ (run
+`44504428928`)** — the flight compiles and the core is green. Before
+it, the repair (`2446ccb`, the `.spectral` fix) was ✅ + ✅, and the
+offline unit (`b148b16`) is ✅ + ✅. **No outstanding repair.**
+
+**Toolchain note for this host (2026-11-19):** there is **no Swift on
+this machine** any more — `swift`/`swiftc` are not on PATH — so the
+local checks run in Docker: `docker run --rm -u 1000:1000 -v
+"$PWD/PandoraCore:/pkg" -w /pkg swift:6.0 swift test`. Two traps, both
+hit this session: (1) the container's **mount path is baked into the
+build cache**, so a container that mounts the repo at `/w` leaves a
+`.build` that a later `/pkg` container cannot use ("PCH was compiled
+with module cache path …") — keep the path stable or `rm -rf .build`
+through a root container first (a killed run leaves root-owned files,
+which need the same root-container chown); (2) SwiftPM re-fetches the
+dependencies over the network, and **this host's network dropped that
+fetch mid-way** ("RPC failed; curl 92 … early EOF") — the local run
+failed on the *fetch*, not on the code. **CI's Core Tests are the
+reliable check here.** A syntax-only check of the app sources works
+and cannot pollute the package cache when the repo is mounted
+**read-only**: `docker run --rm -u 1000:1000 -v "$PWD:/w:ro" -w /tmp
+swift:6.0 swiftc -parse -swift-version 6 /w/Amphora/UI/*.swift …`.
+
 
 **F1 — the mini-player artwork flight — LANDED (2026-11-19, this
 push).** The mini player's cover now flies into the full player and
@@ -586,14 +603,35 @@ session-expiry path is done, and the next slice is the one the app
 grows into by itself — the caches. The artwork cache's **memory** tier
 is already bounded (NSCache: 120 images / 64 MB) and evicts under
 pressure, but its **disk** tier is not: every artwork the app has ever
-seen is written to disk and nothing ever evicts it, so a long session
-(Station Thumb, a few hundred stations, hours of radio) grows that
-directory without limit. The unit: give the disk tier a ceiling
-(size and/or age), evict oldest-first, and show the ceiling in
-Settings next to the existing disk-usage line. The lyrics side is the
-second half of the slice — the provider chain's in-memory cache gets
-the same treatment if it turns out to be unbounded.
+seen is written to `Caches/Amphora/Artwork/` and nothing ever evicts
+it, so a long session (Station Thumb, a few hundred stations, hours of
+radio) grows that directory without limit. The unit: give the disk
+tier a ceiling (size and/or age), evict oldest-first, and show the
+ceiling in Settings next to the existing disk-usage line. The lyrics
+side is the second half of the slice — the provider chain's in-memory
+cache gets the same treatment if it turns out to be unbounded.
 
+- **Survey done (2026-11-19, this session — read it before coding):**
+  `Amphora/Persistence/ArtworkCache.swift` is the whole story: the
+  actor holds an `NSCache` (bounded: 120 items / 64 MB) and a disk
+  directory of SHA-256-named files (`fileName(for:)`, written by
+  `writeToDisk`, read by `readFromDisk`). The only housekeeping today
+  is `diskUsage()` (a directory listing for the Settings row) and
+  `clear()`. `SettingsView.artworkCacheRow` shows "Clear Artwork
+  Cache" + the size (`AppStore.artworkCacheBytes`, refreshed by
+  `refreshArtworkCacheSize()` / `clearArtworkCache()`), so the
+  ceiling has a home to be shown in.
+  The shape this unit wants: a **portable, testable** eviction rule in
+  `PandoraCore` (pure Foundation, no UIKit — it is the future
+  Android-port surface), e.g. a `DiskCacheBounds` helper that takes
+  `(url, size, modifiedDate)` entries and returns the files to delete
+  oldest-first until the total is under the limit; the app's actor
+  calls it after a write and deletes what it names; the ceiling and
+  the current usage both surface in the Settings row. The rule is
+  worth **unit tests in PandoraCore** (the CI runs those) — the app
+  target has no test target of its own.
+  Do not sweep the directory on every write: keep a running byte
+  total and sweep when it crosses the limit (or every N writes).
 - The rest of the standing queue after it: M6 robustness continues
   (the session-expiry path **under a slow network** is the other open
   one — the re-login must not fight a slow link), then the deferred
