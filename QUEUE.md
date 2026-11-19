@@ -23,12 +23,13 @@ awareness** (the first M6 slice), **F1 — the mini-player artwork
 flight**, **the artwork cache's disk-tier ceiling** (the long-session
 soak, first half), **the playback control icons, copied from
 BitChord exactly** (the user's feedback), **the lyrics cache's
-bound** (the soak's second half) and **session expiry under a slow
-link** (one re-login per burst). Everything from this session and
-the BitChord round before it is **awaiting the user's device test**.
-The next unit is **the deferred BitChord siblings** — the
-mini-player's loading spinner, then the queue's artwork (see "Next
-unit" under In Flight / Last Push).
+bound** (the soak's second half), **session expiry under a slow
+link** (one re-login per burst) and **the loading spinner in the
+play slot** (the last BitChord sibling; the queue's artwork turned
+out to be already in). Everything from this session and the BitChord
+round before it is **awaiting the user's device test**. With the
+standing queue drained, the next work is whatever the device test
+brings back.
 
 ## User Feedback Pending
 
@@ -745,11 +746,13 @@ Core + ✅ iOS (runs `44587613241` / `44587613299`). The icons push
 cannot see — a `@ViewBuilder` property is not Optional at the type
 level (so `if let rendered` was rejected) and an optional-bound
 non-optional `TransportIcon`; the repair (`5530361`) uses a plain
-optional-tuple layout property instead, and **its runs decide the
-icons unit**. The lyrics-cache push (`2b1eb8b`) inherited the broken
-icon view and is superseded by that repair. The reminder recorded
-twice before stands: `-parse` is shape-only; the repair loop (read
-log line → fix → push) is the process.
+optional-tuple layout property instead. Its own runs were **cancelled
+(superseded)** by the QUEUE-record push, so the deciding runs for the
+whole session are the re-login push's (`cbdb817`, which carries every
+unit): check `gh run list --limit 5` first thing next session — a
+runner-capacity failure is rerun, not repaired. The reminder recorded
+three times now: `-parse` is shape-only; the repair loop (read log
+line → fix → push) is the process.
 
 **This push — M6: session expiry under a slow link (one re-login per
 burst).** The session-expiry path existed (1001 → transparent
@@ -804,23 +807,47 @@ while a song starts) → the app recovers once, quietly, without
 minutes of spinning and without showing "sign in required"; signing
 out while the app is mid-recovery actually signs out.
 
-**Next unit — the deferred BitChord siblings.** Two recorded-not-
-adopted items, in order: (1) the **mini-player's loading spinner**
-(BitChord swaps a spinner into the play slot while the stream resolves
-— Amphora needs a per-track loading state `PlayerService` does not
-expose yet; survey it first); (2) the **queue's artwork** (BitChord's
-Up Next rows carry covers; Amphora's queue rows are text-only — the
-artwork cache already serves every other surface).
+**This push — the last BitChord sibling: the loading spinner in the
+play slot.** BitChord swaps a spinner into the play/pause target
+"while the stream resolves and buffers" — the glyph would be a lie.
+Amphora's `PlayerService` already had the state (`.buffering`, driven
+by AVPlayer's `timeControlStatus` observer) but no UI consumed it.
 
-- The rest of the standing queue after it: M6 continues (whatever
-  device feedback adds), then the next milestone's worth of polish.
+- **Mini player + full player** — the two surfaces BitChord puts it
+  on: when `store.player.state == .buffering`, a small circular
+  spinner (accent-glyph-tinted) replaces the play/pause glyph inside
+  the accent circle; the circle keeps its place and size, so the slot
+  never shifts (BitChord's footprint rule, verbatim). Sizing follows
+  BitChord's proportions: mini 18 pt of the 34 pt circle (theirs: 22dp
+  of the 40dp slot), full player 30 pt (theirs: 38dp of the 92dp
+  target). While buffering, VoiceOver keeps saying the intent
+  ("Pause" — `isPlaying` counts buffering as playing).
+- **Deliberately not adopted on the hero tiles** (Home/Radio):
+  BitChord has no such surface, and those buttons launch stations
+  rather than resolve the current stream — they keep the glyph.
+- **The second sibling — the queue's artwork — was already in; the
+  record was stale.** `PlayerQueuePanel`'s rows have carried
+  `CachedArtwork` (40×40, 6 pt radius, the music-note fallback) since
+  the frosted dock landed — BitChord's queue row is the same shape
+  (their 44dp cover, 6dp radius, thumbnail border; the drag handle is
+  the protocol difference — Pandora's queue is server-driven, the row
+  is read-only here, recorded in the BitChord round). Marked done,
+  like the A2 verdict.
+
+Device expectation: start a station from a cold stop → the mini
+player's circle (and the full player's, if open) shows a small
+spinner until audio flows, then the glyph takes over; a mid-song
+rebuffer shows it again; the slot never jumps.
+
+- The rest of the standing queue after it: M6 continues with whatever
+  the device test adds.
 - **Everything from this session is awaiting the user's device test:**
   the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
   word-exact sweep + the letter swell), the playback speed, the
   Last.fm upgrade, the offline state, the artwork flight, the
   artwork cache's ceiling, the BitChord icons, the lyrics cache's
-  bound, and the slow-link re-login. When feedback arrives it jumps
-  the queue.
+  bound, the slow-link re-login, and the loading spinner. When
+  feedback arrives it jumps the queue.
 
 **Next unit — F1 (the mini-player artwork flight):** the last deferred
 BitChord item, and the one remaining adoption gap in the player
@@ -3874,13 +3901,12 @@ toolbar) → Copy → paste.
    transport drawables copied verbatim; detail in In Flight / Last
    Push. Device test pending.
 2. **M6 robustness, continued** — offline, the artwork cache's disk
-   ceiling, the lyrics cache's bound, the BitChord icons and the
-   slow-link re-login landed this session; next: the deferred BitChord
-   siblings below, then whatever device feedback adds.
-3. **The deferred BitChord siblings — next up** — the mini-player's
-   loading spinner (needs a per-track loading state the player does
-   not expose yet) and the queue's artwork. Survey `PlayerService`
-   first; detail in "Next unit" under In Flight / Last Push.
+   ceiling, the lyrics cache's bound, the BitChord icons, the
+   slow-link re-login and the loading spinner landed this session;
+   next: whatever the device test adds.
+3. **The deferred BitChord siblings — DONE:** the loading spinner
+   landed (this push) and the queue's artwork was already in (stale
+   record). Nothing left to adopt from that list.
 4. **User device test of the next IPA** — the whole pile is untested:
    the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
    word-exact sweep + the letter swell), the playback speed, the
@@ -3903,10 +3929,10 @@ toolbar) → Copy → paste.
 7. **ListenBrainz — dropped** (the user chose the Last.fm upgrade
    instead, 2026-11-19); not to be revisited without a new request.
 
-**FIRST ACTION next session:** `gh run list --limit 5` — confirm this
-push's iOS Build is green, then start **the deferred BitChord
-siblings** (mini-player spinner first) or wait for the user's device
-feedback, which jumps the queue.
+**FIRST ACTION next session:** `gh run list --limit 5` — confirm the
+deciding iOS Build is green (a capacity failure is rerun, not
+repaired), then wait for the user's device feedback, which jumps the
+queue — the session's whole pile is untested on the phone.
 
 **CI state at the handover (2026-11-19):** the repair push (`2446ccb`)
 is ✅ Core Tests + ✅ iOS Build — the playback-speed and Last.fm code

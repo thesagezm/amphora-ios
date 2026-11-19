@@ -148,7 +148,15 @@ struct MiniPlayer: View {
             store.send(.togglePlayback)
         } label: {
             ZStack {
-                if store.player.isPlaying {
+                if store.player.state == .buffering {
+                    // BitChord's loading spinner: the stream is still
+                    // resolving — the play glyph would be a lie. Same
+                    // footprint, so the slot never shifts.
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(Theme.accentGlyph.opacity(0.85))
+                        .scaleEffect(0.9, anchor: .center)
+                } else if store.player.isPlaying {
                     TransportGlyph(.pause, size: 17, color: Theme.accentGlyph.opacity(0.85))
                 } else {
                     TransportGlyph(.play, size: 17, color: Theme.accentGlyph.opacity(0.85))

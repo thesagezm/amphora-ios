@@ -998,7 +998,15 @@ struct NowPlayingView: View {
                 store.send(.togglePlayback)
             } label: {
                 ZStack {
-                    if store.player.isPlaying {
+                    if store.player.state == .buffering {
+                        // BitChord's loading spinner: the stream is
+                        // still resolving — the glyph would be a lie.
+                        // The accent circle keeps its place and size.
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(Theme.accentGlyph)
+                            .scaleEffect(1.5, anchor: .center)
+                    } else if store.player.isPlaying {
                         TransportGlyph(.pause, size: 32, color: Theme.accentGlyph)
                     } else {
                         TransportGlyph(.play, size: 32, color: Theme.accentGlyph)
