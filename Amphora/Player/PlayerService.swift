@@ -79,6 +79,16 @@ final class PlayerService {
         didSet { player.volume = volume }
     }
 
+    /// The user's playback speed (0.5…2). Applied through `defaultRate`
+    /// — pauses, resumes and item handovers keep the rate without any
+    /// bookkeeping — plus a direct `rate` write so a change is audible
+    /// immediately while playing. Live radio streams never carry it
+    /// (`applyPlaybackRate` pins them to 1): a live edge cannot be
+    /// outpaced, so 2× on a stream is only stalls.
+    private(set) var playbackRate: Float = 1 {
+        didSet { applyPlaybackRate() }
+    }
+
     var isPlaying: Bool { state == .playing || state == .buffering }
 
     /// How far the audible audio lags a live stream's edge, in
@@ -204,6 +214,9 @@ final class PlayerService {
         duration = TimeInterval(track.duration)
         errorMessage = nil
         activateAudioSession()
+        // The rate belongs to the new track: a stored speed resumes on
+        // a Pandora track, a live stream stays at 1×.
+        applyPlaybackRate()
         player.play()
         state = .playing
         wantsToPlay = true
@@ -231,6 +244,9 @@ final class PlayerService {
         duration = 0
         errorMessage = nil
         activateAudioSession()
+        // A live stream always plays at 1× (`applyPlaybackRate` pins
+        // it), even while a stored song speed is set.
+        applyPlaybackRate()
         player.play()
         state = .playing
         wantsToPlay = true
@@ -311,6 +327,25 @@ final class PlayerService {
     /// Sets the app's playback volume, clamped to 0...1.
     func setVolume(_ value: Float) {
         volume = min(max(value, 0), 1)
+    }
+
+    /// Sets the playback speed, clamped to 0.5...2 — the range the
+    /// item's time-pitch algorithm renders well.
+    func setPlaybackRate(_ value: Float) {
+        playbackRate = min(max(value, 0.5), 2)
+    }
+
+    /// The single writer for the rate: `defaultRate` governs every
+    /// future play and resume; the direct `rate` write retunes audible
+    /// playback at once. The direct write happens **only while
+    /// playing** — setting `rate` on a paused player would start it.
+    /// A live stream is pinned to 1×.
+    private func applyPlaybackRate() {
+        let rate = currentTrack?.isRadio == true ? 1 : playbackRate
+        player.defaultRate = rate
+        if isPlaying {
+            player.rate = rate
+        }
     }
 
     /// Jumps forward in the current track (remote command).
@@ -402,6 +437,11 @@ final class PlayerService {
               let url = URL(string: stream) else { return nil }
         let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 30
+        // Speed changes must keep the music sounding right: the spectral
+        // mixer is the highest-quality time-pitch algorithm across the
+        // whole 0.5–2× range (the default, timeDomain, is tuned for
+        // speech).
+        item.audioTimePitchAlgorithm = .spectralMixer
         return item
     }
 
@@ -731,6 +771,9 @@ final class PlayerService {
             slots.append(Slot(track: slot.track, item: item))
         }
         currentTrack = slots.first?.track
+        // The rebuilt player must carry the user's speed (a radio slot
+        // stays at 1×) — defaultRate survives nothing across a rebuild.
+        applyPlaybackRate()
         if wasPlaying, !slots.isEmpty {
             activateAudioSession()
             player.play()

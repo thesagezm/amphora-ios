@@ -41,6 +41,12 @@ struct Preferences: Codable, Equatable {
     /// written before the key existed must still decode. `nil` means
     /// "no offset".
     var lyricsOffset: TimeInterval? = nil
+    /// The user's playback speed (0.5…2). Optional on purpose like
+    /// `playbackVolume`: a file written before the key existed must
+    /// still decode. `nil` means "normal speed". Live streams never
+    /// carry it (the player pins them to 1×) — a live edge cannot be
+    /// outpaced.
+    var playbackRate: Float? = nil
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.

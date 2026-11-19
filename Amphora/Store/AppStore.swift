@@ -60,6 +60,9 @@ final class AppStore {
         case togglePlayback
         case skipToNext
         case setPlaybackVolume(Float)
+        /// The user's playback speed (0.5…2) — BitChord's playback
+        /// speed, adopted later as requested. Live streams ignore it.
+        case setPlaybackRate(Float)
         case refreshLyrics
         /// Translate the current lyrics into English, on demand — the
         /// lyrics panel's **Translate** button.
@@ -353,6 +356,9 @@ final class AppStore {
         // The playback volume survives a relaunch. `nil` (a file written
         // before the key existed) means full volume.
         player.setVolume(preferences.playbackVolume ?? 1)
+        // The playback speed survives a relaunch the same way; `nil`
+        // means normal speed.
+        player.setPlaybackRate(preferences.playbackRate ?? 1)
         // The lyrics offset survives a relaunch the same way.
         lyricsOffset = preferences.lyricsOffset ?? 0
         // A sleep timer survives a relaunch: restore it and resume the
@@ -481,6 +487,13 @@ final class AppStore {
             // so the disk is written once per gesture, not per frame).
             player.setVolume(volume)
             preferences.playbackVolume = volume
+            preferencesStore.save(preferences)
+        case .setPlaybackRate(let rate):
+            // The speed picker has no drag to batch — one selection is
+            // one write-through. Normal speed is stored as `nil` (the
+            // optional-on-purpose pattern).
+            player.setPlaybackRate(rate)
+            preferences.playbackRate = rate == 1 ? nil : rate
             preferencesStore.save(preferences)
         case .setLyricsOffset(let offset):
             // The offset sheet's slider moves the clock live in memory

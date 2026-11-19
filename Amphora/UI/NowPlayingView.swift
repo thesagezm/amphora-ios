@@ -124,6 +124,26 @@ struct NowPlayingView: View {
                     Label("Identify Song", systemImage: "magnifyingglass")
                 }
             } else {
+                // Playback speed (BitChord's, 0.5–2×): a song can be
+                // sped; a live stream cannot — its edge cannot be
+                // outpaced, so the control is not offered on radio and
+                // the player pins a stream to 1× regardless.
+                Picker(
+                    "Playback Speed",
+                    selection: Binding(
+                        get: { Double(store.player.playbackRate) },
+                        set: { store.send(.setPlaybackRate(Float($0))) }
+                    )
+                ) {
+                    Text("0.5×").tag(0.5)
+                    Text("0.75×").tag(0.75)
+                    Text("1×").tag(1.0)
+                    Text("1.25×").tag(1.25)
+                    Text("1.5×").tag(1.5)
+                    Text("1.75×").tag(1.75)
+                    Text("2×").tag(2.0)
+                }
+                Divider()
                 Button {
                     isShowingTuning = true
                 } label: {

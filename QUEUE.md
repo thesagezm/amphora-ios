@@ -432,6 +432,53 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**This push — playback speed 0.5–2×.** the first of the BitChord
+"adopted later" items (user-approved scope, recorded in the round's
+skip/adopt list).
+
+- **`Amphora/Player/PlayerService.swift`** — `playbackRate` (0.5…2,
+  clamped) mirrors the `volume` pattern: a stored value whose
+  `didSet` funnels through one writer, `applyPlaybackRate`. The
+  writer sets `player.defaultRate` (pauses, resumes, item handovers
+  and the remote play command all keep the rate with no
+  bookkeeping) and, only while playing, writes `player.rate`
+  directly so the change is audible at once — setting `rate` on a
+  paused player would *start* it, so the direct write is gated.
+- **Live radio is pinned to 1×** — `applyPlaybackRate` reads the
+  current track: a stream gets 1 regardless of the stored speed (a
+  live edge cannot be outpaced; 2× on a stream is only stalls), and
+  the rate is re-applied at every track start (`play`,
+  `playLiveStream`) and after a media-services rebuild, so
+  radio→song restores the user's speed and song→radio drops it
+  without the UI's involvement. The menu control is hidden on radio
+  too — the player-side pin is the defence in depth.
+- **Pitch survives the speed** — every item is built with
+  `audioTimePitchAlgorithm = .spectralMixer` (Apple's highest-quality
+  time-pitch algorithm across the whole 0.5–2× range; the default,
+  timeDomain, is tuned for speech). AGENTS.md priority 3: the music
+  must sound excellent at any speed.
+- **`Amphora/UI/NowPlayingView.swift`** — the actions menu gains a
+  Playback Speed picker (0.5×…2× in 0.25 steps, checkmark on the
+  current one) at the top of the song-level branch; radio's branch
+  is unchanged. The clock needs nothing: `player.elapsed` advances
+  with the rate, so the lyrics sweep, the scroll engine and the
+  strip stay in sync at 2× by construction.
+- **Persistence** — `Preferences.playbackRate: Float?` (the
+  optional-on-purpose pattern like volume and the lyrics offset;
+  `nil` means normal speed), restored at launch next to the volume;
+  the `.setPlaybackRate` intent writes through (one selection, one
+  disk write).
+
+Local verification: the four touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (407/407 stands). The
+app target typechecks on CI only.
+
+**Device expectation**: ⋯ → Playback Speed → pick 1.5× → the song
+audibly speeds up with its pitch intact and stays sped through
+pause/resume, skips and AirPlay handovers; lyrics keep sync; back to
+1× stores it as normal; on a radio station the picker is absent and
+no stored speed can affect the stream; relaunch keeps the speed.
+
 **Previous push — W2 of the word-timing adoption: the Musixmatch
 provider.** the first skip the user reinstated, now real: the sweep
 follows **word-exact timings** when the source has them.
@@ -483,7 +530,7 @@ wide) — the sweep now snaps to each word's real start instead of
 interpolating across the line; songs Musixmatch does not cover fall
 back to lrclib and interpolate exactly as before.
 
-**This push — W3 of the word-timing adoption: the word-exact sweep +
+**Previous push — W3 of the word-timing adoption: the word-exact sweep +
 the letter swell.** the second reinstated skip, consuming W1's math;
 the UI half of the Musixmatch work.
 
