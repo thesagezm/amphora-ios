@@ -131,6 +131,23 @@ public actor SessionManager {
     /// so the set keeps a repeat rating from calling the endpoint again.
     private var transformedStations: Set<String> = []
 
+    /// The re-login shared by a whole burst of session expiries. The
+    /// actor serializes callers, so without it, several requests that
+    /// expire together — exactly what a slow network produces, with
+    /// requests already in flight when the session dies — would run one
+    /// full partner+user login *per request*, back to back, minutes of
+    /// waiting on a bad link.
+    private var reloginTask: Task<Void, Error>?
+
+    /// When the last re-login landed. A straggler — a request sent with
+    /// the old token before the re-login finished — arrives 1001 within
+    /// this window and replays straight away instead of triggering a
+    /// second full login. The fresh session is already in the context.
+    private var lastReloginAt: Date?
+
+    /// How long a landed re-login serves arriving 1001 stragglers.
+    public static let reloginFreshnessWindow: TimeInterval = 10
+
     public init(
         client: LegacyPandoraClient = LegacyPandoraClient(),
         modes: PandoraModesClient = PandoraModesClient(),
@@ -153,15 +170,25 @@ public actor SessionManager {
     // MARK: Login
 
     /// Full connect flow (pithos `Pandora.connect`): partner login →
-    /// syncTime decode → user login → store. Resets any prior session first,
-    /// exactly like the reference implementation.
+    /// syncTime decode → user login → store. Resets any prior session
+    /// first, exactly like the reference implementation — this is the
+    /// explicit sign-in path. The transparent re-login uses
+    /// `establishSession` directly: it replaces the session only when
+    /// it lands, so a failed attempt on a slow link leaves the stale
+    /// session in place and the next call can retry when the link
+    /// recovers, instead of finding an unauthenticated manager.
     public func login(username: String, password: String) async throws -> SessionTokens {
-        // Reset — a failed re-auth must not leave a half-live session.
+        // Reset — a failed sign-in must not leave a half-live session.
         credentials = nil
         tokens = nil
         subscriber = false
         client.context = URLBuilder.Context()
+        return try await establishSession(username: username, password: password)
+    }
 
+    /// Partner login → syncTime offset → user login → assign + store,
+    /// atomically: nothing mutates until the user login has answered.
+    private func establishSession(username: String, password: String) async throws -> SessionTokens {
         // 1. Partner login — plain JSON body (no Blowfish), no auth query.
         let partner = try await client.request(
             method: PandoraAPI.Method.partnerLogin,
@@ -254,7 +281,13 @@ public actor SessionManager {
     /// Signs out: drops the in-memory credentials/tokens and clears the
     /// stored session record. Idempotent and offline (no network call) —
     /// stopping playback and clearing app-level caches is the caller's job.
+    ///
+    /// A re-login still in flight is cancelled: it must not land after
+    /// the sign-out and re-persist the session the user just ended.
     public func signOut() {
+        reloginTask?.cancel()
+        reloginTask = nil
+        lastReloginAt = nil
         credentials = nil
         tokens = nil
         subscriber = false
@@ -267,10 +300,18 @@ public actor SessionManager {
     /// Encrypted request under the current session. On fault 1001 (session
     /// expired) re-logins with the in-memory credentials and replays exactly
     /// once; a second 1001 (or any other error) is surfaced as-is.
+    ///
+    /// The re-login itself is **one per burst**: concurrent 1001s share
+    /// the in-flight login, and a straggler inside the freshness window
+    /// replays against the session the last login established. A call
+    /// arriving while a re-login runs waits for it instead of sending —
+    /// the attempt stamps the client's request context mid-flight, and
+    /// on a slow link that window is seconds long.
     public func authenticatedRequest(
         _ method: String,
         parameters: [String: JSONValue] = [:]
     ) async throws -> [String: AnyJSON] {
+        try await awaitInFlightRelogin()
         guard let credentials, tokens != nil else {
             throw SessionManagerError.notAuthenticated
         }
@@ -282,10 +323,7 @@ public actor SessionManager {
                 now: now()
             )
         } catch let error as PandoraAPIError where error.isSessionExpired {
-            _ = try await login(
-                username: credentials.username,
-                password: credentials.password
-            )
+            try await relogin()
             // Retry once — a second 1001 lands here and propagates.
             return try await client.request(
                 method: method,
@@ -499,6 +537,7 @@ public actor SessionManager {
     /// 401/403 (the modern API's session-expiry signal) → transparent
     /// re-login, retry once — the same contract as `authenticatedRequest`.
     public func getStationModes(for station: Station) async throws -> StationModes {
+        try await awaitInFlightRelogin()
         guard let authToken = tokens?.userAuthToken else {
             throw SessionManagerError.notAuthenticated
         }
@@ -527,6 +566,7 @@ public actor SessionManager {
         if mode.isPremiumOnly && !subscriber {
             throw StationModesError.notEntitled
         }
+        try await awaitInFlightRelogin()
         guard let authToken = tokens?.userAuthToken else {
             throw SessionManagerError.notAuthenticated
         }
@@ -552,8 +592,61 @@ public actor SessionManager {
     }
 
     private func reloginAfterUnauthorized() async throws {
-        guard let credentials else { throw SessionManagerError.notAuthenticated }
-        _ = try await login(username: credentials.username, password: credentials.password)
+        try await relogin()
+    }
+
+    // MARK: Re-login (one per burst)
+
+    /// Waits for a re-login that is already running — none running
+    /// returns at once. A failed shared re-login propagates its error:
+    /// the caller sees the real transport failure, not a generic
+    /// unauthenticated state.
+    private func awaitInFlightRelogin() async throws {
+        if let inFlight = reloginTask {
+            try await inFlight.value
+        }
+    }
+
+    /// One re-login per burst: shares an in-flight login, reuses one
+    /// that just landed (the freshness window), or starts one. The
+    /// caller replays its request afterwards — the retry-once contract
+    /// is unchanged; this decides how many *logins* the burst costs.
+    /// A failed attempt leaves the stale session in place (see
+    /// `establishSession`), so the next call can retry.
+    private func relogin() async throws {
+        if let inFlight = reloginTask {
+            return try await inFlight.value
+        }
+        if let landedAt = lastReloginAt,
+           now().timeIntervalSince(landedAt) < Self.reloginFreshnessWindow {
+            return
+        }
+        // Capture before the attempt runs.
+        guard let credentials else {
+            throw SessionManagerError.notAuthenticated
+        }
+        let username = credentials.username
+        let password = credentials.password
+        let previousContext = client.context
+        let task = Task<Void, Error> { [weak self] in
+            guard let self else { throw SessionManagerError.notAuthenticated }
+            do {
+                _ = try await self.establishSession(username: username, password: password)
+            } catch {
+                // The attempt stamped the client's request context
+                // mid-flight (the partner context, after step 1). A
+                // failed attempt puts the previous one back, so the
+                // stale session keeps stamping requests coherently —
+                // and the next call can retry the login when the link
+                // recovers.
+                self.client.context = previousContext
+                throw error
+            }
+        }
+        reloginTask = task
+        defer { reloginTask = nil }
+        try await task.value
+        lastReloginAt = now()
     }
 
     // MARK: Feedback

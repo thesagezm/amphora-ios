@@ -22,10 +22,12 @@ ListenBrainz client, which the user dropped), **offline
 awareness** (the first M6 slice), **F1 — the mini-player artwork
 flight**, **the artwork cache's disk-tier ceiling** (the long-session
 soak, first half), **the playback control icons, copied from
-BitChord exactly** (the user's feedback) and **the lyrics cache's
-bound** (the soak's second half). Everything from this session and
+BitChord exactly** (the user's feedback), **the lyrics cache's
+bound** (the soak's second half) and **session expiry under a slow
+link** (one re-login per burst). Everything from this session and
 the BitChord round before it is **awaiting the user's device test**.
-The next unit is **session expiry under a slow network** (see "Next
+The next unit is **the deferred BitChord siblings** — the
+mini-player's loading spinner, then the queue's artwork (see "Next
 unit" under In Flight / Last Push).
 
 ## User Feedback Pending
@@ -749,26 +751,76 @@ icon view and is superseded by that repair. The reminder recorded
 twice before stands: `-parse` is shape-only; the repair loop (read
 log line → fix → push) is the process.
 
-**Next unit — M6: session expiry under a slow network.** The
-session-expiry path (the transparent re-login, retry once, typed
-error) is done and the offline awareness is in; what is left is the
-slow link: a re-login that takes tens of seconds must not fight the
-UI (no half-authenticated state, no retry storm), the timeout on the
-auth calls must be sane against `NetworkDefaults`, and a re-login
-that lands after the user gave up must still leave the app in a
-consistent state. Survey `SessionManager` + `AppStore`'s error
-surfacing first, then decide the unit's exact shape.
+**This push — M6: session expiry under a slow link (one re-login per
+burst).** The session-expiry path existed (1001 → transparent
+re-login → replay once); what a slow link exposed was the **burst**:
+several requests already in flight when the session dies all expire
+together, and the actor would have serialized a FULL partner+user
+login per request — minutes of waiting on a bad link, the UI spinning
+through each.
 
-- The rest of the standing queue after it: the deferred BitChord
-  siblings — the mini-player's loading spinner (which needs a
-  per-track loading state the player does not expose yet) and the
-  queue's artwork.
+- **One re-login per burst** (`PandoraCore/Sources/PandoraCore/
+  SessionManager.swift`): a burst shares one in-flight login task
+  (`reloginTask`); concurrent 1001s await the same outcome instead of
+  queueing their own. A straggler — a request that was already on the
+  wire carrying the stale token and arrives 1001 after the login
+  landed — replays straight away inside a 10-second freshness window
+  (`SessionManager.reloginFreshnessWindow`, measured with the
+  manager's injected clock); past the window, a genuine second expiry
+  costs a full login again.
+- **A call arriving mid-re-login waits instead of sending:** the
+  attempt stamps the client's request context as it goes (partner
+  context after step 1), so a request sent mid-attempt would go out
+  mis-stamped. `authenticatedRequest` and both station-modes paths
+  wait for the shared login first.
+- **A failed attempt leaves the session retryable** — the finding the
+  failed-relogin test forced: `login` resets first
+  (reference-verbatim, right for the sign-in screen), so a re-login
+  built on it wiped the stored credentials/tokens on failure and every
+  later call surfaced as unauthenticated until relaunch. The re-login
+  now runs **`establishSession`** — the same partner → syncTime →
+  user → store steps, atomic: nothing mutates until the user login
+  answers; a failed attempt puts the previous request context back and
+  the stale session stays in place for the next call to retry when the
+  link recovers. The typed transport error surfaces — not a generic
+  unauthenticated state.
+- **Sign-out cancels a login still running** — it must not land after
+  the sign-out and re-persist the session the user just ended.
+- **6 new core tests** (456/456 green in Docker), on a per-method
+  transport that models Pandora honestly — the stale token is refused
+  until a fresh userLogin lands, one specific call can be refused as
+  the straggler that was already on the wire, the first partner reply
+  can be held (the slow link): the concurrent burst shares one login,
+  the in-window straggler replays without a login, the past-window
+  straggler logins again, the failed re-login propagates and stays
+  retryable, the mid-login call waits, the sign-out cancels. The
+  transports already apply `NetworkDefaults.requestTimeoutInterval`
+  (30 s) to every request including auth — surveyed, unchanged; a
+  re-login is bounded at two request timeouts.
+
+Device expectation: hard to stage deliberately — it shows up as: the
+session dies while several requests are in flight (say, browsing
+while a song starts) → the app recovers once, quietly, without
+minutes of spinning and without showing "sign in required"; signing
+out while the app is mid-recovery actually signs out.
+
+**Next unit — the deferred BitChord siblings.** Two recorded-not-
+adopted items, in order: (1) the **mini-player's loading spinner**
+(BitChord swaps a spinner into the play slot while the stream resolves
+— Amphora needs a per-track loading state `PlayerService` does not
+expose yet; survey it first); (2) the **queue's artwork** (BitChord's
+Up Next rows carry covers; Amphora's queue rows are text-only — the
+artwork cache already serves every other surface).
+
+- The rest of the standing queue after it: M6 continues (whatever
+  device feedback adds), then the next milestone's worth of polish.
 - **Everything from this session is awaiting the user's device test:**
   the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
   word-exact sweep + the letter swell), the playback speed, the
   Last.fm upgrade, the offline state, the artwork flight, the
-  artwork cache's ceiling, the BitChord icons, and the lyrics cache's
-  bound. When feedback arrives it jumps the queue.
+  artwork cache's ceiling, the BitChord icons, the lyrics cache's
+  bound, and the slow-link re-login. When feedback arrives it jumps
+  the queue.
 
 **Next unit — F1 (the mini-player artwork flight):** the last deferred
 BitChord item, and the one remaining adoption gap in the player
@@ -3821,19 +3873,21 @@ toolbar) → Copy → paste.
 1. **The playback control icons — LANDED (this push)** — BitChord's
    transport drawables copied verbatim; detail in In Flight / Last
    Push. Device test pending.
-2. **M6 robustness, continued** — the artwork cache's disk tier, the
-   BitChord icons and the lyrics cache's bound landed (this session);
-   next: the session-expiry path under a slow network.
-3. **The deferred BitChord siblings** — the mini-player's loading
-   spinner (needs a per-track loading state the player does not expose
-   yet) and the queue's artwork.
+2. **M6 robustness, continued** — offline, the artwork cache's disk
+   ceiling, the lyrics cache's bound, the BitChord icons and the
+   slow-link re-login landed this session; next: the deferred BitChord
+   siblings below, then whatever device feedback adds.
+3. **The deferred BitChord siblings — next up** — the mini-player's
+   loading spinner (needs a per-track loading state the player does
+   not expose yet) and the queue's artwork. Survey `PlayerService`
+   first; detail in "Next unit" under In Flight / Last Push.
 4. **User device test of the next IPA** — the whole pile is untested:
    the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
    word-exact sweep + the letter swell), the playback speed, the
    Last.fm upgrade (the crossing scrobble, the switches, the rule
    sliders), the offline state, the artwork flight, the artwork
-   cache's ceiling, the BitChord icons and the lyrics cache's bound.
-   Test order: the player
+   cache's ceiling, the BitChord icons, the lyrics cache's bound and
+   the slow-link re-login. Test order: the player
    first (transport, volume slider, LIVE badge, radio controls, the
    frosted dock and queue panel, the sleeve gestures), then the
    lyrics panel (the swept line, the letter swell, the
@@ -3850,9 +3904,9 @@ toolbar) → Copy → paste.
    instead, 2026-11-19); not to be revisited without a new request.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — confirm this
-push's iOS Build is green, then start **session expiry under a slow
-network** or wait for the user's device feedback, which jumps the
-queue.
+push's iOS Build is green, then start **the deferred BitChord
+siblings** (mini-player spinner first) or wait for the user's device
+feedback, which jumps the queue.
 
 **CI state at the handover (2026-11-19):** the repair push (`2446ccb`)
 is ✅ Core Tests + ✅ iOS Build — the playback-speed and Last.fm code
