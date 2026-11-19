@@ -737,6 +737,18 @@ Device expectation: nothing visible — repeat listens still skip the
 lookup, translation/romanization still stick; a very long session
 just tops the cache out at 200 songs.
 
+**CI state this session:** the cache-bounds push (`f03e314`) is ✅
+Core + ✅ iOS (runs `44587613241` / `44587613299`). The icons push
+(`a48c17e`) failed its iOS Build on two type errors the parse check
+cannot see — a `@ViewBuilder` property is not Optional at the type
+level (so `if let rendered` was rejected) and an optional-bound
+non-optional `TransportIcon`; the repair (`5530361`) uses a plain
+optional-tuple layout property instead, and **its runs decide the
+icons unit**. The lyrics-cache push (`2b1eb8b`) inherited the broken
+icon view and is superseded by that repair. The reminder recorded
+twice before stands: `-parse` is shape-only; the repair loop (read
+log line → fix → push) is the process.
+
 **Next unit — M6: session expiry under a slow network.** The
 session-expiry path (the transparent re-login, retry once, typed
 error) is done and the offline awareness is in; what is left is the
