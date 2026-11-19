@@ -243,7 +243,10 @@ final class AppStore {
     private(set) var lyricsTranslationState: LyricsTranslationState = .none
     /// Session-scoped lyrics cache keyed by `trackToken` — repeat listens
     /// don't re-hit the lyrics service. Not-found results are cached too.
-    private var lyricsCache: [String: Lyrics] = [:]
+    /// Bounded (least recently used, 200 songs): a long session grows the
+    /// cache by one entry per song heard, and nothing else ever evicted
+    /// it — the rule is the artwork cache's disk tier's, in memory.
+    private var lyricsCache = BoundedCache<String, Lyrics>(capacity: 200)
     /// The in-flight lyrics fetch; cancelled when the track changes.
     private var lyricsTask: Task<Void, Never>?
     /// The in-flight translation for the current track's lyrics; cancelled
@@ -1014,7 +1017,7 @@ final class AppStore {
         modesStationId = nil
         lyrics = nil
         lyricsTranslationState = .none
-        lyricsCache = [:]
+        lyricsCache.removeAll()
         queuedTrackTokens = []
         lastErrorMessage = nil
         confirmationMessage = nil

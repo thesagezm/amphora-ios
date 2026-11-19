@@ -21,11 +21,12 @@ the three switches, the three rule sliders — in place of the planned
 ListenBrainz client, which the user dropped), **offline
 awareness** (the first M6 slice), **F1 — the mini-player artwork
 flight**, **the artwork cache's disk-tier ceiling** (the long-session
-soak, first half), and **the playback control icons, copied from
-BitChord exactly** (the user's feedback, landed this push). Everything
-from this session and the BitChord round before it is **awaiting the
-user's device test**. The next unit is **bounding the lyrics cache**
-(the soak's second half — see "Next unit" under In Flight / Last Push).
+soak, first half), **the playback control icons, copied from
+BitChord exactly** (the user's feedback) and **the lyrics cache's
+bound** (the soak's second half). Everything from this session and
+the BitChord round before it is **awaiting the user's device test**.
+The next unit is **session expiry under a slow network** (see "Next
+unit" under In Flight / Last Push).
 
 ## User Feedback Pending
 
@@ -709,26 +710,53 @@ double-triangle back button on the left; the mini player and the hero
 tiles carry the same shapes smaller; radio keeps its stop square.
 Everything else about the player behaves as before.
 
-**Next unit — the long-session soak, second half: bound the lyrics
-cache.** The artwork cache's disk tier is bounded; the other cache
-that grows with a long session is `AppStore.lyricsCache` — a plain
-dictionary keyed by track token, one entry per song heard, **no
-ceiling** (small per entry — text — but unbounded in principle). The
-shape: a small portable bounded-cache type in PandoraCore (count
-ceiling, oldest-first eviction, the `PlayHistory.trim` pattern), the
-store's lookups and writes going through it, unit tests in the core.
-Then M6 robustness continues (the session-expiry path **under a slow
-network** — the re-login must not fight a slow link), then the
-deferred BitChord siblings: the mini-player's loading spinner (which
-needs a per-track loading state the player does not expose yet) and
-the queue's artwork.
+**This push — the long-session soak, second half: the lyrics cache is
+bounded.** The artwork cache's disk tier got its ceiling earlier this
+session; the other holder that grows with a long session was
+`AppStore.lyricsCache` — a plain dictionary keyed by track token, one
+entry per song heard, nothing ever evicting it.
 
+- **`PandoraCore/Sources/PandoraCore/BoundedCache.swift` (new)** — a
+  generic least-recently-used cache: a count ceiling, the LRU entry
+  falling off first, and a read or an update counting as a use (the
+  songs the user revisits survive; the once-heard ones go). The
+  subscript is `Dictionary`-shaped (`get`/`set`/`nil` removes), so the
+  store's eight call sites kept their shape exactly. `removeAll()` is
+  the sign-out wipe. Pure Foundation, like `PlayHistory`'s trim —
+  portable to a future Android port. **10 new core tests** (450/450
+  green in Docker): the eviction order, read-refreshes-recency,
+  update-refreshes-recency, overwrite-doesn't-grow, nil-assignment
+  removal, the sub-1 capacity clamp, `removeAll` and a
+  hundred-insertion soak.
+- **`AppStore.lyricsCache`** — the dictionary is the bounded cache now
+  (capacity 200 songs, the whole ceiling recorded in one place).
+  Repeat listens, the not-found caching and the
+  translation/romanization write-backs all behave as before.
+
+Device expectation: nothing visible — repeat listens still skip the
+lookup, translation/romanization still stick; a very long session
+just tops the cache out at 200 songs.
+
+**Next unit — M6: session expiry under a slow network.** The
+session-expiry path (the transparent re-login, retry once, typed
+error) is done and the offline awareness is in; what is left is the
+slow link: a re-login that takes tens of seconds must not fight the
+UI (no half-authenticated state, no retry storm), the timeout on the
+auth calls must be sane against `NetworkDefaults`, and a re-login
+that lands after the user gave up must still leave the app in a
+consistent state. Survey `SessionManager` + `AppStore`'s error
+surfacing first, then decide the unit's exact shape.
+
+- The rest of the standing queue after it: the deferred BitChord
+  siblings — the mini-player's loading spinner (which needs a
+  per-track loading state the player does not expose yet) and the
+  queue's artwork.
 - **Everything from this session is awaiting the user's device test:**
   the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
   word-exact sweep + the letter swell), the playback speed, the
   Last.fm upgrade, the offline state, the artwork flight, the
-  artwork cache's ceiling, and now the BitChord icons. When feedback
-  arrives it jumps the queue.
+  artwork cache's ceiling, the BitChord icons, and the lyrics cache's
+  bound. When feedback arrives it jumps the queue.
 
 **Next unit — F1 (the mini-player artwork flight):** the last deferred
 BitChord item, and the one remaining adoption gap in the player
@@ -3781,11 +3809,9 @@ toolbar) → Copy → paste.
 1. **The playback control icons — LANDED (this push)** — BitChord's
    transport drawables copied verbatim; detail in In Flight / Last
    Push. Device test pending.
-2. **M6 robustness, continued** — the artwork cache's disk tier and
-   the BitChord icons landed (this push); next: **bound
-   `AppStore.lyricsCache`** (the soak's second half — an unbounded
-   per-track dictionary), then the session-expiry path under a slow
-   network.
+2. **M6 robustness, continued** — the artwork cache's disk tier, the
+   BitChord icons and the lyrics cache's bound landed (this session);
+   next: the session-expiry path under a slow network.
 3. **The deferred BitChord siblings** — the mini-player's loading
    spinner (needs a per-track loading state the player does not expose
    yet) and the queue's artwork.
@@ -3794,7 +3820,8 @@ toolbar) → Copy → paste.
    word-exact sweep + the letter swell), the playback speed, the
    Last.fm upgrade (the crossing scrobble, the switches, the rule
    sliders), the offline state, the artwork flight, the artwork
-   cache's ceiling and the BitChord icons. Test order: the player
+   cache's ceiling, the BitChord icons and the lyrics cache's bound.
+   Test order: the player
    first (transport, volume slider, LIVE badge, radio controls, the
    frosted dock and queue panel, the sleeve gestures), then the
    lyrics panel (the swept line, the letter swell, the
@@ -3811,9 +3838,9 @@ toolbar) → Copy → paste.
    instead, 2026-11-19); not to be revisited without a new request.
 
 **FIRST ACTION next session:** `gh run list --limit 5` — confirm this
-push's iOS Build is green, then start **bounding the lyrics cache**
-(the soak's second half) or wait for the user's device feedback,
-which jumps the queue.
+push's iOS Build is green, then start **session expiry under a slow
+network** or wait for the user's device feedback, which jumps the
+queue.
 
 **CI state at the handover (2026-11-19):** the repair push (`2446ccb`)
 is ✅ Core Tests + ✅ iOS Build — the playback-speed and Last.fm code
