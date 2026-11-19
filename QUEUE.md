@@ -428,7 +428,36 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — A1 of the BitChord round: the lyrics offset sheet.** the
+**This push — A3 of the BitChord round: the track stats sheet.**
+BitChord's "stats for nerds", adapted to what Pandora actually
+exposes.
+
+- **`Amphora/UI/TrackStatsSheet.swift` (new)** — a detents sheet from
+  the player's ellipsis menu ("Track Stats"): the real stream variant
+  ("128 kbps · MP3" — the header chip's data with the full story),
+  length (a live stream says "Live"), album, the station it came
+  from, where the audio is going (route name or "Phone speaker"), and
+  a lyrics section — source shape ("Synchronised · 34 lines" / plain /
+  instrumental / none found) plus the applied timing offset when one
+  is set. **Nothing invented**: the protocol carries no bit depth or
+  sample rate (BitChord's report comes from their DAC/decoder stack;
+  ours would be a lie), and the sheet says so by omission, not
+  padding.
+- Wired into `NowPlayingView`'s actions menu beside the sleep timer —
+  available on radio too, where the rows describe the stream and its
+  station honestly.
+
+Local verification: the two touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (build green, 379/379
+stands).
+
+**Device expectation**: ⋯ → Track Stats → the sheet lists title,
+artist, album, length, "128 kbps · MP3", the station, the output
+route and the lyrics source; on radio the same sheet describes the
+stream ("Live", the station's name) and an identified song's lyrics
+show their line count.
+
+**Previous push — A1 of the BitChord round: the lyrics offset sheet.** the
 last "singers will want it" adoptable.
 
 - **`Amphora/UI/LyricsOffsetSheet.swift` (new)** — a −5…+5 s slider at

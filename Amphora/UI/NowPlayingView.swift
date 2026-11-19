@@ -27,6 +27,7 @@ struct NowPlayingView: View {
 
     @State private var isShowingSleepTimer = false
     @State private var isShowingTuning = false
+    @State private var isShowingStats = false
     @State private var isShowingLyrics = false
     /// The queue panel — the frosted, read-only successor of the old
     /// Up Next disclosure (Pandora's queue is server-driven).
@@ -81,6 +82,9 @@ struct NowPlayingView: View {
             .sheet(isPresented: $isShowingTuning) {
                 TuneStationSheet(station: nil)
             }
+            .sheet(isPresented: $isShowingStats) {
+                TrackStatsSheet()
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -103,6 +107,11 @@ struct NowPlayingView: View {
                         : "Sleep Timer (\(store.sleepTimerLabel))…",
                     systemImage: "moon.zzz"
                 )
+            }
+            Button {
+                isShowingStats = true
+            } label: {
+                Label("Track Stats", systemImage: "info.circle")
             }
             if isRadioStream {
                 // The Identify button: retries the announced song's
