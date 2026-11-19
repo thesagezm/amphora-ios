@@ -39,9 +39,13 @@ speed 0.5–2×. Skipped with reasons (recorded so nobody re-evaluates):
 canvas/music videos, lossless module sources, per-network quality
 ceilings, offline downloads (no Pandora source / tokenized session
 streams); Google/Spotify/Discord/Listen-Together (different service);
-bit-perfect USB + system EQ (iOS manages output); local library;
-word-exact timing providers (lrclib is line-timed — the sweep
-interpolates word positions across the line, same visual treatment).
+bit-perfect USB + system EQ (iOS manages output); local library.
+Two of these were later **reinstated by the user (2026-11-19)** once
+the swept line existed to hang them on: **word-exact timing
+providers** (originally skipped because lrclib is line-timed) and the
+**letter swell** — landed as W1 (the core's `LyricSweep` math) + W2
+(the Musixmatch rich-sync provider) + W3 (the word-exact sweep + the
+letter swell), below.
 
 **CI state entering the round:** the `bb9190e` rerun from 2026-11-12
 decided the prior round — **Core Tests ✅ and iOS Build ✅ both green**;
@@ -428,7 +432,7 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — W2 of the word-timing adoption: the Musixmatch
+**Previous push — W2 of the word-timing adoption: the Musixmatch
 provider.** the first skip the user reinstated, now real: the sweep
 follows **word-exact timings** when the source has them.
 
@@ -479,36 +483,49 @@ wide) — the sweep now snaps to each word's real start instead of
 interpolating across the line; songs Musixmatch does not cover fall
 back to lrclib and interpolate exactly as before.
 
-**Next unit — W3 (UI: the word-exact sweep + the letter swell):** the
-second reinstated skip, consuming W1's math.
+**This push — W3 of the word-timing adoption: the word-exact sweep +
+the letter swell.** the second reinstated skip, consuming W1's math;
+the UI half of the Musixmatch work.
 
-- **`Amphora/UI/SweptLyricLine.swift`** — `SweptWords` currently
-  interpolates word boundaries by character weight inline. Replace
-  with `LyricSweep.wordStates(words: line.words, text: line.text,
-  at: now, window: start...end)` — the core function owns both regimes
-  (word-exact windows when the provider answered, the identical
-  interpolation otherwise), and `WordState.text` is what the flow
-  renders, so the fallback renders exactly what today renders.
-  `SweptLine`'s init gains the line's `words` and `LyricsPanel.lineRow`
-  passes them.
-- **Letter swell (the second half)**: when a word's `sungFraction` is
-  strictly between 0 and 1, render all three copies per-letter
-  (HStack, spacing 0, `.fixedSize()` — identical layout across copies
-  so they stay aligned); each letter's progress is
-  `LyricSweep.letterProgress(wordSung:letterIndex:letterCount:)`;
-  the bright letter scales `1 + ~0.07 · sin(π · letterProgress)`
-  (rises and settles — transform-only `scaleEffect`, no layout
-  ripple), the glow letter bumps opacity by the same curve, and the
-  per-letter fade replaces the word-level gradient mask (the letter
-  granularity *is* the feather). At sung 0 or 1 keep today's static
-  three-copy Text rendering, so per-frame cost stays bounded to the
-  crossing word's letters.
-- Keep: the TimelineView paused when playback is; the word rise; the
-  falloff table on inactive lines. The strip is line-level —
+- **`Amphora/UI/SweptLyricLine.swift`** — the sweep no longer
+  interpolates word boundaries inline. `SweptWords` renders
+  `LyricSweep.wordStates(words:text:at:window:)` directly — the core
+  owns both regimes (word-exact windows when the provider answered,
+  the identical length-weighted interpolation otherwise), and
+  `WordState.text` is what the flow renders, so line-timed songs
+  render exactly what they always rendered. `SweptLine`'s init gains
+  the line's `words` and `LyricsPanel.lineRow` passes `line.words`.
+- **The letter swell** — while the wavefront is inside a word
+  (`sungFraction` strictly between 0 and 1) all three copies render
+  per-letter: identical letter stacks (HStack, spacing 0, every
+  letter `.fixedSize()`) so dim, glow and bright stay aligned; each
+  letter's progress is `LyricSweep.letterProgress`; the bright letter
+  scales `1 + 0.07·sin(π·p)` — transform-only, rises and settles, no
+  layout ripple — and the glow letter's opacity follows the same
+  curve, so the glow rides the wavefront like a comet (brightest on
+  the crossing letter, settled behind it — the word-level mask's
+  trailing glow traded for the comet). The per-letter fade *is* the
+  feather: the word-level gradient mask is gone. Letters split as
+  grapheme clusters (`word.map(String.init)`), so combining marks and
+  emoji sequences swell as one.
+- **Cost bounded by design** — at sung 0 or 1 the word falls back to
+  the static three-copy `Text` rendering (today's), so per-frame work
+  stays the crossing word's letters alone, and the blur applies once
+  to the whole glow copy, not per letter. Kept: the TimelineView
+  paused when playback is, the 2 pt word rise, the falloff table on
+  inactive lines. The strip above the scrubber is line-level —
   untouched.
-- Verify: touched files parse-clean (`swiftc -parse -swift-version 6`
-  in the swift:6.0 container, mount `/w`); PandoraCore untouched
-  (407/407 stands); CI typechecks the app target.
+
+Local verification: the two touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (407/407 stands). The
+app target typechecks on CI only.
+
+**Device expectation**: play a track Musixmatch covers — the sweep
+snaps to each word's real start, and inside the crossing word each
+letter swells and glows as it is sung, settling back as the wavefront
+passes; a line-timed song (lrclib fallback) sweeps exactly as before,
+with the letter swell riding the interpolated wavefront; paused,
+nothing moves.
 
 **This push — A3 of the BitChord round: the track stats sheet.**
 BitChord's "stats for nerds", adapted to what Pandora actually

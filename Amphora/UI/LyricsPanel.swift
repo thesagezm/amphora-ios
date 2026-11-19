@@ -366,6 +366,7 @@ struct LyricsPanel: View {
             if isActive {
                 SweptLine(
                     text: line.text,
+                    words: line.words,
                     start: line.timestamp,
                     end: nextLineStart(lyrics, after: index),
                     font: .title3.weight(.bold)
