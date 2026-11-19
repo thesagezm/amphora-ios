@@ -22,15 +22,24 @@ import Foundation
 @MainActor
 enum LyricClock {
     /// The display position at wall-clock `date`: the last reading
-    /// plus the time since it was taken, frozen while paused.
-    static func elapsed(at date: Date, in player: PlayerService) -> TimeInterval {
-        guard player.isPlaying, player.elapsedSampledAt > 0 else {
-            return player.elapsed
+    /// plus the time since it was taken, frozen while paused, then
+    /// nudged by the user's lyrics offset — positive delays the
+    /// lyrics, for a provider whose sync runs slightly ahead of the
+    /// audio. (Only the lyrics ride this clock; the offset never
+    /// touches real playback.)
+    static func elapsed(
+        at date: Date, in player: PlayerService, offset: TimeInterval = 0
+    ) -> TimeInterval {
+        let reading: TimeInterval
+        if player.isPlaying, player.elapsedSampledAt > 0 {
+            let drift = date.timeIntervalSinceReferenceDate - player.elapsedSampledAt
+            // A reading much older than the observer interval means the
+            // app was suspended or playback stalled — hold the position
+            // rather than racing ahead of the audio.
+            reading = player.elapsed + min(max(drift, 0), 1.0)
+        } else {
+            reading = player.elapsed
         }
-        let drift = date.timeIntervalSinceReferenceDate - player.elapsedSampledAt
-        // A reading much older than the observer interval means the
-        // app was suspended or playback stalled — hold the position
-        // rather than racing ahead of the audio.
-        return player.elapsed + min(max(drift, 0), 1.0)
+        return reading + offset
     }
 }

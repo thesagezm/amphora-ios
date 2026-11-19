@@ -68,6 +68,11 @@ final class AppStore {
         /// value tunes from the list without touching playback.
         case loadStationModes(Station?)
         case setStationMode(StationMode, for: Station?)
+        /// The lyrics timing offset (BitChord's offset sheet): the
+        /// clock nudges the lyrics by this many seconds against the
+        /// audio. The sheet applies its slider live in memory and
+        /// persists through this intent once, on dismissal.
+        case setLyricsOffset(TimeInterval)
         case rateCurrentTrack(FeedbackRating)
         case removeCurrentRating
         /// Rate a song that has already played, from the Recents list.
@@ -279,6 +284,11 @@ final class AppStore {
     /// The countdown task for a duration sleep timer. Cancelled and
     /// replaced whenever the timer changes.
     private var sleepTimerTask: Task<Void, Never>?
+    /// The lyrics timing offset, in seconds (BitChord's offset sheet):
+    /// the lyrics clock nudges the lines by this much against the
+    /// audio. Positive delays the lyrics — for a provider whose sync
+    /// runs slightly ahead. Survives a relaunch via the preferences.
+    private(set) var lyricsOffset: TimeInterval = 0
     /// The `feedbackId` of the rating on the current track (needed to undo
     /// it) and the rating itself.
     private(set) var currentRating: FeedbackRating = .none
@@ -343,6 +353,8 @@ final class AppStore {
         // The playback volume survives a relaunch. `nil` (a file written
         // before the key existed) means full volume.
         player.setVolume(preferences.playbackVolume ?? 1)
+        // The lyrics offset survives a relaunch the same way.
+        lyricsOffset = preferences.lyricsOffset ?? 0
         // A sleep timer survives a relaunch: restore it and resume the
         // countdown if its deadline is still ahead.
         let storedTimer = preferences.sleepTimer
@@ -431,6 +443,13 @@ final class AppStore {
         }
     }
 
+    /// The offset sheet's slider applies live, in memory only — the
+    /// lyrics clock follows every step without touching the disk.
+    /// Persisting is the intent's job, once, on dismissal.
+    func setLyricsOffsetLive(_ value: TimeInterval) {
+        lyricsOffset = value
+    }
+
     /// Entry point for UI intents.
     func send(_ intent: Intent) {
         switch intent {
@@ -462,6 +481,13 @@ final class AppStore {
             // so the disk is written once per gesture, not per frame).
             player.setVolume(volume)
             preferences.playbackVolume = volume
+            preferencesStore.save(preferences)
+        case .setLyricsOffset(let offset):
+            // The offset sheet's slider moves the clock live in memory
+            // (`setLyricsOffsetLive`); this intent is the one that
+            // remembers it — one disk write per dismissal.
+            lyricsOffset = offset
+            preferences.lyricsOffset = offset
             preferencesStore.save(preferences)
         case .skipToNext:
             // pydora: "Cannot skip advertisements" — the impression plays out.

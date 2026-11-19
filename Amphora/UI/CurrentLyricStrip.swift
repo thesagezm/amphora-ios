@@ -24,7 +24,9 @@ struct CurrentLyricStrip: View {
             if let lyrics = store.lyrics, lyrics.isSynced {
                 TimelineView(.animation(paused: !store.player.isPlaying)) { context in
                     let index = lyrics.activeLineIndex(
-                        at: LyricClock.elapsed(at: context.date, in: store.player)
+                        at: LyricClock.elapsed(
+                            at: context.date, in: store.player, offset: store.lyricsOffset
+                        )
                     )
                     // A fixed strip: the scrubber never shifts when a
                     // line ends and the next has not started yet.

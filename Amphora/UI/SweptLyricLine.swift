@@ -41,7 +41,7 @@ struct SweptLine: View {
 
     var body: some View {
         TimelineView(.animation(paused: !store.player.isPlaying)) { context in
-            let now = LyricClock.elapsed(at: context.date, in: store.player)
+            let now = LyricClock.elapsed(at: context.date, in: store.player, offset: store.lyricsOffset)
             SweptWords(text: text, start: start, end: end, now: now, font: font)
                 // The word flow carries the line three times over (dim,
                 // glow, bright) — VoiceOver reads the line once.

@@ -428,6 +428,42 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
+**This push — A1 of the BitChord round: the lyrics offset sheet.** the
+last "singers will want it" adoptable.
+
+- **`Amphora/UI/LyricsOffsetSheet.swift` (new)** — a −5…+5 s slider at
+  0.1 s steps with the live value in large rounded digits
+  (`contentTransition(.numericText())`), an honest explanation (right
+  if the lyrics lag, left if they run ahead), a Reset button while
+  non-zero, and Done. The slider applies **live in memory**
+  (`store.setLyricsOffsetLive`) so the lines follow every step; the
+  persisting write happens once — on drag end or Done — through the
+  new `.setLyricsOffset` intent, exactly the volume slider's pattern.
+- **The clock carries the offset** — `LyricClock.elapsed` gained an
+  `offset:` parameter and all four lyric surfaces (panel scroll
+  trigger, sweep, gap dots, the strip above the scrubber) pass
+  `store.lyricsOffset`. Only the lyrics ride the clock; the offset
+  never touches real playback.
+- **Persistence** — `Preferences.lyricsOffset: TimeInterval?` (the
+  optional-on-purpose pattern: a file written before the key existed
+  must still decode), restored at launch next to the volume.
+- **The timing disc** — a clock disc joins the lyrics panel's disc
+  row, accent-tinted while an offset is applied, so "why are the
+  lyrics weird?" has a visible answer.
+- **A2 verdict — already implemented:** BitChord's "stop after this
+  track" sleep option has existed here since an earlier round —
+  `SleepTimer(endOfTrack: true)` is in the sheet ("End of current
+  track"), restored across relaunches, and fires in the
+  track-changed handler (AppStore.swift:394). No work needed.
+
+Local verification: the touched files parse-clean in the `swift:6.0`
+container; PandoraCore untouched (build green, 379/379 stands).
+
+**Device expectation**: open lyrics → tap the clock disc → slide
+right 0.4 s → every lyric surface (highlight, sweep, dots, strip)
+follows immediately; Done persists it; relaunch keeps the offset; a
+filled clock disc marks an applied offset.
+
 **Repair riding first (`0e5137f`):** the L1 iOS Build failed on two
 lines — `LyricClock` read `PlayerService`'s main-actor state from a
 nonisolated enum (now `@MainActor`; every caller is a timeline view on

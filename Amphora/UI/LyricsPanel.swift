@@ -51,6 +51,8 @@ struct LyricsPanel: View {
     /// discs above the panel carry both states.
     @State private var isRomanizationVisible = true
     @State private var isTranslationVisible = true
+    /// BitChord's offset sheet, reached from the timing disc.
+    @State private var isShowingOffset = false
 
     var body: some View {
         Group {
@@ -64,6 +66,9 @@ struct LyricsPanel: View {
             } else {
                 unavailable
             }
+        }
+        .sheet(isPresented: $isShowingOffset) {
+            LyricsOffsetSheet()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onDisappear {
@@ -96,6 +101,16 @@ struct LyricsPanel: View {
                 }
             }
             translationDisc
+            // The timing disc: accent while an offset is applied, so
+            // "why are the lyrics weird?" has a visible answer.
+            disc(
+                icon: "clock",
+                isActive: store.lyricsOffset != 0,
+                isLoading: false,
+                label: "Adjust lyrics timing"
+            ) {
+                isShowingOffset = true
+            }
         }
         .padding(.horizontal, 28)
         .padding(.bottom, 10)
@@ -251,7 +266,9 @@ struct LyricsPanel: View {
             ZStack(alignment: .topLeading) {
                 rows(for: lyrics, highlightIndex: highlightIndex)
                 TimelineView(.animation) { context in
-                    let clock = LyricClock.elapsed(at: context.date, in: store.player)
+                    let clock = LyricClock.elapsed(
+                        at: context.date, in: store.player, offset: store.lyricsOffset
+                    )
                     let live = lyrics.activeLineIndex(at: clock)
                     let lead = lyrics.activeLineIndex(at: clock + Self.scrollLead)
                     Color.clear
@@ -481,7 +498,9 @@ struct LyricsPanel: View {
 
         var body: some View {
             TimelineView(.animation) { context in
-                let now = LyricClock.elapsed(at: context.date, in: store.player)
+                let now = LyricClock.elapsed(
+                    at: context.date, in: store.player, offset: store.lyricsOffset
+                )
                 let span = max(end - start, 0.001)
                 let progress = min(max((now - start) / span, 0), 1)
                 HStack(spacing: 10) {

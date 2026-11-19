@@ -35,6 +35,12 @@ struct Preferences: Codable, Equatable {
     /// and that error would silently reset every other preference.
     /// `nil` means "full volume".
     var playbackVolume: Float? = nil
+    /// The lyrics timing offset in seconds (BitChord's offset sheet —
+    /// a provider's sync can run slightly ahead of or behind the
+    /// audio). Optional on purpose like `playbackVolume`: a file
+    /// written before the key existed must still decode. `nil` means
+    /// "no offset".
+    var lyricsOffset: TimeInterval? = nil
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.
