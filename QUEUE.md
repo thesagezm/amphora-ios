@@ -493,6 +493,22 @@ right 0.4 s → every lyric surface (highlight, sweep, dots, strip)
 follows immediately; Done persists it; relaunch keeps the offset; a
 filled clock disc marks an applied offset.
 
+**CI state at the end of the round (2026-11-19):** the BitChord round
+landed as pushes 44943b9 (P1 ✅✅) → ab4b629 (P2 ✅✅) → 9d2e85f (P3,
+green through M1's runs) → 0a7b690 (M1 ✅✅) → 2a9723e (L1 ❌ iOS:
+the clock's actor isolation + the scroll identity) → ad45483 (L2,
+inherited) → 0e5137f (repair, carries L1+L2) → f02aa7f (L3 ❌ iOS:
+the status line's missing @ViewBuilder — a type mismatch, the class
+`swiftc -parse` cannot see) → 5e69a97 (A1, inherited) → b35cc3b (A3,
+inherited) → **0fd6b48 (the ViewBuilder repair — its runs decide the
+round for L1/L2/L3/A1/A3 and produce the IPA with everything;
+check `gh run list --limit 5` first thing next session; if it failed
+on capacity, just rerun — no code to repair)**. Core Tests was green
+on every commit it ran on (379/379 locally). A reminder recorded
+twice now: `-parse` is shape-only — a same-file type mismatch is
+invisible to it; the repair loop (read log line → fix → push) is the
+process.
+
 **Repair riding first (`0e5137f`):** the L1 iOS Build failed on two
 lines — `LyricClock` read `PlayerService`'s main-actor state from a
 nonisolated enum (now `@MainActor`; every caller is a timeline view on
