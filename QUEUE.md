@@ -747,9 +747,13 @@ cannot see — a `@ViewBuilder` property is not Optional at the type
 level (so `if let rendered` was rejected) and an optional-bound
 non-optional `TransportIcon`; the repair (`5530361`) uses a plain
 optional-tuple layout property instead. Its own runs were **cancelled
-(superseded)** by the QUEUE-record push, so the deciding runs for the
-whole session are the re-login push's (`cbdb817`, which carries every
-unit): check `gh run list --limit 5` first thing next session — a
+(superseded)** by the QUEUE-record push. **The re-login push
+(`cbdb817`) — which carries every unit up through it — is ✅ Core +
+✅ iOS Build (runs `44599236524` / `44599236507`), so the IPA from
+that run is the session's deliverable: cache bounds, BitChord icons,
+lyrics cache bound, slow-link re-login.** The spinner push
+(`8214406`) rides on top; its runs decide only its own two files.
+Check `gh run list --limit 5` first thing next session — a
 runner-capacity failure is rerun, not repaired. The reminder recorded
 three times now: `-parse` is shape-only; the repair loop (read log
 line → fix → push) is the process.
