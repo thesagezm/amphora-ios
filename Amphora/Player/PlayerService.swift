@@ -443,11 +443,11 @@ final class PlayerService {
               let url = URL(string: stream) else { return nil }
         let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 30
-        // Speed changes must keep the music sounding right: the spectral
-        // mixer is the highest-quality time-pitch algorithm across the
-        // whole 0.5–2× range (the default, timeDomain, is tuned for
+        // Speed changes must keep the music sounding right: `.spectral`
+        // is the highest-quality time-pitch algorithm across the whole
+        // 0.5–2× range (the default, `.timeDomain`, is tuned for
         // speech).
-        item.audioTimePitchAlgorithm = .spectralMixer
+        item.audioTimePitchAlgorithm = .spectral
         return item
     }
 
