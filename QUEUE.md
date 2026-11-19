@@ -448,7 +448,45 @@ gave no feedback (`a7dbe49`). M1/M2 confirmed on device 2026-10-23.
 
 ## In Flight / Last Push
 
-**This push — Last.fm like BitChord's: the crossing scrobble, the
+**This push — M6: the app knows it is offline.** the standing
+robustness work (M6 lists "offline" explicitly), and the first unit
+of it.
+
+- **`Amphora/Player/NetworkMonitor.swift` (new)** — the app's
+  knowledge of the network path: `NWPathMonitor` in the app target
+  (Network.framework is Apple-specific — PandoraCore stays portable;
+  the core only *classifies* transport failures, which is a different
+  question). The path is a fact where a failed request is only a
+  guess about why it failed.
+- **`AppStore`** — `isOffline` follows the path; when the path comes
+  back and the user was left without a station list, the list is
+  reloaded **once** (one attempt per recovery — never a retry loop).
+- **`StationsView`** — the error state says "You're offline —
+  reconnect and try again" instead of the raw transport sentence, and
+  the non-blocking banner says "No connection — the list may be out of
+  date". Retry stays where it was.
+
+Local verification: the three touched files parse-clean in the
+`swift:6.0` container; PandoraCore untouched (409/409 stands). The
+app target typechecks on CI only.
+
+**Device expectation**: turn on airplane mode (or switch to a dead
+Wi-Fi) with the app open → the station list says "You're offline"
+instead of a transport error; turn the network back → the list loads
+by itself, no tapping.
+
+**CI note (the playback-speed build failed and was repaired):** the
+playback-speed iOS Build failed on one line —
+`AVAudioTimePitchAlgorithm` has no member `spectralMixer` (the cases
+are `.varispeed`, `.linear`, `.timeDomain`, `.spectral`,
+`.lowQualityZeroLatency`, `.highQualityZeroLatency`). The repair
+(`2446ccb`) uses `.spectral`, the case that was meant — the highest
+quality across 0.5–2×. The Last.fm push inherited the failure (same
+file) and the repair supersedes both. Another reminder that
+`swiftc -parse` is shape-only: a wrong enum case name is a type
+error only CI can see.
+
+**Previous push — Last.fm like BitChord's: the crossing scrobble, the
 switches, the rule sliders.** the user's direction (2026-11-19):
 "instead of adding listenbrainz, make the current last fm like the one
 in bitchord". Read from the fork itself — `data/scrobbling/LastFM.kt`,

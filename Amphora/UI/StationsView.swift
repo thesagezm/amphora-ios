@@ -134,9 +134,12 @@ struct StationsView: View {
 
     private func errorState(_ message: String) -> some View {
         ContentUnavailableView {
-            Label("Couldn't load stations", systemImage: "wifi.exclamationmark")
+            Label(
+                store.isOffline ? "You're offline" : "Couldn't load stations",
+                systemImage: "wifi.exclamationmark"
+            )
         } description: {
-            Text(message)
+            Text(store.isOffline ? "Reconnect and try again." : message)
         } actions: {
             Button("Retry") {
                 store.send(.refreshStations)
@@ -337,10 +340,10 @@ struct StationsView: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: store.isOffline ? "wifi.slash" : "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
                 .accessibilityHidden(true)
-            Text(message)
+            Text(store.isOffline ? "No connection — the list may be out of date." : message)
                 .font(.footnote)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button {

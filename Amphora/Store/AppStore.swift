@@ -317,11 +317,19 @@ final class AppStore {
     // Errors surface here too.
     private(set) var lastErrorMessage: String?
 
+    /// Whether the device currently has no usable network path. The
+    /// app knows this from the path monitor, not from a failed
+    /// request: a dropped path is a fact, a failed request is only a
+    /// guess about why it failed.
+    private(set) var isOffline = false
+
     /// Disk persistence for the history (Codable-to-disk, per AGENTS.md).
     private let historyStore: HistoryStore
     /// Disk persistence for the non-secret preferences (station order,
     /// last station).
     private let preferencesStore: PreferencesStore
+    /// The network path watcher — the app's offline awareness.
+    private let networkMonitor = NetworkMonitor()
     private var preferences: Preferences
 
     init(
@@ -365,6 +373,15 @@ final class AppStore {
             guard let self else { return }
             self.preferences.scrobblingEnabled = enabled
             self.preferencesStore.save(self.preferences)
+        }
+        // The network path: the app knows it is offline before a
+        // request fails, and recovers when the path comes back.
+        networkMonitor.onChange = { [weak self] connected in
+            guard let self else { return }
+            self.isOffline = !connected
+            if connected {
+                self.recoverFromOffline()
+            }
         }
         self.history = historyStore.load()
         self.radioFavorites = preferences.radioFavorites
@@ -1124,6 +1141,15 @@ final class AppStore {
     /// Fetches `user.getStationList` (M2). Fire-and-forget via the intent;
     /// `refreshStations()` is also awaited directly for pull-to-refresh and
     /// the post-sign-in load. A guard keeps concurrent calls from stacking.
+    /// The network path came back. If the user was left without a
+    /// station list (the offline error state), load it once — one
+    /// attempt per recovery, never a retry loop.
+    private func recoverFromOffline() {
+        guard stations.isEmpty, !isLoadingStations else { return }
+        AppLog.info("network path restored — reloading the station list")
+        Task { await refreshStations() }
+    }
+
     func refreshStations() async {
         guard !isLoadingStations else { return }
         lastErrorMessage = nil
