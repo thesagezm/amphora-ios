@@ -31,6 +31,22 @@ import Foundation
 
 // MARK: - Line
 
+/// One timed word inside a lyric line — word-exact timing data from a
+/// provider that carries it (e.g. a rich-sync source). `timestamp` is
+/// the word's start; its end is the next word's start (or the line's
+/// end for the last word), mirroring the lines' own convention.
+public struct LyricWord: Codable, Sendable, Equatable {
+    /// Start of the word, in seconds from the beginning of the track.
+    public let timestamp: TimeInterval
+    /// The word.
+    public let text: String
+
+    public init(timestamp: TimeInterval, text: String) {
+        self.timestamp = timestamp
+        self.text = text
+    }
+}
+
 /// One lyric line: when it starts and what it says.
 public struct LyricLine: Codable, Sendable, Equatable, Identifiable {
     /// Start of the line, in seconds from the beginning of the track.
@@ -44,6 +60,11 @@ public struct LyricLine: Codable, Sendable, Equatable, Identifiable {
     /// written in a non-Latin script — "사랑해" → "salanghae". Nil when the
     /// line needs none, or none was fetched.
     public var romanization: String?
+    /// Word-exact timings when the provider carries them — the sweep
+    /// follows real word starts instead of interpolating across the
+    /// line. Nil (or empty) when the source is line-timed only; a
+    /// payload written before this key existed decodes as nil.
+    public var words: [LyricWord]?
 
     public var id: String { "\(timestamp)-\(text)" }
 
@@ -51,12 +72,14 @@ public struct LyricLine: Codable, Sendable, Equatable, Identifiable {
         timestamp: TimeInterval,
         text: String,
         translation: String? = nil,
-        romanization: String? = nil
+        romanization: String? = nil,
+        words: [LyricWord]? = nil
     ) {
         self.timestamp = timestamp
         self.text = text
         self.translation = translation
         self.romanization = romanization
+        self.words = words
     }
 
     /// The line as it should be displayed: the original words, with the
