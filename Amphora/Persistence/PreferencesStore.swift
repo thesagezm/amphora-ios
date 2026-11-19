@@ -69,6 +69,10 @@ struct Preferences: Codable, Equatable {
     /// The cap on the scrobble delay, in seconds (BitChord's slider,
     /// 30…300; default 180). Optional on purpose: `nil` means 180.
     var scrobbleMaxDelaySeconds: Int? = nil
+    /// Whether the mini player's cover flies into the full player (and
+    /// back). Optional on purpose: `nil` means "yes" — the behaviour
+    /// before the switch existed.
+    var artworkFlightEnabled: Bool? = nil
 }
 
 /// Reads and writes `Preferences` as JSON in Application Support.

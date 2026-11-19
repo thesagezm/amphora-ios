@@ -14,11 +14,27 @@ import SwiftUI
 struct NowPlayingView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// The artwork flight's shared state — the pill's cover is the
+    /// flight's origin, this cover is its destination.
+    @Environment(\.artworkFlight) private var flight
+    /// Reduce Motion — the flight is motion, and motion is exactly
+    /// what the user asked not to have.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// BitChord's artwork sleeve easing: the 500 ms CubicBezier
     /// (0.215, 0.61, 0.355, 1) the pause-shrink rides.
     private static let sleeveAnimation = Animation.timingCurve(
         0.215, 0.61, 0.355, 1, duration: 0.5
+    )
+
+    /// The cover's flight in: a firm travel with a hair of overshoot —
+    /// the cover arrives in the player like it was thrown there.
+    private static let coverFlightAnimation = Animation.spring(
+        response: 0.52, dampingFraction: 0.86
+    )
+    /// The way back: quicker and softer — the cover drops into the pill.
+    private static let coverReturnAnimation = Animation.timingCurve(
+        0.4, 0.0, 0.2, 1, duration: 0.45
     )
 
     /// The shared ambient theme. Reading the singleton's `@Observable`
@@ -45,6 +61,29 @@ struct NowPlayingView: View {
     @State private var areLyricsControlsHidden = false
     @State private var lyricsIdleTask: Task<Void, Never>?
 
+    // MARK: The artwork flight
+
+    /// Where the cover is in its flight: waiting to be measured, on its
+    /// way in, in place, or on its way back to the mini player.
+    private enum CoverFlightState {
+        case pending
+        case flying
+        case settled
+        case returning
+    }
+
+    @State private var coverFlightState: CoverFlightState = .pending
+    /// The flight's progress: 0 = at the mini player, 1 = in place.
+    @State private var coverFlightProgress: Double = 1
+    /// The mini player's cover, in window coordinates — the origin.
+    @State private var coverOriginFrame: CGRect = .zero
+    /// This cover, in window coordinates — the destination.
+    @State private var coverDestinationFrame: CGRect = .zero
+    /// The owned tasks: the flight's safety net and the return's
+    /// dismissal. No `.task` modifier anywhere (the launch-crash rule).
+    @State private var coverFlightTask: Task<Void, Never>?
+    @State private var coverReturnTask: Task<Void, Never>?
+
     /// Whether the scrubber/transport/feedback chrome should render —
     /// everything but the lyrics panel itself. The chrome is opaque
     /// (never hidden) outside lyrics mode.
@@ -60,9 +99,15 @@ struct NowPlayingView: View {
                 // light, and the palette glides across tracks.
                 MeshBackdrop(colors: theme.colors)
                     .ignoresSafeArea()
+                    .opacity(isCoverReturning ? 0 : 1)
+                    .animation(.easeOut(duration: 0.25), value: isCoverReturning)
                 content
             }
-            .navigationTitle(store.currentStation?.name ?? "Now Playing")
+            // The title goes with everything else on the way out: on the
+            // return the cover is the only thing that should still be
+            // moving, and a station name floating over the fading
+            // player would say otherwise.
+            .navigationTitle(isCoverReturning ? "" : (store.currentStation?.name ?? "Now Playing"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
@@ -71,9 +116,11 @@ struct NowPlayingView: View {
                 // discs — so the bar above stays ellipsis + Done.
                 ToolbarItem(placement: .topBarLeading) {
                     actionsMenu
+                        .opacity(isCoverReturning ? 0 : 1)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") { dismissPlayer() }
+                        .opacity(isCoverReturning ? 0 : 1)
                 }
             }
             .sheet(isPresented: $isShowingSleepTimer) {
@@ -87,6 +134,13 @@ struct NowPlayingView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear {
+            prepareCoverFlight()
+        }
+        .onDisappear {
+            coverFlightTask?.cancel()
+            coverReturnTask?.cancel()
+        }
     }
 
     /// Every secondary action in one Apple-Music-style place. This is
@@ -191,28 +245,35 @@ struct NowPlayingView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         mainRegion(track)
-                        if !isShowingLyrics {
-                            trackHeader(track)
-                        }
-                        routeIndicator
-                        // A live stream has no timeline — a dead
-                        // zero-length scrubber would only look
-                        // broken. The LIVE badge takes its place.
-                        if !track.isRadio {
-                            scrubber
+                        // Everything but the cover, in one group: on the
+                        // way out it fades as a whole, so the cover's
+                        // return is the only thing left moving.
+                        VStack(spacing: 18) {
+                            if !isShowingLyrics {
+                                trackHeader(track)
+                            }
+                            routeIndicator
+                            // A live stream has no timeline — a dead
+                            // zero-length scrubber would only look
+                            // broken. The LIVE badge takes its place.
+                            if !track.isRadio {
+                                scrubber
+                                    .opacity(lyricsControlsVisible ? 1 : 0)
+                                    .allowsHitTesting(lyricsControlsVisible)
+                                    .animation(.easeInOut(duration: 0.3), value: lyricsControlsVisible)
+                            }
+                            playerControls(for: track)
                                 .opacity(lyricsControlsVisible ? 1 : 0)
                                 .allowsHitTesting(lyricsControlsVisible)
                                 .animation(.easeInOut(duration: 0.3), value: lyricsControlsVisible)
+                            PlayerDock(
+                                isShowingLyrics: $isShowingLyrics,
+                                isShowingQueue: $isShowingQueue,
+                                onSleepTimer: { isShowingSleepTimer = true }
+                            )
                         }
-                        playerControls(for: track)
-                            .opacity(lyricsControlsVisible ? 1 : 0)
-                            .allowsHitTesting(lyricsControlsVisible)
-                            .animation(.easeInOut(duration: 0.3), value: lyricsControlsVisible)
-                        PlayerDock(
-                            isShowingLyrics: $isShowingLyrics,
-                            isShowingQueue: $isShowingQueue,
-                            onSleepTimer: { isShowingSleepTimer = true }
-                        )
+                        .opacity(isCoverReturning ? 0 : 1)
+                        .animation(.easeOut(duration: 0.25), value: isCoverReturning)
                     }
                     .frame(
                         maxWidth: .infinity,
@@ -339,13 +400,15 @@ struct NowPlayingView: View {
     }
 
     private func artwork(for track: Track) -> some View {
-        Group {
+        let transform = coverFlightTransform
+        let radius = coverCornerRadius
+        return Group {
             if track.isRadio {
                 if let artwork = store.radioSongArtwork {
                     // The identified song's cover (iTunes Search).
                     CachedArtwork(
                         urlString: artwork.largeArtworkURL.absoluteString,
-                        cornerRadius: Theme.radiusArtwork,
+                        cornerRadius: radius,
                         fallbackSystemImage: "music.note"
                     )
                 } else {
@@ -355,29 +418,34 @@ struct NowPlayingView: View {
                     RadioStationArtwork(
                         stationName: track.title,
                         faviconURL: track.artworkUrl,
-                        cornerRadius: Theme.radiusArtwork,
+                        cornerRadius: radius,
                         minimumArtworkPixels: 200
                     )
                 }
             } else {
                 CachedArtwork(
                     urlString: track.artworkUrl,
-                    cornerRadius: Theme.radiusArtwork,
+                    cornerRadius: radius,
                     fallbackSystemImage: "music.note"
                 )
             }
         }
+        // The square itself. The probe sits on it, so the flight
+        // measures the cover's own place and size — not the padded
+        // region around it, and not the sleeve's shrunken version of
+        // it.
         .aspectRatio(1, contentMode: .fit)
+        .background(coverProbe)
         // The flexible square: it grows with the space left over and
         // yields it again when the controls need room (large Dynamic
         // Type, the badges) — the Apple-Music artwork behavior.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 28)
         .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
         .shadow(color: theme.colors.accent.color.opacity(0.18), radius: 40, y: 8)
-        .padding(.horizontal, 28)
         // BitChord's sleeve: the artwork settles 12% smaller while
         // paused, springing back with the same easing the panels use.
-        .scaleEffect(store.player.isPlaying ? 1 : 0.88)
+        .scaleEffect(sleeveScale)
         .animation(Self.sleeveAnimation, value: store.player.isPlaying)
         // BitChord's damped follow: the sleeve tracks the finger at a
         // third of its travel, dips slightly while held, and springs
@@ -393,7 +461,239 @@ struct NowPlayingView: View {
         )
         .scaleEffect(sleeveDrag == .zero ? 1 : 0.94)
         .animation(.interactiveSpring(response: 0.28), value: sleeveDrag)
+        // The flight: the cover's place and size on its way in and on
+        // its way back. It rides outside the sleeve's transforms, so
+        // the two never fight over the cover's size.
+        .scaleEffect(transform.scale)
+        .offset(x: transform.dx, y: transform.dy)
+        .opacity(coverOpacity)
     }
+
+    /// BitChord's sleeve scale: the cover settles 12% smaller while
+    /// paused.
+    ///
+    /// The flight holds the sleeve at full size. The flight *measures*
+    /// the cover, and a shrunken sleeve would make every measurement
+    /// 12% small — the cover would land small and stay small. The
+    /// sleeve comes back when the cover settles, on its own easing.
+    private var sleeveScale: CGFloat {
+        switch coverFlightState {
+        case .pending, .flying, .returning:
+            return 1
+        case .settled:
+            return store.player.isPlaying ? 1 : 0.88
+        }
+    }
+
+    /// The probe that reports this cover's place on screen. The flight
+    /// measures the mini player's cover and this one in the same space
+    /// (window coordinates), so the two can be compared.
+    private var coverProbe: some View {
+        WindowFrameProbe(
+            onProbe: { flight?.registerPlayerProbe($0) }
+        )
+    }
+
+    /// The cover's flight transform: where it sits relative to its own
+    /// place in the player, and how big it is — interpolated between
+    /// the mini player's cover and this one.
+    private var coverFlightTransform: (scale: CGFloat, dx: CGFloat, dy: CGFloat) {
+        switch coverFlightState {
+        case .pending, .settled:
+            // Nothing is in flight: the cover is exactly where it
+            // belongs.
+            return (1, 0, 0)
+        case .flying, .returning:
+            break
+        }
+        let progress = CGFloat(coverFlightProgress)
+        guard coverDestinationFrame.width > 1, coverOriginFrame.width > 1 else {
+            return (1, 0, 0)
+        }
+        let width = coverOriginFrame.width
+            + (coverDestinationFrame.width - coverOriginFrame.width) * progress
+        let scale = width / coverDestinationFrame.width
+        let targetX = coverOriginFrame.midX
+            + (coverDestinationFrame.midX - coverOriginFrame.midX) * progress
+        let targetY = coverOriginFrame.midY
+            + (coverDestinationFrame.midY - coverOriginFrame.midY) * progress
+        return (
+            scale,
+            targetX - coverDestinationFrame.midX,
+            targetY - coverDestinationFrame.midY
+        )
+    }
+
+    /// The cover's corner radius while it flies. The radius is drawn in
+    /// the cover's own space and scaled with it, so it is divided by
+    /// the flight's scale — the rendered radius is then the one the
+    /// pill and the player use, at every point of the flight.
+    private var coverCornerRadius: CGFloat {
+        let pill = Theme.radiusS + 2
+        let full = Theme.radiusArtwork
+        let radius = pill + (full - pill) * CGFloat(coverFlightProgress)
+        let scale = coverFlightTransform.scale
+        guard scale > 0.02 else { return full }
+        return radius / scale
+    }
+
+    /// The cover fades in as it leaves the pill — the flight reads as
+    /// the cover emerging from the mini player, not as a picture
+    /// appearing out of nowhere.
+    private var coverOpacity: Double {
+        switch coverFlightState {
+        case .pending:
+            return 0
+        case .flying:
+            return min(1, coverFlightProgress * 4)
+        case .settled, .returning:
+            return 1
+        }
+    }
+
+    /// `true` while the cover is on its way back to the mini player.
+    private var isCoverReturning: Bool {
+        coverFlightState == .returning
+    }
+
+    /// The flight's preparation. The cover waits (hidden) until this
+    /// player's own place on screen is known; then it flies in from the
+    /// mini player's cover.
+    private func prepareCoverFlight() {
+        guard coverFlightState == .pending else { return }
+        // A radio stream's cover is not shared between the two hosts —
+        // the pill shows the station tile, the player may show the
+        // identified song's cover — so there is nothing to fly.
+        let isRadio = store.player.currentTrack?.isRadio == true
+        let isEnabled = store.artworkFlightEnabled && !reduceMotion
+        guard isEnabled, !isRadio, let flight else {
+            settleCoverWithoutFlight()
+            return
+        }
+        coverFlightProgress = 0
+        // Wait for this cover's place to be measured — a frame or two —
+        // then fly. The wait is bounded: if the place never arrives (an
+        // odd layout, a zero-sized region), the plain cover shows
+        // anyway.
+        coverFlightTask?.cancel()
+        coverFlightTask = Task { @MainActor in
+            for _ in 0..<45 {
+                try? await Task.sleep(for: .milliseconds(16))
+                guard !Task.isCancelled else { return }
+                if flight.currentDestination() != nil {
+                    beginCoverFlight()
+                    // The flight itself takes about half a second;
+                    // after it, the cover is simply in place — and the
+                    // sleeve comes back with it.
+                    try? await Task.sleep(for: .milliseconds(700))
+                    guard !Task.isCancelled else { return }
+                    if coverFlightState == .flying {
+                        withAnimation(Self.sleeveAnimation) {
+                            coverFlightState = .settled
+                        }
+                    }
+                    return
+                }
+            }
+            settleCoverWithoutFlight()
+        }
+    }
+
+    /// The cover's place is known — fly it in from the mini player.
+    private func beginCoverFlight() {
+        guard coverFlightState == .pending else { return }
+        guard let flight,
+              let origin = flight.originFrame, let originWindow = flight.originWindow,
+              // Read the destination *now*, not from an earlier report:
+              // the sheet is still rising while the flight starts, and
+              // the cover has to fly from the pill's place to where the
+              // cover is at this very instant — otherwise the flight
+              // starts from a place the cover has already left.
+              let destination = flight.currentDestination(),
+              // The two covers are only comparable when they are in the
+              // same window — otherwise the flight would start from a
+              // place that means nothing here.
+              originWindow === destination.window,
+              origin.width > 1, destination.frame.width > 1
+        else {
+            settleCoverWithoutFlight()
+            return
+        }
+        coverOriginFrame = origin
+        coverDestinationFrame = destination.frame
+        coverFlightState = .flying
+        withAnimation(Self.coverFlightAnimation) {
+            coverFlightProgress = 1
+        }
+    }
+
+    /// No flight: the plain cover, in place, as it has always been.
+    ///
+    /// The change lands without an animation on purpose. The cover was
+    /// hidden while the flight waited for its place, and it must appear
+    /// the way it always has — at once, at its resting size (the
+    /// sleeve comes back in the same frame, so there is no shrink to
+    /// watch).
+    private func settleCoverWithoutFlight() {
+        guard coverFlightState == .pending else { return }
+        coverFlightTask?.cancel()
+        coverFlightTask = nil
+        coverFlightProgress = 1
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            coverFlightState = .settled
+        }
+    }
+
+    /// "Done": the cover flies back to the mini player before the sheet
+    /// goes away, so it lands exactly where the pill's cover is.
+    private func dismissPlayer() {
+        guard canFlyCoverBack else {
+            dismiss()
+            return
+        }
+        // Measure both covers again — the sheet may have moved since
+        // the flight in (a rotation, a resized sheet), and the pill's
+        // cover is where it is now.
+        if let flight {
+            flight.captureOrigin()
+            if let origin = flight.originFrame {
+                coverOriginFrame = origin
+            }
+            if let destination = flight.currentDestination() {
+                coverDestinationFrame = destination.frame
+            }
+        }
+        // One transaction for both: the cover flies back *and* the
+        // sleeve returns to full size (it was held small while the
+        // flight measured the cover), on the way back's easing.
+        withAnimation(Self.coverReturnAnimation) {
+            coverFlightState = .returning
+            coverFlightProgress = 0
+        }
+        coverReturnTask?.cancel()
+        coverReturnTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(520))
+            guard !Task.isCancelled else { return }
+            // The chrome has faded and the cover has landed: the sheet
+            // leaves without sliding, so the pill underneath takes the
+            // cover's place in one motion.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { dismiss() }
+        }
+    }
+
+    /// The cover can only fly back when it is the cover on screen and
+    /// there is a pill to fly it to.
+    private var canFlyCoverBack: Bool {
+        coverFlightState == .settled
+            && !isShowingLyrics
+            && !isShowingQueue
+            && coverOriginFrame.width > 1
+    }
+
 
     /// BitChord's lyrics idle clock: an interaction reveals the
     /// controls and restarts the five-second countdown to fade them.

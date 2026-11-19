@@ -21,6 +21,9 @@ import UIKit
 /// a deliberate button press.
 struct MiniPlayer: View {
     @Environment(AppStore.self) private var store
+    /// The artwork flight's shared state — the pill's cover is the
+    /// flight's origin when the full player opens.
+    @Environment(\.artworkFlight) private var flight
     let onOpen: () -> Void
 
     /// The live vertical pull — the bar follows the finger upward on a
@@ -77,7 +80,7 @@ struct MiniPlayer: View {
     /// muscle-memory route.
     private var openButton: some View {
         Button {
-            onOpen()
+            openPlayer()
         } label: {
             HStack(spacing: 10) {
                 artwork
@@ -109,6 +112,18 @@ struct MiniPlayer: View {
         }
         .buttonStyle(RowPressableButtonStyle())
         .accessibilityLabel("Open now playing")
+    }
+
+    /// Opens the full player. The cover's place on screen is frozen
+    /// first — the full player's cover flies in from exactly here.
+    ///
+    /// The pill's own pull does not need correcting: the pull route
+    /// leaves the pill riding the finger upward for a moment, but the
+    /// pill is behind the sheet by the time the cover fades in, and the
+    /// way back re-measures the pill where it rests.
+    private func openPlayer() {
+        flight?.captureOrigin()
+        onOpen()
     }
 
     /// The edge fade — BitChord's `fadeOverflow` instead of a marquee.
@@ -183,7 +198,7 @@ struct MiniPlayer: View {
                     store.send(.skipToNext)
                 } else if vertical < -60 {
                     Haptics.light()
-                    onOpen()
+                    openPlayer()
                 }
             }
     }
@@ -206,6 +221,11 @@ struct MiniPlayer: View {
             }
         }
         .frame(width: 40, height: 40)
+        // The cover's place on screen, in window coordinates — the
+        // full player's cover flies in from here.
+        .background(
+            WindowFrameProbe(onProbe: { flight?.registerMiniProbe($0) })
+        )
     }
 
     /// The card's second line: the artist normally, the name of the

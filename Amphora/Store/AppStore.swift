@@ -115,6 +115,9 @@ final class AppStore {
         case setScrobbleMinDuration(Int)
         case setScrobbleDelayPercent(Double)
         case setScrobbleMaxDelaySeconds(Int)
+        /// Whether the mini player's cover flies into the full player
+        /// (and back). One switch, one disk write.
+        case setArtworkFlightEnabled(Bool)
         case signOutPandora
         /// Wipe the local play history (device-local; Pandora's own
         /// listening data is untouched).
@@ -302,6 +305,14 @@ final class AppStore {
     /// audio. Positive delays the lyrics — for a provider whose sync
     /// runs slightly ahead. Survives a relaunch via the preferences.
     private(set) var lyricsOffset: TimeInterval = 0
+    /// Whether the mini player's cover flies into the full player (and
+    /// back). The flight is motion, and it is the one thing in the
+    /// player that cannot be judged without seeing it — so the user can
+    /// turn it off. `nil` in the preferences means "on" (the behaviour
+    /// before the switch existed).
+    var artworkFlightEnabled: Bool {
+        preferences.artworkFlightEnabled ?? true
+    }
     /// The `feedbackId` of the rating on the current track (needed to undo
     /// it) and the rating itself.
     private(set) var currentRating: FeedbackRating = .none
@@ -658,6 +669,12 @@ final class AppStore {
         case .setScrobbleMaxDelaySeconds(let seconds):
             scrobbler.maxDelaySeconds = TimeInterval(seconds)
             preferences.scrobbleMaxDelaySeconds = seconds
+            preferencesStore.save(preferences)
+        case .setArtworkFlightEnabled(let enabled):
+            // The flight's switch. `true` is stored as `nil` (the
+            // optional-on-purpose pattern: the default is the flight
+            // being on).
+            preferences.artworkFlightEnabled = enabled ? nil : false
             preferencesStore.save(preferences)
         case .signOutPandora:
             signOut()

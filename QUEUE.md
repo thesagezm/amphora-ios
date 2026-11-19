@@ -20,9 +20,9 @@ W1/W2's core math and the Musixmatch provider), **playback speed
 the three switches, the three rule sliders — in place of the planned
 ListenBrainz client, which the user dropped), and **offline
 awareness** (the first M6 slice). Everything from this session and the
-BitChord round before it is **awaiting the user's device test**. The
-next unit is **F1 — the mini-player artwork flight** (see "Next unit —
-F1" in In Flight / Last Push).
+BitChord round before it is **awaiting the user's device test**. **F1 —
+the mini-player artwork flight — landed in this push** (see In Flight /
+Last Push).
 
 ## User Feedback Pending
 
@@ -468,6 +468,143 @@ is superseded by that repair. The offline unit (`b148b16`) is Core ✅,
 its iOS Build in flight at the handover (not waited on; it carries the
 repair, so nothing else can fail there but its own code). **No
 outstanding repair.** PandoraCore 409/409 green in Docker.
+
+**F1 — the mini-player artwork flight — LANDED (2026-11-19, this
+push).** The mini player's cover now flies into the full player and
+back to the pill. The design decision from the handover session stands
+— **option (b), the one-host flight** — and the code went in with the
+handover's review finished and **three corrections** applied. The unit
+is *not* device-verified: it is animation, and animation can only be
+judged by watching it. The **Settings → Player → "Artwork Flight"**
+switch is the escape hatch — if it reads badly on the phone, it goes
+away without a new build.
+
+- **What shipped:**
+  - `Amphora/UI/ArtworkFlight.swift` (new) — `WindowFrameProbe` (a
+    `UIViewRepresentable` whose empty view reports its frame in
+    **window coordinates** — SwiftUI's `.global` space is rooted per
+    presentation, so the pill's frame and the sheet's frame cannot be
+    compared through it), `ArtworkFlightCoordinator` (a plain
+    `@MainActor` class — *not* `@Observable`, because its values are
+    read imperatively on demand and must not read as publications), and
+    the optional `\.artworkFlight` environment key.
+  - `Amphora/UI/MiniPlayer.swift` — the cover carries the probe; both
+    open routes (the tap and the upward pull) call `openPlayer()`,
+    which freezes the cover's place (`captureOrigin()`) **before** the
+    sheet is presented.
+  - `Amphora/UI/NowPlayingView.swift` — the flight itself: the cover
+    waits hidden until its own place is measured, then flies in from
+    the pill's frame (position + size interpolated, the corner radius
+    interpolated and divided by the flight's scale so the *rendered*
+    radius is the pill's/player's at every point), fading in as it
+    leaves. "Done" flies it back: the mesh, the chrome, the nav title
+    and the bar's buttons fade, the cover returns to the pill's
+    (re-measured) frame, and the sheet is dismissed with
+    `disablesAnimations` so the pill's own cover takes its place in one
+    motion.
+  - `Amphora/UI/MainTabView.swift` — owns the coordinator, injects it
+    into the tab hierarchy and into the sheet.
+  - `Amphora/Persistence/PreferencesStore.swift`,
+    `Amphora/Store/AppStore.swift`, `Amphora/UI/SettingsView.swift` —
+    the **Settings → Player → "Artwork Flight"** switch
+    (`Preferences.artworkFlightEnabled: Bool?`, `nil` = on, the
+    optional-on-purpose pattern; intent `.setArtworkFlightEnabled`).
+- **The maths, so it is not re-derived:** at progress `p` the
+  transform is `scale = lerp(origin.width, dest.width, p) / dest.width`
+  and `offset = lerp(origin.center, dest.center, p) - dest.center`,
+  applied as `.scaleEffect(scale).offset(dx, dy)` **outside** the
+  sleeve's transforms. The cover sits centred in its region, so the
+  region's centre is the cover's centre and the transform is exact. At
+  `p = 1` the offset is zero by construction — the cover lands exactly
+  in its own place whatever the sheet did meanwhile, and the sheet's
+  own rise carries it the rest of the way. The return flight
+  re-measures both frames, so it lands exactly too.
+- **Correction 1 — the artwork's modifier chain was in the wrong
+  order.** The handover's version had moved `.aspectRatio` / `.frame` /
+  `.padding` *below* the two `.shadow` modifiers and the sleeve's
+  transforms. A shadow applied to an unsized view is a shadow around
+  nothing: the artwork's drop shadow — a big part of the player's look
+  — would have disappeared. Restored to the original order (square →
+  frame → padding → shadows → sleeve), with the probe attached to the
+  square itself so it measures the cover and not the padded region
+  around it.
+- **Correction 2 — the sleeve's paused-shrink would have poisoned the
+  measurement.** The sleeve holds the cover at 88% while the player is
+  paused, and the probe reads the cover *through* that transform: the
+  flight would have measured a 12%-small cover and landed it 12%
+  small. The sleeve is now held at full size while the cover is in
+  flight and comes back on its own easing when the cover settles — the
+  cover lands at its true size and *then* takes the sleeve's shrink.
+- **Correction 3 — the frames are read live, through the layer
+  conversion.** The handover measured the destination once, from the
+  first UIKit layout callback, but the sheet is *still rising* while
+  the flight starts: a reading from before the rise would have started
+  the flight from a place the cover had already left. The flight now
+  reads the destination at the instant it starts, and both probes
+  report through `layer.convert(_:to:)` rather than
+  `UIView.convert(_:to:)` — the sheet's rise and SwiftUI's own
+  render-time transforms are *layer* transforms, and only the layer
+  conversion is guaranteed to see them. The frame-change callback is
+  gone; the flight polls the probe (bounded 45 × 16 ms in an owned
+  `Task` — no `.task` modifier, the launch-crash rule stands) and
+  falls back to the plain cover.
+- **The open risk is closed: `.presentationBackground(.clear)` is
+  dropped.** It was tempting — it would let the tab view show through
+  while the cover flies back — but whether that value leaks into the
+  player's *own* sub-sheets (sleep timer, tune station, track stats)
+  cannot be checked without the device, and a clear background on a
+  sub-sheet is a broken-looking sheet. The player's mesh is its own
+  backdrop, exactly as before this unit; the cost is that the
+  return's landing happens over the sheet's own backdrop rather than
+  over the tab view.
+- **The state machine:** `.pending → .flying → .settled → .returning`.
+  The `.settled` transition (700 ms after the flight) is what makes
+  the return possible. `.settled` also means "the flight is over" for
+  the fallback path — a player opened any other way, with the flight
+  off, or with Reduce Motion on, shows the plain cover and dismisses
+  plainly.
+- **Deliberate exclusions (record them, do not "fix" them):** no
+  flight for radio streams (the pill shows the station tile, the player
+  may show the identified song's cover — there is nothing shared to
+  fly); Reduce Motion switches the flight off; an interactive
+  swipe-down still just dismisses; the origin is only captured from the
+  pill, so opening the player any other way falls back to the plain
+  cover.
+- **Known cosmetic detail (device-dependent):** the navigation title
+  empties during the return so nothing but the cover is left moving —
+  the nav bar itself cannot be faded without moving the layout, which
+  would move the cover's landing place.
+- **Verified:** `swiftc -parse -swift-version 6` exit 0 on all seven
+  touched files (via the `swift:6.0` Docker toolchain — there is no
+  Swift on this host), PandoraCore green in Docker. **Not verified:**
+  the typecheck (CI only) and the flight itself, which needs the
+  device.
+
+**Next unit — M6: the long-session soak (the artwork cache's disk
+tier).** M6's robustness work continues: the offline unit is in, the
+session-expiry path is done, and the next slice is the one the app
+grows into by itself — the caches. The artwork cache's **memory** tier
+is already bounded (NSCache: 120 images / 64 MB) and evicts under
+pressure, but its **disk** tier is not: every artwork the app has ever
+seen is written to disk and nothing ever evicts it, so a long session
+(Station Thumb, a few hundred stations, hours of radio) grows that
+directory without limit. The unit: give the disk tier a ceiling
+(size and/or age), evict oldest-first, and show the ceiling in
+Settings next to the existing disk-usage line. The lyrics side is the
+second half of the slice — the provider chain's in-memory cache gets
+the same treatment if it turns out to be unbounded.
+
+- The rest of the standing queue after it: M6 robustness continues
+  (the session-expiry path **under a slow network** is the other open
+  one — the re-login must not fight a slow link), then the deferred
+  BitChord siblings: the mini-player's loading spinner (which needs a
+  per-track loading state the player does not expose yet) and the
+  queue's artwork.
+- **Everything from this session is awaiting the user's device test:**
+  the BitChord round (P1–P3, M1, L1–L3, A1, A3), W1–W3 (the
+  word-exact sweep + the letter swell), the playback speed, the
+  Last.fm upgrade, the offline state, and now the artwork flight.
+  When feedback arrives it jumps the queue.
 
 **Next unit — F1 (the mini-player artwork flight):** the last deferred
 BitChord item, and the one remaining adoption gap in the player

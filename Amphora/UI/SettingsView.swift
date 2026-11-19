@@ -17,6 +17,7 @@ struct SettingsView: View {
     var body: some View {
         List {
             appearanceSection
+            playerSection
             lastFmSection
             contentSection
             librarySection
@@ -103,6 +104,26 @@ struct SettingsView: View {
             get: { theme.selection.appearance },
             set: { theme.setAppearance($0) }
         )
+    }
+
+    // MARK: Player
+
+    /// The artwork flight — the one thing in the player that cannot be
+    /// judged without seeing it. The switch is the honest answer to
+    /// that: if the flight does not read well on the device, it goes
+    /// away without a new build.
+    private var playerSection: some View {
+        Section {
+            Toggle("Artwork Flight", isOn: Binding(
+                get: { store.artworkFlightEnabled },
+                set: { store.send(.setArtworkFlightEnabled($0)) }
+            ))
+            .amphoraCardRow()
+        } header: {
+            sectionHeader("Player", icon: "music.note")
+        } footer: {
+            Text("The cover flies from the mini player into the full player, and back to the pill when it closes. With it off, the cover simply appears in place.")
+        }
     }
 
     // MARK: Last.fm

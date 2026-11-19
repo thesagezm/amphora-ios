@@ -26,6 +26,10 @@ import SwiftUI
 ///   toolchain moves past iOS 18.
 struct MainTabView: View {
     @State private var isShowingNowPlaying = false
+    /// The artwork flight's shared state — the pill's cover and the
+    /// player's cover, in one place, so the two hosts can measure each
+    /// other.
+    @State private var coverFlight = ArtworkFlightCoordinator()
 
     var body: some View {
         TabView {
@@ -54,8 +58,20 @@ struct MainTabView: View {
         .environment(\.openNowPlaying, OpenNowPlayingAction {
             isShowingNowPlaying = true
         })
+        .environment(\.artworkFlight, coverFlight)
         .sheet(isPresented: $isShowingNowPlaying) {
             NowPlayingView()
+                .environment(\.artworkFlight, coverFlight)
+                // No `.presentationBackground(.clear)` here. It was
+                // tempting — it would let the tab view show through
+                // while the cover flies back to the pill — but whether
+                // the value leaks into the player's *own* sub-sheets
+                // (sleep timer, tune station, track stats) cannot be
+                // checked without the device, and a clear background
+                // on a sub-sheet would be a broken-looking sheet. The
+                // player's own mesh is its backdrop; the flight's
+                // landing happens over the sheet's own backdrop, which
+                // is the cheaper mistake.
         }
     }
 }
