@@ -479,6 +479,37 @@ wide) — the sweep now snaps to each word's real start instead of
 interpolating across the line; songs Musixmatch does not cover fall
 back to lrclib and interpolate exactly as before.
 
+**Next unit — W3 (UI: the word-exact sweep + the letter swell):** the
+second reinstated skip, consuming W1's math.
+
+- **`Amphora/UI/SweptLyricLine.swift`** — `SweptWords` currently
+  interpolates word boundaries by character weight inline. Replace
+  with `LyricSweep.wordStates(words: line.words, text: line.text,
+  at: now, window: start...end)` — the core function owns both regimes
+  (word-exact windows when the provider answered, the identical
+  interpolation otherwise), and `WordState.text` is what the flow
+  renders, so the fallback renders exactly what today renders.
+  `SweptLine`'s init gains the line's `words` and `LyricsPanel.lineRow`
+  passes them.
+- **Letter swell (the second half)**: when a word's `sungFraction` is
+  strictly between 0 and 1, render all three copies per-letter
+  (HStack, spacing 0, `.fixedSize()` — identical layout across copies
+  so they stay aligned); each letter's progress is
+  `LyricSweep.letterProgress(wordSung:letterIndex:letterCount:)`;
+  the bright letter scales `1 + ~0.07 · sin(π · letterProgress)`
+  (rises and settles — transform-only `scaleEffect`, no layout
+  ripple), the glow letter bumps opacity by the same curve, and the
+  per-letter fade replaces the word-level gradient mask (the letter
+  granularity *is* the feather). At sung 0 or 1 keep today's static
+  three-copy Text rendering, so per-frame cost stays bounded to the
+  crossing word's letters.
+- Keep: the TimelineView paused when playback is; the word rise; the
+  falloff table on inactive lines. The strip is line-level —
+  untouched.
+- Verify: touched files parse-clean (`swiftc -parse -swift-version 6`
+  in the swift:6.0 container, mount `/w`); PandoraCore untouched
+  (407/407 stands); CI typechecks the app target.
+
 **This push — A3 of the BitChord round: the track stats sheet.**
 BitChord's "stats for nerds", adapted to what Pandora actually
 exposes.
